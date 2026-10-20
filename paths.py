@@ -1,0 +1,98 @@
+"""
+WHERE EVERYTHING IS - one place for every folder / file the map builder uses.
+
+Two layouts:
+  DEV        the source checkout: map_builder\\ next to the game (E:\\blur - bak\\map_builder), the old working
+             folders (_mod_project\\work, unpacked, backups ...) - what the project grew up with.
+  INSTALLED  "Blur Map Builder.exe" copied into the player's Blur folder (PyInstaller exe, or BMB_INSTALLED=1 for a
+             test from source): everything the builder makes lives in  <game>\\Blur Map Builder\\  and is made from
+             the player's OWN game files by setup_game.py on the first start (nothing of the game is shipped).
+Both: the built packs go to <game>\\rebrn\\ and are played with "Blur REBORN.exe" (the game's own Blur.exe and
+cache\\ packs are never changed).
+"""
+import os
+import sys
+
+APP_NAME = "Blur Map Builder"
+VERSION = "1.0.0"
+GITHUB_REPO = "MdPro64/blur-map-builder"       # GitHub owner/name: updates come from its latest release
+DISCORD = "mdproii"
+
+FROZEN = bool(getattr(sys, "frozen", False))
+APP = (getattr(sys, "_MEIPASS", None) if FROZEN else None) or os.path.dirname(os.path.abspath(__file__))
+
+
+def _game_dir():
+    env = os.environ.get("BMB_GAME")
+    if env:
+        return os.path.abspath(env)
+    if FROZEN:
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(APP)                    # the checkout sits in the game folder
+
+
+GAME = _game_dir()
+INSTALLED = FROZEN or os.environ.get("BMB_INSTALLED") == "1"
+
+# the game's own files (read only)
+BLUR_EXE = os.path.join(GAME, "Blur.exe")
+CACHE = os.path.join(GAME, "cache")
+LEVELS = os.path.join(GAME, "levels")
+AMAX = os.path.join(GAME, "amax")
+PLUGINS = os.path.join(AMAX, "plugins")
+QUICKSTART_TARGET = os.path.join(PLUGINS, "quickstart", "target.lua")
+
+# ours, in the game folder
+REBORN_EXE = os.path.join(GAME, "Blur REBORN.exe")        # Blur.exe + 3 changes (pak check off, packs from rebrn\)
+TESTER_EXE = os.path.join(GAME, "Blur Map Tester.exe")
+PACK_DIR = os.path.join(GAME, "rebrn")                     # the built gamedata.pak / root.pak (Blur REBORN reads them)
+
+if INSTALLED:
+    DATA = os.path.join(GAME, APP_NAME)
+    BASE = os.path.join(DATA, "base")                      # made once from the player's game (setup_game.py)
+    UNPACKED = os.path.join(BASE, "unpacked", "gamedata")  # the few files the build reads, out of gamedata.pak
+    GAMEDATA_ORIGINAL = os.path.join(BASE, "gamedata.pak.original")
+    ROOT_ORIGINAL = os.path.join(BASE, "root.pak.original")
+    ROOT_BASE = ROOT_ORIGINAL                              # the root pack our models / minimaps are added to
+    MODEL_PAK = ROOT_ORIGINAL                              # where the game's models are read from
+    LEVEL_TEMPLATE = os.path.join(BASE, "level_template")  # showroom level with its scenery hidden
+    ADDON = os.path.join(BASE, "addon")                    # TimberStalker's BlurImportExport (downloaded)
+    CATALOG = os.path.join(BASE, "catalog.json")
+    MODEL_CACHE = os.path.join(BASE, "model_cache")
+    WORK = os.path.join(DATA, "work")
+    TRACKS = os.path.join(DATA, "maps")                    # the player's maps: world.json, pictures (never updated)
+    LOGS = os.path.join(DATA, "logs")
+else:
+    PROJ = os.path.join(GAME, "_mod_project")
+    DATA = PROJ
+    BASE = PROJ
+    UNPACKED = os.path.join(PROJ, "unpacked", "gamedata", "gamedata")
+    GAMEDATA_ORIGINAL = os.path.join(PROJ, "backups", "gamedata.pak.original")
+    ROOT_ORIGINAL = os.path.join(PROJ, "backups", "root.pak.original")
+    ROOT_BASE = ROOT_ORIGINAL
+    MODEL_PAK = ROOT_ORIGINAL
+    LEVEL_TEMPLATE = os.path.join(PROJ, "work", "flat_earth", "level_template")
+    ADDON = os.path.join(PROJ, "blender", "addon")
+    CATALOG = os.path.join(APP, "library", "catalog.json")
+    MODEL_CACHE = os.path.join(PROJ, "work", "model_cache")
+    WORK = os.path.join(PROJ, "work")
+    TRACKS = os.path.join(APP, "tracks")
+    LOGS = os.path.join(PROJ, "logs")
+
+FE_WORK = os.path.join(WORK, "flat_earth")                 # level files, per-location work folders
+GAMEDATA_OUT = os.path.join(WORK, "gamedata_track.pak")
+ROOT_OUT = os.path.join(WORK, "root_track.pak")
+WORLD_FILE = os.path.join(TRACKS, "world.json")
+
+
+def ensure_dirs():
+    for d in (WORK, FE_WORK, TRACKS, LOGS, PACK_DIR):
+        os.makedirs(d, exist_ok=True)
+
+
+def python_cmd(script, *args):
+    """the command line that runs one of our .py scripts in its own process: python, or (in the exe) the exe itself
+    with --run (bmb_main.py)"""
+    if FROZEN:
+        return [sys.executable, "--run", os.path.relpath(script, APP)] + list(args)
+    return [sys.executable, "-B", "-u", script] + list(args)

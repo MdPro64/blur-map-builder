@@ -1,0 +1,17 @@
+# your own maps / pictures / auto-save (the map builder keeps them here when run from source)
+tracks/
+my_routes/
+# made from YOUR game files on the first start (never shipped)
+library/catalog.json
+flat_earth/amax_dbg.bin
+# build / run leftovers
+__pycache__/
+*.pyc
+prof.out
+_release/
+release/stage/
+# old one-off probes with this PC's paths
+pak/probe_*.py
+pak/test_pak.py
+# exe patch experiments (the bloom patch was removed from the project)
+exe/
