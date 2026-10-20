@@ -31,8 +31,14 @@ def latest():
             rel = json.load(r)
     except (OSError, ValueError):
         return None
-    assets = {a.get("name"): a.get("browser_download_url") for a in rel.get("assets") or []}
+    # (GitHub turns spaces in asset names into dots: "Blur.Map.Builder.exe" - matched to ours either way)
+    by_key = {_key(a.get("name")): a.get("browser_download_url") for a in rel.get("assets") or []}
+    assets = {n: by_key.get(_key(n)) for n in ASSETS}
     return rel.get("tag_name"), assets, (rel.get("body") or "").strip()
+
+
+def _key(name):
+    return (name or "").lower().replace(" ", "").replace(".", "")
 
 
 def newer(info):
