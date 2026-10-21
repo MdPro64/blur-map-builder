@@ -117,5 +117,9 @@ def install(info, progress=None):
             os.replace(cur + ".new", cur)
         except OSError as ex:
             return "Could not replace %s: %s" % (name, ex)
-    subprocess.Popen([os.path.join(paths.GAME, _local_name(ASSETS[0]))], cwd=paths.GAME)
+    # the new exe must unpack ITSELF: without the reset it took over this (old) exe's temp folder (_MEI...), which
+    # this exe deletes when it closes - the update "failed" and 3D / AI path then crashed (user report 2026-10-21)
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("_PYI_", "_MEI"))}
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    subprocess.Popen([os.path.join(paths.GAME, _local_name(ASSETS[0]))], cwd=paths.GAME, env=env)
     return None
