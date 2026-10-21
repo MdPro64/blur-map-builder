@@ -30,7 +30,7 @@ EXE_PATCHES = [
     (0xA66628, b"GAME:\\cache\\gamedata.pak\0", b"GAME:\\rebrn\\gamedata.pak\0"),
     (0xA66978, b"cache/root.pak\0", b"rebrn/root.pak\0"),
 ]
-KNOWN_EXE_SHA256 = {"dba0264b7808a5e38d99c8c162ecd71ab06a48fbc424feb1b9a3bc1bff2fbf3f"}   # PC retail 1.0 (tested)
+KNOWN_EXE_SHA256 = {"dba0264b7808a5e38d99c8c162ecd71ab06a48fbc424feb1b9a3bc1bff2fbf3f"}   # Blur PC 1.2 (tested; 1.0 does not work)
 
 ADDON_URL = ("https://raw.githubusercontent.com/TimberStalker/BlurImportExport/"
              "bfe0c8e113fb0562907401af33129dcd9bee07f8/__init__.py")
@@ -68,8 +68,9 @@ def check_game(log=print):
     d = open(paths.BLUR_EXE, "rb").read()
     for off, old, new in EXE_PATCHES:
         if d[off:off + len(old)] != old:
-            raise SetupError("This Blur.exe is a version the map builder does not know yet (it may be changed "
-                             "already, or another release). Nothing was changed.\nSend %s on Discord the file "
+            raise SetupError("This Blur.exe is not a version the map builder knows. The map builder needs Blur "
+                             "version 1.2 (Blur 1.0 does not work - update the game to 1.2). Nothing was changed.\n"
+                             "Already on 1.2? Send %s on Discord the file "
                              "%s" % (paths.DISCORD, os.path.join(paths.LOGS, "setup.log")))
     if not os.path.isdir(paths.AMAX):
         log("NOTE: Amax was not found (amax\\). The map tester's quick race needs Amax; everything else works.")

@@ -1,5 +1,7 @@
 # Blur Map Builder — by MDPRO
 
+> **Needs Blur PC version 1.2.** Blur 1.0 is not supported.
+
 Make your own tracks for **Blur** (Bizarre Creations, 2010, PC): draw the road, add branches, lane splits, bridges,
 power-ups, surfaces (dirt, water...), scenery and lighting — then race them in the game with **Blur REBORN**.
 
@@ -24,7 +26,7 @@ Your original `Blur.exe` and the game's own files are **never changed** — norm
    once; an internet connection is needed once for the model reader).
 4. Draw a map → **Build + install** → **Play** (or start **Blur Map Tester.exe**).
 
-* Needs: Blur for PC (retail / Steam), Windows 10/11. Amax (the Blur online mod) is needed for the quick-test LAN
+* Needs: **Blur for PC version 1.2** (retail / Steam) — it does **not** work with Blur 1.0; Windows 10/11. Amax (the Blur online mod) is needed for the quick-test LAN
   race (Map Tester); everything else works without it.
 * Windows SmartScreen may warn about a new program: *More info → Run anyway*.
 * Updates: the map builder checks this page when it starts and offers new versions. Your maps are kept
