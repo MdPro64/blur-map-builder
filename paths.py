@@ -14,7 +14,7 @@ import os
 import sys
 
 APP_NAME = "Blur Map Builder"
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 GITHUB_REPO = "MdPro64/blur-map-builder"       # GitHub owner/name: updates come from its latest release
 DISCORD = "mdproii"
 

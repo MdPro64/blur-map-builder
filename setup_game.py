@@ -224,6 +224,19 @@ def needed():
                                                paths.CATALOG, paths.REBORN_EXE))
 
 
+def game_info():
+    """for setup.log: which Blur.exe this is (a player's log said only "== Checking the game" - the reason of a
+    failed check went to the error window only, user 2026-10-21)"""
+    try:
+        d = open(paths.BLUR_EXE, "rb").read()
+    except OSError as ex:
+        return "Blur.exe: not readable (%s)" % ex
+    spots = "".join("1" if d[off:off + len(old)] == old else "0" for off, old, _ in EXE_PATCHES)
+    return "Blur.exe: %d bytes, sha256 %s, known: %s, patch spots %s" % (
+        len(d), hashlib.sha256(d).hexdigest(), "yes" if hashlib.sha256(d).hexdigest() in KNOWN_EXE_SHA256 else "no",
+        spots)
+
+
 def run_all(log=print, progress=None):
     paths.ensure_dirs()
     with open(os.path.join(paths.LOGS, "setup.log"), "a", encoding="utf-8") as f:
@@ -231,11 +244,22 @@ def run_all(log=print, progress=None):
             f.write(msg + "\n")
             f.flush()
             log(msg)
+        import time
+        f.write("\n######## %s  %s %s  in %s\n%s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), paths.APP_NAME,
+                                                        paths.VERSION, paths.GAME, game_info()))
         for k, (label, fn) in enumerate(STEPS):
             if progress:
                 progress(k, len(STEPS), label)
             both("== " + label)
-            fn(both)
+            try:
+                fn(both)
+            except SetupError as ex:
+                f.write("STOPPED: %s\n" % ex)
+                raise
+            except Exception:                    # noqa: BLE001 - written down, then reported as before
+                import traceback
+                f.write("FAILED:\n" + traceback.format_exc())
+                raise
         if progress:
             progress(len(STEPS), len(STEPS), "Ready")
 
