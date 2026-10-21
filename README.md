@@ -34,6 +34,12 @@ Your original `Blur.exe` and the game's own files are **never changed** — norm
 * Something went wrong? The map builder saves a report in `Blur Map Builder\logs` — send it to **mdproii** on
   Discord.
 
+## Guide
+
+**[How to use it — every button explained](docs/GUIDE.md)** (pictures of every tab).
+
+[![The top bar and tools](docs/guide/01_top_bar_and_tools.png)](docs/GUIDE.md)
+
 ## For developers
 
 The whole map builder is plain Python — read it, change it, build your own.
