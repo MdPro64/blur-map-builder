@@ -2225,8 +2225,7 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
     def _build(self):
         ok, msg = False, ""
         try:
-            running = "blur" in subprocess.run(["tasklist"], capture_output=True, text=True).stdout.lower()
-            if running:
+            if paths.game_running():
                 self._log("Blur is running: the level files can't be replaced. Close Blur and build again.")
                 raise RuntimeError("close Blur first")
             t0 = time.time()
@@ -2322,7 +2321,7 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
             return False
 
     def start_game(self, lan):
-        if "blur" in subprocess.run(["tasklist"], capture_output=True, text=True).stdout.lower():
+        if paths.game_running():
             messagebox.showinfo("Blur is running", "Blur is already running - close it first, then press Play again.")
             return
         if not os.path.exists(paths.REBORN_EXE):
@@ -2343,11 +2342,7 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
         """the custom LAN race is ONE launch only: when the game that was started for it CLOSES, the target goes
         back to off - Blur started any other way starts normally. (A timer was too early: the plugin reads the
         target after the intro / login, which can take minutes.) The designer also turns it off when it opens."""
-        try:
-            running = "blur" in subprocess.run(["tasklist"], capture_output=True, text=True,
-                                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout.lower()
-        except OSError:
-            running = False
+        running = paths.game_running()
         if running and seen is None:
             seen = time.time()
         if (seen is not None and not running) or (seen is None and waited > 600):

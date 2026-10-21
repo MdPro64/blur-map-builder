@@ -30,12 +30,7 @@ def set_enabled(on):
 
 
 def running():
-    try:
-        out = subprocess.run(["tasklist"], capture_output=True, text=True,
-                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout.lower()
-    except OSError:
-        return False
-    return "blur" in out
+    return paths.game_running()
 
 
 def main():

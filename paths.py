@@ -14,7 +14,7 @@ import os
 import sys
 
 APP_NAME = "Blur Map Builder"
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 GITHUB_REPO = "MdPro64/blur-map-builder"       # GitHub owner/name: updates come from its latest release
 DISCORD = "mdproii"
 
@@ -83,6 +83,19 @@ FE_WORK = os.path.join(WORK, "flat_earth")                 # level files, per-lo
 GAMEDATA_OUT = os.path.join(WORK, "gamedata_track.pak")
 ROOT_OUT = os.path.join(WORK, "root_track.pak")
 WORLD_FILE = os.path.join(TRACKS, "world.json")
+
+
+def game_running():
+    """True while the GAME runs (Blur.exe / Blur REBORN.exe). Not a plain "blur" match: that also hit
+    Blur.Map.Builder.exe / Blur.Map.Tester.exe themselves and every build said "close Blur first" (user 2026-10-21)"""
+    import subprocess
+    try:
+        out = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+    except OSError:
+        return False
+    names = {ln.split('","')[0].strip('"').lower() for ln in out.splitlines() if ln.strip()}
+    return bool(names & {"blur.exe", os.path.basename(REBORN_EXE).lower()})
 
 
 def ensure_dirs():

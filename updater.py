@@ -41,6 +41,18 @@ def _key(name):
     return (name or "").lower().replace(" ", "").replace(".", "")
 
 
+def _local_name(name):
+    """the name this program has in the player's game folder: the download keeps GitHub's dotted name
+    ("Blur.Map.Builder.exe") unless the player renamed it - update THAT file, not a second copy next to it"""
+    try:
+        for f in os.listdir(paths.GAME):
+            if f.lower().endswith(".exe") and _key(f) == _key(name):
+                return f
+    except OSError:
+        pass
+    return name
+
+
 def newer(info):
     return info is not None and _version(info[0]) > _version(paths.VERSION)
 
@@ -57,7 +69,7 @@ def check_async(callback):
 def cleanup_old():
     """remove the .old files a previous update left (they could not be deleted while running)"""
     for name in ASSETS:
-        old = os.path.join(paths.GAME, name + ".old")
+        old = os.path.join(paths.GAME, _local_name(name) + ".old")
         try:
             if os.path.exists(old):
                 os.remove(old)
@@ -71,7 +83,7 @@ def install(info, progress=None):
     if not paths.FROZEN:
         return "Updates install into the exe version only (this is the source version: git pull instead)."
     _, assets, _ = info
-    todo = [(n, assets[n]) for n in ASSETS if assets.get(n)]
+    todo = [(_local_name(n), assets[n]) for n in ASSETS if assets.get(n)]
     if not todo:
         return "The release has no program files."
     new_files = []
@@ -105,5 +117,5 @@ def install(info, progress=None):
             os.replace(cur + ".new", cur)
         except OSError as ex:
             return "Could not replace %s: %s" % (name, ex)
-    subprocess.Popen([os.path.join(paths.GAME, ASSETS[0])], cwd=paths.GAME)
+    subprocess.Popen([os.path.join(paths.GAME, _local_name(ASSETS[0]))], cwd=paths.GAME)
     return None
