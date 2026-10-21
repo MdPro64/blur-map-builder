@@ -266,6 +266,7 @@ def build(out_path, start_line, finish_line, forward_angle, ground_y, road_middl
                            forward_angle, ground_y, (fx, fz))) for u in GRID_LISTS]
     a = forward_angle
     road_axis = (math.cos(a), 0.0, -math.sin(a), 0.0, 1.0, 0.0, math.sin(a), 0.0, math.cos(a))
+    spots = spots or [(sx, ground_y - PARK_BELOW, sz)]         # 0 power-ups: all parked under the floor
     edits += [(u, place_pickups(spots, road_axis)) for u in PICKUP_LISTS]
     if tiles:
         edits.append((TILE_LIST, place_tiles(tiles, tile_def_uid)))
@@ -398,11 +399,14 @@ def build_location(out_path, maps):
         edit(o["grid_sp"], grid)
         edit(o["grid_mp"], grid)
         road_axis = (math.cos(a), 0.0, -math.sin(a), 0.0, 1.0, 0.0, math.sin(a), 0.0, math.cos(a))
-        edit(o["pick_sp"], place_pickups(m["pickup_spots"], road_axis))
-        edit(o["pick_mp"], place_pickups(m["pickup_spots"], road_axis))
-        edit(o["tiles"], place_tiles(m["tiles"], m["tile_def_uid"]))
-        edit(o["lamps"], place_lamps(m["lamps"]))
-        edit(o["audio"], place_audio(m["audio"]))
+        # an EMPTY list (a short road with 0 power-ups, street lamps off ...) crashed the placers (spots[-1]:
+        # IndexError, user 2026-10-21): then every actor of it is parked under the floor at the start line
+        park = [(sl[0], sl[1] - PARK_BELOW, sl[2], 0.0)]
+        edit(o["pick_sp"], place_pickups(m["pickup_spots"] or park, road_axis))
+        edit(o["pick_mp"], place_pickups(m["pickup_spots"] or park, road_axis))
+        edit(o["tiles"], place_tiles(m["tiles"] or park, m["tile_def_uid"]))
+        edit(o["lamps"], place_lamps(m["lamps"] or park))
+        edit(o["audio"], place_audio(m["audio"] or park))
     open(out_path, "wb").write(data)
     for f in (tmp + "a", tmp + "b"):
         if os.path.exists(f):

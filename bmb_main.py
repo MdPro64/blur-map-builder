@@ -16,13 +16,40 @@ sys.path.insert(0, HERE)
 import paths  # noqa: E402
 
 
+def _std_streams():
+    """the exe is a WINDOW program: its sys.stdout / stderr are None, so a script run with --run printed nothing -
+    the build window stayed empty and logs\last_build.txt was missing (user 2026-10-21). Use the pipe the map
+    builder gave this process instead (line by line, so the build window shows each step at once)."""
+    import ctypes
+    import msvcrt
+    for name, std in (("stdout", -11), ("stderr", -12)):
+        if getattr(sys, name) is not None:
+            continue
+        h = ctypes.windll.kernel32.GetStdHandle(std)
+        if h in (0, -1, None):
+            continue
+        try:
+            fd = msvcrt.open_osfhandle(h, os.O_WRONLY)
+            setattr(sys, name, open(fd, "w", buffering=1, encoding="utf-8", errors="replace"))
+        except OSError:
+            pass
+
+
 def run_script():
+    _std_streams()
     rel = sys.argv[2]
     script = os.path.join(paths.APP, rel)
     sys.argv = [script] + sys.argv[3:]
     sys.path[:0] = [os.path.dirname(script)]
     os.chdir(os.path.dirname(script))
-    runpy.run_path(script, run_name="__main__")
+    try:
+        runpy.run_path(script, run_name="__main__")
+    except SystemExit:
+        raise
+    except BaseException:                   # into the build window / log - not a Windows "unhandled exception" box
+        traceback.print_exc()
+        sys.stderr.flush()
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------------------------------------- crash reports
@@ -142,6 +169,7 @@ def main():
     rd = runpy.run_path(os.path.join(HERE, "road_designer.py"), run_name="road_designer")
     root = tk.Tk()
     root.withdraw()
+    paths.set_app_icon(root)
 
     def tk_error(exc, val, tb):
         show_crash(root, crash_report(exc, val, tb, "designer"))

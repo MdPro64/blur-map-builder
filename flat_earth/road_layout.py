@@ -25,7 +25,8 @@ PICKUP_STEP_DEFAULT, PICKUP_PER_ROW_DEFAULT = 150.0, 5
 SCENERY = (("ships", "Ships (horizon)"), ("cranes", "Cranes"), ("landmarks", "Ferris wheel + radio mast"),
            ("lamps", "Street lamps"), ("billboards", "Billboards"), ("chevrons", "Arrow boards on bends"),
            ("signs", "Start / finish lights"), ("buildings", "Tall buildings"), ("arch", "Start / finish arch"))
-# a NEW map starts with only these on (user 2026-10-20); older maps without "scenery" keep everything on
+# the default for every map without its own switches (user 2026-10-20 / 21: before, a map without "scenery" -
+# e.g. a new player's first map - had everything on)
 NEW_MAP_SCENERY = {"ships": False, "cranes": False, "landmarks": False, "lamps": True, "billboards": False,
                    "chevrons": True, "signs": True, "buildings": False, "arch": True}
 
@@ -41,8 +42,8 @@ def row_size(m, it=None):
 
 
 def scenery_on(m, key):
-    """the map's switch for an automatic scenery kind (all on unless the user turned it off)"""
-    return bool(((m or {}).get("scenery") or {}).get(key, True))
+    """the map's switch for an automatic scenery kind (NEW_MAP_SCENERY unless the user set it)"""
+    return bool(((m or {}).get("scenery") or {}).get(key, NEW_MAP_SCENERY.get(key, True)))
 ELEVATED = 0.5                       # a road part higher than this (m) counts as bridge / ramp
 
 

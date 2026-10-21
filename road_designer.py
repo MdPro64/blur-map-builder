@@ -2308,7 +2308,9 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
                 % (time.strftime("%Y-%m-%d %H:%M"), "true" if on else "false",
                    lua_list([loc["name"], loc.get("city_name")]), lua_list([m["name"], m.get("route_name")]),
                    signed32(loc.get("city_uid", 0)), signed32(m.get("route_uid", 0)),
-                   "%d" % m["laps"] if m.get("laps") else "nil"))
+                   "%d" % (m.get("laps") or 1)))
+        # (a sprint = 1 lap: with nil the LAN race kept its default 3 laps - the finish counted as a lap line, lap
+        # 1 -> 2 of 3, and the race never ended (user 2026-10-21). The custom race screen sets 1 for a sprint too.)
         # the game's custom race lists use the uids as SIGNED 32-bit ids (our FFFFFF20 = -224): small numbers.
         # (the unsigned uids ~4.29e9 crashed the game's Lua at start - lua5.1.dll trap)
         try:
@@ -2436,6 +2438,7 @@ def show_splash(root):
 if __name__ == "__main__":
     root = tk.Tk()
     root.withdraw()
+    paths.set_app_icon(root)
     splash_done = show_splash(root)
     root.geometry("1500x880")
     designer = Designer(root)

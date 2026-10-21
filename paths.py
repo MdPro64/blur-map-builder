@@ -14,7 +14,7 @@ import os
 import sys
 
 APP_NAME = "Blur Map Builder"
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 GITHUB_REPO = "MdPro64/blur-map-builder"       # GitHub owner/name: updates come from its latest release
 DISCORD = "mdproii"
 
@@ -83,6 +83,22 @@ FE_WORK = os.path.join(WORK, "flat_earth")                 # level files, per-lo
 GAMEDATA_OUT = os.path.join(WORK, "gamedata_track.pak")
 ROOT_OUT = os.path.join(WORK, "root_track.pak")
 WORLD_FILE = os.path.join(TRACKS, "world.json")
+
+
+def set_app_icon(root):
+    """the MDPRO logo on every window of this program (title bar + taskbar), not Tk's feather. The exe carries it
+    (release/icon.ico via --icon); from source the .ico itself"""
+    ico = sys.executable if FROZEN else os.path.join(os.path.dirname(os.path.abspath(__file__)), "release", "icon.ico")
+    try:
+        # its own taskbar group (else a source run shows python's icon there)
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("MDPRO." + APP_NAME.replace(" ", ""))
+    except (AttributeError, OSError):
+        pass
+    try:
+        root.iconbitmap(default=ico)          # default= : every Toplevel / dialog of this program too
+    except Exception:                         # noqa: BLE001 - only looks
+        pass
 
 
 def game_running():

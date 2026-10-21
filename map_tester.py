@@ -36,6 +36,7 @@ def running():
 def main():
     root = tk.Tk()
     root.withdraw()
+    paths.set_app_icon(root)
     if not os.path.exists(paths.REBORN_EXE) or not os.path.exists(os.path.join(paths.PACK_DIR, "root.pak")):
         messagebox.showinfo("Blur Map Tester", "Open the Blur Map Builder first and press Build + install once: the "
                             "tester plays the map you built.")
