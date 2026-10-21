@@ -34,6 +34,20 @@ Your original `Blur.exe` and the game's own files are **never changed** — norm
 * Something went wrong? The map builder saves a report in `Blur Map Builder\logs` — send it to **mdproii** on
   Discord.
 
+## Problems?
+
+**The first start stops at "Checking the game" ("not a version the map builder knows")**
+
+Your `Blur.exe` is not the plain **version 1.2** exe. Two kinds seen so far:
+
+| Your Blur.exe | Why it fails | What to do |
+|---|---|---|
+| The old **1.0** disc exe (about 21 MB, has SecuROM copy protection) | Different game code, and SecuROM refuses to start if the exe is changed at all | Update the game to **1.2** |
+| A **modified / cracked** exe (e.g. about 29 MB, says 1.2.0.3) | The file is rebuilt, so the places the map builder changes are not where they should be | Use the plain 1.2 `Blur.exe` |
+
+Still stuck? Send `Blur Map Builder\logs\setup.log` to **mdproii** on Discord — it says which Blur.exe you have
+and why the setup stopped (map builder 1.0.3 or newer).
+
 ## Guide
 
 **[How to use it — every button explained](docs/GUIDE.md)** (pictures of every tab).
