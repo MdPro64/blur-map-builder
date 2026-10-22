@@ -132,7 +132,13 @@ def tile_spots(fe, road, info, m, keys=False):
         L, _, W = fe.CONTAINER
         spots.append((cx + sx * L / 2 + fx * W / 2, fe.GROUND_Y, cz + sz * L / 2 + fz * W / 2, fe.BLOCK_DEF_UID, a + math.pi))
     kinds = [tile_kind(fe, t[3]) for t in spots]
-    placed = placed_spots(fe, m)[0][:max(0, 144 - len(spots))]   # the user's library objects (no room: left out)
+    placed, groups = [], {}                        # the user's library objects: whole objects while there is room
+    for sp, key in placed_spots(fe, m)[0]:
+        groups.setdefault(key, []).append((sp, key))
+    for g in groups.values():                      # (an imported model is several pieces: all of it or none)
+        if len(spots) + len(placed) + len(g) > 144:
+            break
+        placed += g
     spots += [sp for sp, key in placed]
     kinds += [key for sp, key in placed]
     for s, lat in (chevron_panels(road, room=144 - len(spots) - BIG_MIN, m=m) if scenery_on(m, "chevrons") else []):
@@ -462,19 +468,29 @@ CATALOG = paths.CATALOG
 SCENERY_DEF_BASE = 0xF1B00000      # DynamicObjDefs the build makes for scenery models: this + 20 bits of a hash
 LAMP_PLACED_MAX = 340              # the lamp list keeps a few places for the start / finish signs
 KIND_TEXT = {"scenery": "look only - tick Solid to make it a wall", "breakable": "breaks / falls when hit",
-             "movable": "cars push it around", "animated": "animated object"}
+             "movable": "cars push it around", "animated": "animated object",
+             "import": "your own model (.glb) - look only, tick Solid to make it a box wall"}
 _catalog = None
 
 
 def catalog():
-    """{id: entry} of library/catalog.json (made by library/make_catalog.py); {} if it is missing"""
+    """{id: entry} of library/catalog.json (made by library/make_catalog.py; {} if it is missing) + the player's
+    imported models (model_import.py)"""
     global _catalog
     if _catalog is None:
         try:
             _catalog = {e["id"]: e for e in json.load(open(CATALOG))["objects"]}
         except (OSError, ValueError):
             _catalog = {}
+        import model_import
+        _catalog.update((e["id"], e) for e in model_import.entries())
     return _catalog
+
+
+def reload_catalog():
+    """after an import: read the imported models again"""
+    global _catalog
+    _catalog = None
 
 
 def scenery_def_uid(model_uid):
@@ -494,6 +510,10 @@ def placed_spots(fe, m):
         key = "obj:%d" % i
         if e["kind"] == "breakable":
             lamps.append(((x, y, z, a, int(e["uid"], 16)), key))
+        elif e["kind"] == "import":                 # one actor per model piece, all at the object's place
+            import model_import
+            for k in range(e["pieces"]):
+                tiles.append(((x, y, z, model_import.uids(e["slot"], k)[1], a), key))
         else:
             uid = scenery_def_uid(e["uid"]) if e["kind"] == "scenery" else int(e["uid"], 16)
             tiles.append(((x, y, z, uid, a), key))
@@ -547,10 +567,12 @@ def solid_boxes(fe, road, info, m):
         return []
     out = []
     lists = (tile_spots(fe, road, info, m, keys=True) + (4, 6), lamp_spots(fe, road, info, m, keys=True) + (3, None))
+    seen = set()
     for spots, keys, ti, si in lists:
         for sp, key in zip(spots, keys):
-            if not (edits.get(key) or {}).get("solid"):
+            if not (edits.get(key) or {}).get("solid") or key in seen:
                 continue
+            seen.add(key)                          # (an imported model: several pieces, one box)
             box = object_box(m, key)
             if box is None:
                 continue

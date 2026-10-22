@@ -60,10 +60,16 @@ def play_sound(ok):
 
 
 def center_on_screen(win):
-    """put a window in the middle of the screen"""
+    """put a window in the middle of the map builder (of the screen while the map builder is not shown yet)"""
     win.update_idletasks()
     w, h = win.winfo_reqwidth(), win.winfo_reqheight()
-    win.geometry("+%d+%d" % (max(0, (win.winfo_screenwidth() - w) // 2), max(0, (win.winfo_screenheight() - h) // 2)))
+    owner = win.master.winfo_toplevel() if win.master is not None else None
+    if owner is not None and owner is not win and owner.winfo_viewable():
+        x = owner.winfo_rootx() + (owner.winfo_width() - w) // 2
+        y = owner.winfo_rooty() + (owner.winfo_height() - h) // 2
+    else:
+        x, y = (win.winfo_screenwidth() - w) // 2, (win.winfo_screenheight() - h) // 2
+    win.geometry("+%d+%d" % (max(0, x), max(0, y)))
 
 
 def bring_to_front(win):
@@ -299,6 +305,12 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
                   activebackground="#45b8f0", font=("Segoe UI Symbol", 10, "bold"), padx=10).pack(side="right", padx=2, pady=4)
         tk.Button(bar, text=ICON["save"] + " Save (Ctrl+S)", command=self.save, bg=BTN, fg=FG, relief="flat",
                   activebackground=BTN_HI, font=UI_FONT, padx=8).pack(side="right", padx=2, pady=4)
+        self.update_info = None
+        self.update_btn = tk.Button(bar, text="⟳ Check for updates", command=self.check_updates, bg=BTN, fg=FG,
+                                    relief="flat", activebackground=BTN_HI, font=UI_FONT, padx=8)
+        self.update_btn.pack(side="right", padx=2, pady=4)
+        tk.Button(bar, text="⚙", command=self.update_source, bg=BTN, fg=FG, relief="flat", activebackground=BTN_HI,
+                  font=UI_FONT, padx=4).pack(side="right", padx=(2, 0), pady=4)
         self.view_mode = tk.StringVar(value="2d")
         for val, txt in (("2d", "\u25A6 2D map"), ("3d", "\u25B2 3D"), ("collision", "\u26A0 Collision"),
                          ("ai", "\u27BF AI path"), ("light", "\u2600 Lighting"), ("surface", "\u25A9 Surface")):
@@ -2081,6 +2093,55 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
             pass
         self.say("Saved %s" % os.path.normpath(world_mod.WORLD_FILE), "#58d06a")
 
+    def check_updates(self, auto=False):
+        """the button next to Save (and the check at start, auto=True): light green = this is the newest version;
+        a newer one opens the update window (update_window.py)"""
+        import updater
+        if self.update_info:                          # already known: open the window again
+            return self.show_update()
+        self.update_btn.config(text="⟳ Checking...", bg=BTN, fg=FG)
+
+        def done(info):
+            if not self.update_btn.winfo_exists():
+                return
+            if info is None:
+                self.update_btn.config(text="⚠ No connection - check again", bg=BTN, fg=FG)
+                if not auto:
+                    self.say("Could not reach GitHub - check your internet connection and try again", "#ffd23b")
+            elif updater.newer(info):
+                self.update_info = info
+                self.update_btn.config(text="⬇ Update %s" % info[0], bg=ACCENT, fg="white")
+                self.show_update()
+            else:
+                self.update_btn.config(text="✔ Up to date (%s)" % paths.VERSION, bg="#7ee08a", fg="#0a0f18")
+                if not auto:
+                    self.say("You have the newest version (%s)" % paths.VERSION, "#58d06a")
+        box = []                                      # (tk calls only from this thread: the worker just fills the box)
+        threading.Thread(target=lambda: box.append(updater.latest()), daemon=True).start()
+
+        def wait():
+            if box:
+                done(box[0])
+            else:
+                self.root.after(150, wait)
+        wait()
+
+    def update_source(self):
+        """the gear next to Check for updates: which GitHub page updates come from"""
+        import update_window
+
+        def saved():
+            self.update_info = None
+            self.say("Updates now come from github.com/%s" % __import__("updater").repo(), "#58d06a")
+            self.check_updates()
+        update_window.source_window(self.root, saved)
+
+    def show_update(self):
+        import update_window
+        if getattr(self, "_update_win", None) and self._update_win.win.winfo_exists():
+            return self._update_win.win.lift()
+        self._update_win = update_window.UpdateWindow(self.root, self.update_info)
+
     def help(self):
         top = tk.Toplevel(self.root)
         top.title("Keys / About")
@@ -2090,6 +2151,7 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
                  font=("Segoe UI", 9)).pack(padx=12, pady=(0, 8), anchor="w")
         tk.Button(top, text="Close", command=top.destroy).pack(pady=(0, 10))
         top.bind("<Escape>", lambda e: top.destroy())
+        center_on_screen(top)
 
     def build(self):
         if self.building:
@@ -2146,6 +2208,7 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
             self.build_expected = max(10.0, float(open(BUILD_TIME_FILE).read()))
         except (OSError, ValueError):
             self.build_expected = 60.0
+        center_on_screen(self.log_win)
         self._progress_tick()
         threading.Thread(target=self._build, daemon=True).start()
 

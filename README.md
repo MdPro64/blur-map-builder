@@ -3,7 +3,7 @@
 > **Needs Blur PC version 1.2.** Blur 1.0 is not supported.
 
 Make your own tracks for **Blur** (Bizarre Creations, 2010, PC): draw the road, add branches, lane splits, bridges,
-power-ups, surfaces (dirt, water...), scenery and lighting — then race them in the game with **Blur REBORN**.
+power-ups, surfaces (dirt, water...), scenery, your own 3D models (.glb) and lighting — then race them in the game with **Blur REBORN**.
 
 ![Blur Map Builder](release/icon.ico)
 

@@ -41,7 +41,8 @@ SUN_X, SUN_Y, SUN_Z = (float(v) for v in SUN)
 MIN_RADIUS = 35.0          # as the designer's checks (road_designer.MIN_RADIUS)
 MAX_GRADE = 0.12           # steeper than 12 % = a problem beacon
 
-KIND_RGB = {"scenery": (.6, .66, .75), "breakable": (1, .72, .3), "movable": (.35, .8, 1), "animated": (.8, .5, 1)}
+KIND_RGB = {"scenery": (.6, .66, .75), "breakable": (1, .72, .3), "movable": (.35, .8, 1), "animated": (.8, .5, 1),
+            "import": (.35, .95, .55)}
 TYPE_RGB = {"Shunt": (1, .25, .25), "Barge": (1, .62, .1), "Shock": (.23, .63, 1), "Mine": (1, .88, .29),
             "Bolt": (.69, .44, 1), "Nitro": (.25, .88, 1), "Shield": (.25, 1, .44), "Repair": (1, 1, 1)}
 
@@ -210,17 +211,36 @@ def build_scene(m):
                       "rot": tuple(rot)})
 
     placed_n = [0]
+    drawn = set()
 
     def placed_box(key, pos, turn, k, rot, scalable):
-        """a library object: its model's box (colour = what it does), selectable"""
+        """a library object: its model's box (colour = what it does), selectable; an imported model: its own
+        triangles (coloured from its texture)"""
         e = road_layout.catalog().get(m["objects"][int(key[4:])].get("id"), {})
         bx = road_layout.object_box(m, key)
-        if bx is None:
+        if bx is None or key in drawn:                   # (an imported model: one spot per model piece)
             return
+        drawn.add(key)
         x0_, x1_, y0_, y1_, z0_, z1_ = bx
         M.cur_rot = tuple(rot)
-        M.box(pos, (x1_ - x0_, max(y1_ - y0_, .05), z1_ - z0_), turn, KIND_RGB.get(e.get("kind"), (.7, .7, .7)),
-              lift=y0_, origin=(x0_, x1_, z0_, z1_), k=k)
+        tris = []
+        if e.get("kind") == "import":
+            import model_import
+            tris = model_import.preview(e["model"])
+        if tris:
+            A = actor_axes(turn, *rot)
+            kx, ky, kz = kvec(k)
+            px, py, pz = pos
+
+            def w(p_):
+                lx, ly, lz = p_[0] * kx, p_[1] * ky, p_[2] * kz
+                return (px + lx * A[0][0] + ly * A[1][0] + lz * A[2][0], py + lx * A[0][1] + ly * A[1][1] +
+                        lz * A[2][1], pz + lx * A[0][2] + ly * A[1][2] + lz * A[2][2])
+            for a_, b_, c_, col in tris:
+                M.tri(w(a_), w(b_), w(c_), col)
+        else:
+            M.box(pos, (x1_ - x0_, max(y1_ - y0_, .05), z1_ - z0_), turn, KIND_RGB.get(e.get("kind"), (.7, .7, .7)),
+                  lift=y0_, origin=(x0_, x1_, z0_, z1_), k=k)
         M.cur_rot = (0.0, 0.0)
         solid = ((m.get("edits") or {}).get(key) or {}).get("solid")
         pick(key, pos, turn, bx, k, scalable=scalable, rot=rot,
@@ -1456,7 +1476,7 @@ class View3D(tk.Frame):
 
     # ---- the object library: every object of the game (library/catalog.json), by kind > place > category. Pick one,
     #      then click in the view to place it (again and again); Esc / right-click = stop placing
-    KIND_TITLES = (("scenery", "Scenery - look only (tick Solid = wall)"), ("breakable", "Breakable - smash / knock over"),
+    KIND_TITLES = (("import", "Your models (imported .glb)"), ("scenery", "Scenery - look only (tick Solid = wall)"), ("breakable", "Breakable - smash / knock over"),
                    ("movable", "Moves when hit (physics)"), ("animated", "Animated"))
 
     def _build_library(self, parent, bg, fg):
@@ -1465,6 +1485,8 @@ class View3D(tk.Frame):
         f.pack_propagate(False)
         tk.Label(f, text="OBJECT LIBRARY", bg=bg, fg="#8fb6e0", font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=6,
                                                                                                 pady=(6, 0))
+        tk.Button(f, text="⬆ Import 3D model (.glb)...", command=self._import_model, bg="#1e9bff", fg="white",
+                  font=("Segoe UI Symbol", 9, "bold")).pack(fill="x", padx=6, pady=(4, 6))
         tk.Label(f, text="Search:", bg=bg, fg=fg).pack(anchor="w", padx=6)
         self.lib_search = tk.StringVar()
         tk.Entry(f, textvariable=self.lib_search, bg="#1a1e24", fg=fg, insertbackground=fg,
@@ -1498,6 +1520,100 @@ class View3D(tk.Frame):
                  fg="#6f7c8a", wraplength=285, justify="left", font=("Segoe UI", 8)).pack(fill="x", padx=6, pady=(0, 6))
         self._fill_library()
         return f
+
+    def _import_model(self):
+        """pick a .glb -> the check window (size, texture, warnings) -> it joins "Your models" and is placed"""
+        from tkinter import filedialog, messagebox
+        import model_import
+        top = self.lib_tree.winfo_toplevel()
+        path = filedialog.askopenfilename(parent=top, title="Import a 3D model",
+                                          filetypes=[("glTF Binary (.glb)", "*.glb"), ("All files", "*.*")])
+        if not path:
+            return
+        top.config(cursor="watch")
+        top.update()
+        try:
+            info = model_import.analyse(path)
+        except model_import.ImportError_ as ex:
+            messagebox.showerror("Import 3D model", str(ex), parent=top)
+            return
+        except Exception as ex:                       # noqa: BLE001 - a file we could not read
+            messagebox.showerror("Import 3D model", "Could not read this file:\n%s" % ex, parent=top)
+            return
+        finally:
+            top.config(cursor="")
+        if not self._import_window(top, path, info):
+            return
+        try:
+            cid = model_import.add(path, info)
+        except (model_import.ImportError_, OSError) as ex:
+            messagebox.showerror("Import 3D model", str(ex), parent=top)
+            return
+        road_layout.reload_catalog()
+        self.lib_search.set("")
+        self._fill_library()
+        try:
+            self.lib_tree.see(cid)
+            self.lib_tree.selection_set(cid)           # -> _lib_select: click in the view to place it
+        except tk.TclError:
+            pass
+
+    def _import_window(self, top, path, info):
+        """the check: what the model is + the notes (green ok / blue info / yellow warning / red refused);
+        True = import it"""
+        import blur_theme as T
+        import model_import
+        colours = {"ok": "#58d06a", "info": T.HEAD, "warn": "#ffd23b", "stop": "#ff6b6b"}
+        marks = {"ok": "✔", "info": "ℹ", "warn": "⚠", "stop": "✖"}
+        w = tk.Toplevel(top)
+        w.title("Import 3D model")
+        w.configure(bg=T.BG)
+        w.resizable(False, False)
+        w.transient(top)
+        head = tk.Frame(w, bg=T.PANEL)
+        head.pack(fill="x")
+        tk.Label(head, text="IMPORT 3D MODEL", bg=T.PANEL, fg=T.HEAD, font=("Segoe UI", 9, "bold")).pack(
+            anchor="w", padx=16, pady=(10, 0))
+        tk.Label(head, text=info["name"], bg=T.PANEL, fg=T.TEXT, font=("Segoe UI", 15, "bold")).pack(
+            anchor="w", padx=16)
+        sx, sy, sz = info["size"]
+        tex = ", ".join("%d x %d" % t for t in info["textures"]) or "none"
+        tk.Label(head, text="%d triangles   ·   %.1f x %.1f x %.1f m (wide x long x high)   ·   %d material(s)"
+                            "   ·   texture %s" % (info["tris"], sx, sz, sy, info["materials"], tex),
+                 bg=T.PANEL, fg=T.MUTED, font=("Segoe UI", 9)).pack(anchor="w", padx=16, pady=(0, 10))
+        tk.Frame(w, bg=T.ORANGE, height=2).pack(fill="x")
+        body = tk.Frame(w, bg=T.BG)
+        body.pack(fill="x", padx=16, pady=10)
+        for level, text in info["notes"]:
+            row = tk.Frame(body, bg=T.BG)
+            row.pack(fill="x", pady=2)
+            tk.Label(row, text=marks[level], bg=T.BG, fg=colours[level], font=("Segoe UI Symbol", 10, "bold"),
+                     width=2, anchor="n").pack(side="left", anchor="n")
+            tk.Label(row, text=text, bg=T.BG, fg=T.TEXT if level != "stop" else colours[level], wraplength=470,
+                     justify="left", font=("Segoe UI", 9)).pack(side="left", anchor="w")
+        stop = model_import.blocked(info)
+        if not stop:
+            tk.Label(w, text="It joins the object library under \"Your models\" (kept with your maps). Then click in "
+                             "the view to place it; G / R / S move, turn, scale it.", bg=T.BG, fg=T.MUTED,
+                     wraplength=500, justify="left", font=("Segoe UI", 8)).pack(anchor="w", padx=16)
+        foot = tk.Frame(w, bg=T.BG)
+        foot.pack(fill="x", padx=16, pady=(8, 14))
+        res = {"ok": False}
+
+        def done(ok):
+            res["ok"] = ok
+            w.destroy()
+        tk.Button(foot, text="Cancel" if not stop else "Close", command=lambda: done(False), bg=T.GLASS,
+                  fg=T.TEXT, font=("Segoe UI", 10)).pack(side="right")
+        if not stop:
+            tk.Button(foot, text="⬆ Import + place", command=lambda: done(True), bg=T.ORANGE, fg="white",
+                      font=("Segoe UI Symbol", 10, "bold")).pack(side="right", padx=(0, 8))
+        w.update_idletasks()
+        w.geometry("+%d+%d" % (top.winfo_rootx() + (top.winfo_width() - w.winfo_reqwidth()) // 2,
+                               top.winfo_rooty() + (top.winfo_height() - w.winfo_reqheight()) // 3))
+        w.grab_set()
+        w.wait_window()
+        return res["ok"]
 
     def _fill_library(self):
         t = self.lib_tree

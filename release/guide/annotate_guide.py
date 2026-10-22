@@ -47,6 +47,11 @@ def w(shot, text, cls=None, nth=0, exact=False):
     return tuple(hits[nth]["box"])
 
 
+def raw(shot, text):
+    """the box of the control whose text is exactly `text` (icon-only buttons)"""
+    return tuple(next(x["box"] for x in widgets(shot) if x["text"] == text))
+
+
 def row(shot, label, x1=None, nth=0):
     """a label + everything on its line to the right of it (the - value + of a setting row, a slider ...)"""
     x0, y0, lx1, y1 = w(shot, label, "Label", nth)
@@ -202,6 +207,7 @@ def make(name, shot, title, sub, items, crop=None, scale=1.0, note=None, legend_
 
 S1, SP, SU, S3, SC, SA, SL, SS = ("1_2d_map", "2_2d_point", "2b_2d_powerup", "3_3d", "4_collision", "5_ai",
                                   "6_lighting", "7_surface")
+SUP, SUD, SSRC, SIM = "8_update", "8b_update_download", "9_update_source", "10_import"
 os.makedirs(OUT, exist_ok=True)
 
 make("01_top_bar_and_tools", S1, "1. Top bar and 2D tools",
@@ -212,6 +218,9 @@ make("01_top_bar_and_tools", S1, "1. Top bar and 2D tools",
          (w(S1, "AI path"), "AI path", "Where the AI cars drive."),
          (w(S1, "Lighting"), "Lighting", "Light, fog, sky and glow of the whole location."),
          (w(S1, "Surface"), "Surface", "Paint dirt, grass, water... on the road and set the grip."),
+         (raw(S1, "\u2699"), "Update source", "Where updates come from (picture 14). Normally MDPRO's GitHub page."),
+         (w(S1, "Up to date"), "Check for updates", "Light green = you have the newest version. Orange = a new "
+                                                    "version: click it to update (pictures 12 - 13)."),
          (w(S1, "Save"), "Save (Ctrl+S)", "Saves your maps. Every change is also auto-saved."),
          (w(S1, "Play"), "Play (F5)", "Starts Blur REBORN: a normal start, or a quick LAN race on this map."),
          (w(S1, "Build"), "Build + install (Ctrl+B)", "Turns all your maps into game files and installs them for "
@@ -316,9 +325,11 @@ make("06_3d", S3, "6. The 3D tab",
          (w(S3, "Remove last"), "Remove last", "Removes the last camera point.", "bottom"),
          (w(S3, "Play", "Button", 1), "Play", "Plays the start camera, as in the game.", "bottom"),
          (w(S3, "Auto", "Button", exact=True), "Auto", "Back to the automatic start cameras.", "bottom"),
+         (w(S3, "Import 3D model"), "Import 3D model (.glb)", "Your own model with its textures (picture 11). It "
+                                                                "joins the library under \"Your models\".", "left"),
          (w(S3, "PY_VAR", "Entry"), "Search", "Find an object by name.", "left"),
-         ((216, 198, 510, 900), "Object library", "The game's objects. Pick one, then click in the view to place "
-                                                  "it. Scenery is look-only (tick Solid = a wall).", "left"),
+         ((216, 230, 510, 900), "Object library", "Your models and the game's objects. Pick one, then click in the "
+                                                  "view to place it. Scenery is look-only (tick Solid = a wall).", "left"),
          ((512, 128, 1280, 979), "3D view", "Middle-drag = turn, Shift+middle = move, wheel = zoom. Click an "
                                             "object: G move, R turn, S scale, X hide. Orange dots = road points.", "inside_right"),
      ], place="top", note="The right panel works the same as in the 2D tab (pictures 3 - 5).")
@@ -390,3 +401,48 @@ make("10_surface", SS, "10. The Surface tab",
           "How much the surfaces change the driving: Like the game, Strong or Extreme."),
          ((440, 400, 1060, 700), "The map", "Painted parts show in their colour."),
      ], crop=(0, 30, 1280, 760), scale=1.15, place="top", margin=(0, 34))
+
+make("11_import_model", SIM, "11. Import your own 3D model (.glb)",
+     "3D tab > Import 3D model: the map builder checks the model before it joins your library", [
+         (union(w(SIM, "IMPORT 3D MODEL"), w(SIM, "24 triangles   ")), "The model",
+          "Its name, triangles, size in metres, materials and texture size."),
+         (union(w(SIM, "24 triangles - fine"), w(SIM, "Collision: none")), "The checks",
+          "Green = fine, blue = good to know, yellow = may cause lag (over 10,000 triangles), red = too big "
+          "(over 50,000: simplify it first, e.g. Blender's Decimate). Textures are shown at 256 x 256 in the game."),
+         (w(SIM, "Collision: none"), "Collision", "None: cars drive through it. Tick Solid in the 3D tab to make "
+                                                  "it a wall - a simple BOX around the whole model, not its shape."),
+         (w(SIM, "Import + place"), "Import + place", "It joins \"Your models\" (kept with your maps); click in "
+                                                      "the view to place it. G / R / S move, turn, scale it.", "bottom"),
+         (w(SIM, "Cancel", "Button"), "Cancel", "Nothing is imported.", "right"),
+     ], scale=1.4, legend_w=760,
+     note="Make a .glb in Blender: File > Export > glTF 2.0, Format: glTF Binary (.glb).")
+
+make("12_update", SUP, "12. A new version",
+     "When a new version is out, this window opens at the start (or click the orange update button)", [
+         (union(w(SUP, "Blur Map Builder v"), w(SUP, "you have")), "Versions", "The new version and the one you have."),
+         (w(SUP, "", "Text"), "What's new", "What the new version changes.", "inside_right"),
+         (w(SUP, "Update now"), "Update now", "Downloads and installs it. Your maps are kept.", "bottom"),
+         (w(SUP, "Later", "Button"), "Later", "Not now - the orange button stays until you update.", "right"),
+     ], scale=1.4, legend_w=640)
+
+make("13_update_download", SUD, "13. Updating",
+     "The download - then the map builder restarts by itself", [
+         (w(SUD, "Downloading"), "Downloading", "Which file (there are two: the map builder and the map tester)."),
+         (union(w(SUD, "", "Canvas"), w(SUD, "19.4 MB")), "Progress", "How much is done, and how fast."),
+         (w(SUD, "Please don't close"), "Don't close it", "When it is done it says \"restarting\" and the new "
+                                                          "version opens by itself."),
+     ], scale=1.4, legend_w=640,
+     note="Download failed? It says why, nothing was changed - press Try again.")
+
+make("14_update_source", SSRC, "14. Update source",
+     "The gear next to Check for updates: where the map builder gets its updates", [
+         (union(w(SSRC, "github.com/", "Label"), w(SSRC, "PY_VAR", "Entry")), "GitHub page",
+          "owner/name or the github.com link. Normally MDPRO's - if MDPRO stops making updates, put the page of "
+          "whoever carries on here."),
+         (w(SSRC, "Test", "Button", exact=True), "Test", "Checks that page has a release with the map builder "
+                                                         "programs.", "bottom"),
+         (w(SSRC, "Save", "Button", exact=True), "Save", "Updates come from that page from now on.", "bottom"),
+         (w(SSRC, "MDPRO's"), "MDPRO's (default)", "Back to MDPRO's page.", "bottom"),
+         (w(SSRC, "Only use a page"), "Trust", "Only use a page you trust: the map builder downloads and runs "
+                                               "programs from it."),
+     ], scale=1.4, legend_w=640)

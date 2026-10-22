@@ -30,15 +30,16 @@ root.attributes("-topmost", True)
 INTER = ("Button", "Radiobutton", "Checkbutton", "Menubutton", "Spinbox", "Scale", "Entry", "Listbox", "Text",
          "Canvas")
 
-def widgets():
+def widgets(top=None):
+    top = top or root
     out = []
     def walk(w):
         for c in w.winfo_children():
-            if not c.winfo_ismapped():
+            if not c.winfo_ismapped() or (isinstance(c, tk.Toplevel) and top is root):
                 continue
             cls = c.winfo_class()
             if cls in INTER or cls == "Label":
-                x, y = c.winfo_rootx() - root.winfo_rootx(), c.winfo_rooty() - root.winfo_rooty()
+                x, y = c.winfo_rootx() - top.winfo_rootx(), c.winfo_rooty() - top.winfo_rooty()
                 wd, ht = c.winfo_width(), c.winfo_height()
                 try:
                     txt = c.cget("text")
@@ -46,7 +47,7 @@ def widgets():
                     txt = ""
                 out.append({"cls": cls, "text": str(txt), "box": [x, y, x + wd, y + ht], "path": str(c)})
             walk(c)
-    walk(root)
+    walk(top)
     return out
 
 def shot(name, settle=1.5):
@@ -59,6 +60,77 @@ def shot(name, settle=1.5):
     img.save(os.path.join(OUT, name + ".png"))
     json.dump(widgets(), open(os.path.join(OUT, name + ".json"), "w"), indent=1)
     print("saved", name, img.size, flush=True)
+
+def shot_win(win, name, settle=1.0):
+    """a window of its own (update / import windows) + its widget list"""
+    t = time.time()
+    while time.time() - t < settle:
+        root.update(); time.sleep(0.05)
+    win.lift()
+    root.update()
+    x, y = win.winfo_rootx(), win.winfo_rooty()
+    img = ImageGrab.grab((x, y, x + win.winfo_width(), y + win.winfo_height()), all_screens=True)
+    img.save(os.path.join(OUT, name + ".png"))
+    json.dump(widgets(win), open(os.path.join(OUT, name + ".json"), "w"), indent=1)
+    print("saved", name, img.size, flush=True)
+
+# no internet in the pictures: the newest version = this one (green button); a made-up next version for the window
+import updater, update_window
+updater.SOURCE_FILE = os.path.join(OUT, "_update_source.json")
+NEXT = "v1.0.%d" % (int(paths.VERSION.split(".")[-1]) + 1)
+NEXT_INFO = (NEXT, {n: "x" for n in updater.ASSETS}, "## What's new\n* New: something new in the map builder\n"
+             "* Fix: something that was wrong\n\nYour maps are kept.")
+updater.latest = lambda source=None: ("v" + paths.VERSION, {}, "")
+d.check_updates()
+
+
+def extra_windows():
+    """the update window (asking + downloading), the update source window, the .glb import window"""
+    import threading
+    hold = threading.Event()
+
+    def fake_install(info, progress):
+        for got in range(0, 21_000_000, 700_000):
+            progress("Blur Map Builder.exe", got, 46_800_000)
+            time.sleep(0.03)
+        hold.wait()
+        return "stopped"
+    uw = update_window.UpdateWindow(root, NEXT_INFO, install=fake_install, restart=lambda: None)
+    shot_win(uw.win, "8_update")
+    uw.start()
+    shot_win(uw.win, "8b_update_download", 2.0)
+    hold.set()
+    root.update(); time.sleep(0.3); root.update()
+    uw.busy = False
+    uw.win.destroy()
+    sw = update_window.source_window(root)
+    shot_win(sw, "9_update_source")
+    sw.destroy()
+    # import the sample crate (into the COPY of the maps) through the real window
+    from tkinter import filedialog
+    import model_import
+    sample = os.path.join(MB, "samples", "MDPRO_test_crate.glb")
+    filedialog.askopenfilename = lambda **k: sample
+    tab("3d")
+    v = d.v3d
+
+    def grab_import():
+        tops = [t for t in root.winfo_children() if isinstance(t, tk.Toplevel) and t.winfo_ismapped()]
+        win = tops[-1]
+        shot_win(win, "10_import")
+
+        def find(widget):
+            for c in widget.winfo_children():
+                if isinstance(c, tk.Button) and "Import + place" in str(c.cget("text")):
+                    return c
+                r_ = find(c)
+                if r_:
+                    return r_
+        find(win).invoke()
+    root.after(1500, grab_import)
+    v._import_model()
+    v._stop_placing()
+
 
 def tab(v):
     d.view_mode.set(v); d.on_view()
@@ -75,6 +147,8 @@ def run():
     tab("ai"); shot("5_ai", 3)
     tab("light"); shot("6_lighting", 2)
     tab("surface"); shot("7_surface", 2)
+    tab("2d")
+    extra_windows()
     tab("2d")
     root.destroy()
 

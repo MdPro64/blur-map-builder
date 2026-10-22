@@ -646,6 +646,8 @@ def build_amax(amax, wld=None, list_maps=None):
         amax = _road_chunk_models(amax, wld)
     # 3c. the user's scenery objects from the library: a DynamicObjDef (no physics) for each model used
     amax = _scenery_defs(amax, wld)
+    # 3d. the player's imported models (.glb): a GameModel + DynamicObjDef per model piece (model_import.uids)
+    amax = _import_defs(amax, wld)
     # 4. every other location / map (ids from world.EXTRA_BASE, rising in file order)
     for li, loc in enumerate(locs):
         if li:
@@ -705,6 +707,38 @@ def _road_chunk_models(amax, wld):
                     struct.pack_into("<I", data, b0 + 32, 0)                      # PhysType None
                     struct.pack_into("<I", data, b0 + 68, 0)                      # Alignment None
                 _, amax = kslf_write.clone_object_any(obj[SRC_DYNDEF], None, du, def_patch, data_in=amax)
+    return amax
+
+
+def _import_defs(amax, wld):
+    """GameModel + DynamicObjDef (no physics: Solid = a box in the collision floor, far draw distance) of every
+    piece of every imported model placed in the world"""
+    import model_import
+    used = model_import.used(wld)
+    if not used:
+        return amax
+    A = dump.File(_tmp(amax))
+    obj = {"%08X" % u: oi for u, t, oi in A.refs if oi != 0xFFFF}
+    for e in used:
+        for k in range(e["pieces"]):
+            mu, du = model_import.uids(e["slot"], k)
+
+            def gm_patch(data, pool, blocks, name=model_import.model_file(e["slot"], k)):
+                struct.pack_into("<I", data, blocks[0], len(pool))
+                pool += name.encode() + b"\0"
+            _, amax = kslf_write.clone_object_any(obj[SRC_GAMEMODEL], None, mu, gm_patch, data_in=amax)
+            k4 = kslf.Kslf(amax)
+            o4, n4 = k4.sections[4]
+            gm_ref = next(i for i in range(n4) if struct.unpack_from("<I", amax, o4 + 8 * i)[0] == mu)
+
+            def def_patch(data, pool, blocks, gm_ref=gm_ref):
+                b0 = blocks[0]
+                struct.pack_into("<I", data, b0 + 0, gm_ref)                  # Model
+                struct.pack_into("<f", data, b0 + 12, TILE_DRAW_DISTANCE)     # DrawDistance
+                struct.pack_into("<I", data, b0 + 24, 1)                      # DisplayInMirror
+                struct.pack_into("<I", data, b0 + 32, 0)                      # PhysType None
+                struct.pack_into("<I", data, b0 + 68, 0)                      # Alignment None
+            _, amax = kslf_write.clone_object_any(obj[SRC_DYNDEF], None, du, def_patch, data_in=amax)
     return amax
 
 
@@ -1385,6 +1419,9 @@ def build_root(log=print, wld=None):
         files[tile_variant_file(b)] = cpmodel.new_texture_ids(model, 0x0F1A7E10 + k)
     if ROAD_MESH:
         files.update(road_chunk_files(src, cpmodel, wld, log))
+    import model_import                             # the player's imported models (.glb)
+    files.update(model_import.build_files(src.read(src.find(road_mesh.SOURCE)), cpmodel, wld, road_mesh.DIFF,
+                                          road_mesh.MAT, log))
     tmp = ROOT_OUT + ".%d.tmp" % os.getpid()           # own temporary file (two builds at once broke the shared one)
     # in-race minimap of every location: picture + route shapes (by city name)
     base_pak = pak.Pak(ROOT_BASE)

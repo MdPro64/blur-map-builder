@@ -17,7 +17,8 @@ Press **F1** in the map builder at any time to see every key.
 ---
 
 ## 1. Top bar and 2D tools
-The tabs, the buttons that are always there (Save, Play, Build + install) and the tools of the 2D map tab.
+The tabs, the buttons that are always there (Check for updates, Save, Play, Build + install) and the tools of the
+2D map tab.
 
 ![Top bar and 2D tools](guide/01_top_bar_and_tools.png)
 
@@ -43,7 +44,7 @@ Click a power-up or a row with **Select (S)**.
 ![Right panel - a power-up](guide/05_sidebar_powerup.png)
 
 ## 6. The 3D tab
-See your map in 3D, place the game's own objects and set the camera before the race.
+See your map in 3D, place the game's own objects (or your own 3D models) and set the camera before the race.
 
 ![3D tab](guide/06_3d.png)
 
@@ -66,6 +67,35 @@ The light of the whole location (all its maps). Change it, Build + install, look
 Paint what the road is made of, and how much it changes the driving.
 
 ![Surface tab](guide/10_surface.png)
+
+## 11. Import your own 3D model (.glb)
+3D tab > **Import 3D model (.glb)**. The map builder checks the model (size, triangles, textures) before it joins
+your object library under **Your models**; then place it like any other object.
+
+* **.glb** = one file with the model and its textures. Blender: *File > Export > glTF 2.0*, Format *glTF Binary*.
+* Keep it light: under 10,000 triangles is best (more may make the game lag; over 50,000 is refused).
+  Textures are shown at 256 x 256 in the game.
+* **Collision:** none - cars drive through it. Tick **Solid** to make it a wall: a simple **box** around the whole
+  model, not its exact shape (so don't use a model as a road or ramp).
+* Want to try it? [samples/MDPRO_test_crate.glb](../samples/MDPRO_test_crate.glb) - a 4 m crate, every side labelled.
+
+![Import a 3D model](guide/11_import_model.png)
+
+## 12. A new version
+The map builder checks for a new version when it starts (and when you click **Check for updates**).
+
+![A new version](guide/12_update.png)
+
+## 13. Updating
+The download runs while the window keeps working - don't close it: the map builder restarts by itself.
+
+![Updating](guide/13_update_download.png)
+
+## 14. Update source
+The **gear** next to Check for updates: where updates come from. If MDPRO stops making updates, someone else can
+carry on - put their GitHub page here. Only use a page you trust.
+
+![Update source](guide/14_update_source.png)
 
 ---
 

@@ -16,15 +16,50 @@ import paths
 
 API = "https://api.github.com/repos/%s/releases/latest"
 ASSETS = ("Blur Map Builder.exe", "Blur Map Tester.exe")
+SOURCE_FILE = os.path.join(paths.DATA, "update_source.json")     # the player's choice (kept through updates)
+
+
+def repo():
+    """where updates come from: the player's own choice (update_source.json; if MDPRO stops making updates,
+    someone else can carry on) or paths.GITHUB_REPO"""
+    try:
+        r = json.load(open(SOURCE_FILE, encoding="utf-8")).get("repo")
+        if r and parse_repo(r):
+            return parse_repo(r)
+    except (OSError, ValueError, AttributeError):
+        pass
+    return paths.GITHUB_REPO
+
+
+def parse_repo(text):
+    """"owner/name" from "owner/name" or a github.com link; None if it is neither"""
+    m = re.match(r"^\s*(?:https?://)?(?:www\.)?(?:github\.com/)?([A-Za-z0-9-]+)/([A-Za-z0-9._-]+?)(?:\.git)?(?:/.*)?\s*$",
+                 text or "")
+    return "%s/%s" % (m.group(1), m.group(2)) if m else None
+
+
+def set_repo(r):
+    """save the update source (None / the default = back to MDPRO's)"""
+    r = parse_repo(r) if r else None
+    if not r or r.lower() == paths.GITHUB_REPO.lower():
+        try:
+            os.remove(SOURCE_FILE)
+        except OSError:
+            pass
+        return paths.GITHUB_REPO
+    os.makedirs(os.path.dirname(SOURCE_FILE), exist_ok=True)
+    json.dump({"repo": r}, open(SOURCE_FILE, "w", encoding="utf-8"))
+    return r
 
 
 def _version(tag):
     return tuple(int(x) for x in re.findall(r"\d+", tag or "")[:3]) or (0,)
 
 
-def latest():
-    """(version tag, {asset name: download url}, release notes) of the newest release, or None (offline / none)"""
-    req = urllib.request.Request(API % paths.GITHUB_REPO, headers={"Accept": "application/vnd.github+json",
+def latest(source=None):
+    """(version tag, {asset name: download url}, release notes) of the newest release of source (default: repo()),
+    or None (offline / none)"""
+    req = urllib.request.Request(API % (source or repo()), headers={"Accept": "application/vnd.github+json",
                                                                     "User-Agent": paths.APP_NAME})
     try:
         with urllib.request.urlopen(req, timeout=8) as r:
@@ -78,8 +113,9 @@ def cleanup_old():
 
 
 def install(info, progress=None):
-    """download + swap the programs (only when running as the exe); then start the new map builder. Returns an
-    error text or None"""
+    """download + swap the programs (only when running as the exe); restart() then starts the new map builder.
+    progress(name, bytes so far, total bytes) is called on THIS thread (run it on a worker: the window keeps
+    drawing). Returns an error text or None"""
     if not paths.FROZEN:
         return "Updates install into the exe version only (this is the source version: git pull instead)."
     _, assets, _ = info
@@ -100,10 +136,11 @@ def install(info, progress=None):
                         break
                     f.write(block)
                     got += len(block)
-                    if progress and total:
-                        progress(name, got / total)
+                    if progress:
+                        progress(name, got, total)
         except OSError as ex:
-            return "Download failed (%s): %s" % (name, ex)
+            return ("Download failed - check your internet connection and try again. Nothing was changed.\n(%s: %s)"
+                    % (name, getattr(ex, "reason", None) or ex))
         if os.path.getsize(dst) < 1_000_000 or open(dst, "rb").read(2) != b"MZ":
             return "The downloaded %s is not a program - update stopped, nothing changed." % name
         new_files.append(name)
@@ -117,9 +154,13 @@ def install(info, progress=None):
             os.replace(cur + ".new", cur)
         except OSError as ex:
             return "Could not replace %s: %s" % (name, ex)
+    return None
+
+
+def restart():
+    """start the (new) map builder"""
     # the new exe must unpack ITSELF: without the reset it took over this (old) exe's temp folder (_MEI...), which
     # this exe deletes when it closes - the update "failed" and 3D / AI path then crashed (user report 2026-10-21)
     env = {k: v for k, v in os.environ.items() if not k.startswith(("_PYI_", "_MEI"))}
     env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
     subprocess.Popen([os.path.join(paths.GAME, _local_name(ASSETS[0]))], cwd=paths.GAME, env=env)
-    return None

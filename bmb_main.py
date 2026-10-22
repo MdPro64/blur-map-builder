@@ -37,6 +37,11 @@ def _std_streams():
 
 def run_script():
     _std_streams()
+    for st in (sys.stdout, sys.stderr):     # a pipe is block-buffered: the build window got everything at the END
+        try:                                # (user 2026-10-22) - send each line at once
+            st.reconfigure(line_buffering=True)
+        except (AttributeError, ValueError):
+            pass
     rel = sys.argv[2]
     script = os.path.join(paths.APP, rel)
     sys.argv = [script] + sys.argv[3:]
@@ -143,21 +148,6 @@ def run_setup(root):
     return True
 
 
-def ask_update(root, info):
-    import tkinter as tk
-    from tkinter import messagebox
-    import updater
-    tag, _, notes = info
-    if not messagebox.askyesno("Update available", "%s %s is out (you have %s).\n\n%s\n\nUpdate now? (Your maps are "
-                               "kept.)" % (paths.APP_NAME, tag, paths.VERSION, notes[:600] or ""), parent=root):
-        return
-    err = updater.install(info)
-    if err:
-        messagebox.showerror("Update", err, parent=root)
-    else:
-        root.destroy()                                # the new version was started
-
-
 def main():
     if len(sys.argv) > 2 and sys.argv[1] == "--run":
         return run_script()
@@ -182,7 +172,7 @@ def main():
     root.geometry("1500x880")
     designer = rd["Designer"](root)
     splash_done(designer.fit)
-    updater.check_async(lambda info: root.after(0, lambda: ask_update(root, info)))
+    designer.check_updates(auto=True)                # newer -> the update window; newest -> button turns green
     root.mainloop()
     return 0
 
