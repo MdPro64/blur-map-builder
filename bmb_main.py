@@ -52,9 +52,12 @@ def run_script():
     except SystemExit:
         raise
     except BaseException:                   # into the build window / log - not a Windows "unhandled exception" box
-        traceback.print_exc()
-        sys.stderr.flush()
-        sys.exit(1)
+        try:
+            traceback.print_exc()
+            sys.stderr.flush()
+        except (OSError, ValueError):       # nobody reads any more (the map builder closed): just stop
+            pass
+        os._exit(1)                         # (sys.exit flushed the dead pipe again at exit -> the same box)
 
 
 # ---------------------------------------------------------------------------------------------- crash reports

@@ -46,6 +46,11 @@ Click a power-up or a row with **Select (S)**.
 ## 6. The 3D tab
 See your map in 3D, place the game's own objects (or your own 3D models) and set the camera before the race.
 
+* **Hover** an object in the library to see its 3D picture. **Bake 3D pictures** makes all of them at once (a few
+  minutes, one time); a model that takes too long simply gets no picture.
+* **REAL SHAPES** (bottom of the library): the game objects you placed show as their real models instead of boxes.
+  They are read from your own game once, then it is fast. A few models can't be read - they stay boxes.
+
 ![3D tab](guide/06_3d.png)
 
 ## 7. The Collision tab

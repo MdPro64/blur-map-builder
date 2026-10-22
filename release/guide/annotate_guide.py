@@ -328,8 +328,15 @@ make("06_3d", S3, "6. The 3D tab",
          (w(S3, "Import 3D model"), "Import 3D model (.glb)", "Your own model with its textures (picture 11). It "
                                                                 "joins the library under \"Your models\".", "left"),
          (w(S3, "PY_VAR", "Entry"), "Search", "Find an object by name.", "left"),
-         ((216, 230, 510, 900), "Object library", "Your models and the game's objects. Pick one, then click in the "
-                                                  "view to place it. Scenery is look-only (tick Solid = a wall).", "left"),
+         ((216, 230, 510, 780), "Object library", "Your models and the game's objects. Hover one = its 3D picture; "
+                                                  "pick one, then click in the view to place it. Scenery is look-only "
+                                                  "(tick Solid = a wall).", "left"),
+         (union(w(S3, "Bake 3D pictures"), w(S3, "Makes a picture")), "Bake 3D pictures",
+          "Makes the hover picture of every object at once (a few minutes, one time). Without it a picture "
+          "appears about a second after you hover.", "left"),
+         (union(w(S3, "REAL SHAPES"), w(S3, "On: placed")), "Real shapes",
+          "On: the game objects you placed show as their real models in the 3D view (read once, then fast). "
+          "Off: boxes. A few models can't be read - they stay boxes.", "left"),
          ((512, 128, 1280, 979), "3D view", "Middle-drag = turn, Shift+middle = move, wheel = zoom. Click an "
                                             "object: G move, R turn, S scale, X hide. Orange dots = road points.", "inside_right"),
      ], place="top", note="The right panel works the same as in the 2D tab (pictures 3 - 5).")

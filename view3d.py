@@ -19,7 +19,7 @@ import tkinter as tk
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path[:0] = [os.path.join(HERE, "flat_earth")]
+sys.path[:0] = [os.path.join(HERE, "flat_earth"), os.path.join(HERE, "library")]
 import road_layout  # noqa: E402
 from road_layout import actor_axes  # noqa: E402  (model axes of a turned / tilted object, as the build writes them)
 
@@ -41,6 +41,7 @@ SUN_X, SUN_Y, SUN_Z = (float(v) for v in SUN)
 MIN_RADIUS = 35.0          # as the designer's checks (road_designer.MIN_RADIUS)
 MAX_GRADE = 0.12           # steeper than 12 % = a problem beacon
 
+REAL_SHAPES = [False]      # the "Real shapes" tick: the game's objects as their own models (library/game_preview.py)
 KIND_RGB = {"scenery": (.6, .66, .75), "breakable": (1, .72, .3), "movable": (.35, .8, 1), "animated": (.8, .5, 1),
             "import": (.35, .95, .55)}
 TYPE_RGB = {"Shunt": (1, .25, .25), "Barge": (1, .62, .1), "Shock": (.23, .63, 1), "Mine": (1, .88, .29),
@@ -212,6 +213,7 @@ def build_scene(m):
 
     placed_n = [0]
     drawn = set()
+    textured = []       # imported models: [{key, image, v, c, uv}] drawn with their texture
 
     def placed_box(key, pos, turn, k, rot, scalable):
         """a library object: its model's box (colour = what it does), selectable; an imported model: its own
@@ -223,21 +225,29 @@ def build_scene(m):
         drawn.add(key)
         x0_, x1_, y0_, y1_, z0_, z1_ = bx
         M.cur_rot = tuple(rot)
-        tris = []
+        mats = []
         if e.get("kind") == "import":
             import model_import
-            tris = model_import.preview(e["model"])
-        if tris:
-            A = actor_axes(turn, *rot)
-            kx, ky, kz = kvec(k)
-            px, py, pz = pos
-
-            def w(p_):
-                lx, ly, lz = p_[0] * kx, p_[1] * ky, p_[2] * kz
-                return (px + lx * A[0][0] + ly * A[1][0] + lz * A[2][0], py + lx * A[0][1] + ly * A[1][1] +
-                        lz * A[2][1], pz + lx * A[0][2] + ly * A[1][2] + lz * A[2][2])
-            for a_, b_, c_, col in tris:
-                M.tri(w(a_), w(b_), w(c_), col)
+            mats = model_import.preview(e["model"])
+        elif REAL_SHAPES[0] and e.get("model"):        # a game object: its own model once it has been read
+            import game_preview
+            mats = game_preview.loader().get(e["model"]) or []
+        if mats:                                         # its own triangles + textures (draw() binds them)
+            A = np.array(actor_axes(turn, *rot), np.float64)
+            kv = np.array(kvec(k), np.float64)
+            sun = np.array((SUN_X, SUN_Y, SUN_Z))
+            for mt in mats:
+                wpos = (mt["pos"] * kv) @ A + np.array(pos[:3], np.float64)
+                if mt["nrm"] is None:                    # (game objects: flat, from each triangle)
+                    t3 = wpos.reshape(-1, 3, 3)
+                    wn = np.repeat(np.cross(t3[:, 1] - t3[:, 0], t3[:, 2] - t3[:, 0]), 3, axis=0)
+                else:
+                    wn = (mt["nrm"] / kv) @ A
+                wn /= np.maximum(np.linalg.norm(wn, axis=1, keepdims=True), 1e-9)
+                light = 0.45 + 0.55 * np.abs(wn @ sun) if mt["glow"] < 0.5 else np.ones(len(wn))
+                col = np.c_[np.repeat(light[:, None], 3, axis=1), np.ones(len(wn))]
+                textured.append({"key": mt["key"], "image": mt["image"], "v": wpos.astype(np.float32),
+                                 "c": col.astype(np.float32), "uv": mt["uv"]})
         else:
             M.box(pos, (x1_ - x0_, max(y1_ - y0_, .05), z1_ - z0_), turn, KIND_RGB.get(e.get("kind"), (.7, .7, .7)),
                   lift=y0_, origin=(x0_, x1_, z0_, z1_), k=k)
@@ -558,6 +568,7 @@ def build_scene(m):
         if placed_n[0] + hidden < nobj:
             stats += " - %d DID NOT FIT (the game's object lists are full)" % (nobj - placed_n[0] - hidden)
     arrays = M.arrays()
+    arrays["textured"] = textured
     arrays["picks"] = picks
     arrays["ground"] = g
     arrays["pickups"] = pickup_list          # the list the power-ups came from (edits send a changed copy back)
@@ -622,6 +633,24 @@ def ray_hit(p, origin, direction):
     return t0
 
 
+def _view_setting(name, default=None, save=False):
+    """3D tab settings kept between starts (<data>/view3d.json); save=True stores default as the new value"""
+    import paths
+    f = os.path.join(paths.DATA, "view3d.json")
+    try:
+        d = json.load(open(f))
+    except (OSError, ValueError):
+        d = {}
+    if save:
+        d[name] = default
+        try:
+            json.dump(d, open(f, "w"))
+        except OSError:
+            pass
+        return default
+    return d.get(name, default)
+
+
 # ===================================================================================================== view
 
 class GLView(OpenGLFrame):
@@ -666,6 +695,10 @@ class View3D(tk.Frame):
                          ("■ Stop", self.stop_drive)):
             tk.Button(bar, text=txt, command=cmd, bg=panel, fg=fg, font=("Segoe UI Symbol", 9)).pack(side="left", padx=2,
                                                                                                     pady=2)
+        self.real_var = tk.BooleanVar(value=_view_setting("real_shapes", False))
+        REAL_SHAPES[0] = self.real_var.get()
+        if REAL_SHAPES[0]:                                  # (on from last time: watch the background reader)
+            self.after(1500, self._poll_shapes)
         self.info = tk.Label(bar, text="", bg=panel, fg="#9aa8b8")
         self.info.pack(side="left", padx=8)
         tk.Label(bar, text="click = select | G move  R turn  S scale  X hide | middle-drag turn view | Shift+middle "
@@ -758,6 +791,32 @@ class View3D(tk.Frame):
             g.bind(key, fn)
 
     # ---- data
+    def _real_shapes(self):
+        """the tick: game objects drawn as their own models (read once in the background, then fast) or boxes"""
+        REAL_SHAPES[0] = bool(self.real_var.get())
+        _view_setting("real_shapes", REAL_SHAPES[0], save=True)
+        self.__dict__.pop("_scenes", None)
+        if self.m is not None:
+            self.set_map(self.m)
+        if REAL_SHAPES[0]:
+            self._poll_shapes()
+
+    def _poll_shapes(self):
+        """models arrive from the background reader: draw again (the boxes turn into real shapes)"""
+        import game_preview
+        ld = game_preview.loader()
+        if not REAL_SHAPES[0]:
+            return
+        if ld.changed() and self.m is not None:
+            self.__dict__.pop("_scenes", None)
+            self.set_map(self.m)
+        if ld.waiting():
+            self.info.config(text="Reading the game's models... (once - then they are fast)", fg="#f0e080")
+        try:
+            self.after(600, self._poll_shapes)
+        except tk.TclError:
+            pass
+
     def set_map(self, m, mode=None):
         """(re)build the scene of map m ("3d" = what you will see, "collision" = what the car can hit); returns an
         error text or None"""
@@ -774,7 +833,7 @@ class View3D(tk.Frame):
                 self.cam_bar.pack_forget()
         self._cam_info()
         try:
-            key = (self.mode, json.dumps({k: v for k, v in m.items() if k != "start_cams"}, sort_keys=True,
+            key = (self.mode, REAL_SHAPES[0], json.dumps({k: v for k, v in m.items() if k != "start_cams"}, sort_keys=True,
                                          default=str))          # (the start camera views: not in the scene)
             cache = self.__dict__.setdefault("_scenes", {})   # the last few scenes: back to an unchanged map = instant
             if key not in cache:
@@ -1502,6 +1561,21 @@ class View3D(tk.Frame):
         st.map("Lib.Treeview", background=[("selected", "#1e9bff")], foreground=[("selected", "white")])
         st.configure("Vertical.TScrollbar", background="#13233f", troughcolor="#08111f", bordercolor="#08111f",
                      arrowcolor="#8095b6", lightcolor="#13233f", darkcolor="#13233f")
+        # bottom (packed first: it keeps its place): Bake 3D pictures + the Real shapes switch
+        low = tk.Frame(f, bg=bg)
+        low.pack(side="bottom", fill="x", padx=6, pady=(4, 8))
+        self.bake_btn = tk.Button(low, text="\u2B1A Bake 3D pictures", command=self._bake, bg="#1e9bff", fg="white",
+                                  font=("Segoe UI Symbol", 9, "bold"))
+        self.bake_btn.pack(fill="x")
+        self.bake_note = tk.Label(low, text="Makes a picture of every object (once, a few minutes) - then hover an "
+                                            "object in the list to see it.", bg=bg, fg="#8095b6", wraplength=285,
+                                  justify="left", font=("Segoe UI", 8))
+        self.bake_note.pack(fill="x", pady=(2, 6))
+        tk.Checkbutton(low, text="\u25C6  REAL SHAPES in the 3D view", variable=self.real_var,
+                       command=self._real_shapes, indicatoron=False, bg="#14a38b", fg="white",
+                       font=("Segoe UI Symbol", 11, "bold")).pack(fill="x")
+        tk.Label(low, text="On: placed game objects show as their own models (read once, then fast). Off: boxes.",
+                 bg=bg, fg="#8095b6", wraplength=285, justify="left", font=("Segoe UI", 8)).pack(fill="x", pady=(2, 0))
         box = tk.Frame(f, bg=bg)
         box.pack(fill="both", expand=True, padx=(6, 0))
         self.lib_tree = ttk.Treeview(box, show="tree", selectmode="browse", style="Lib.Treeview")
@@ -1512,6 +1586,8 @@ class View3D(tk.Frame):
         for kind, col in KIND_RGB.items():
             self.lib_tree.tag_configure(kind, foreground="#%02x%02x%02x" % tuple(int(255 * c) for c in col))
         self.lib_tree.bind("<<TreeviewSelect>>", lambda e: self._lib_select())
+        self.lib_tree.bind("<Motion>", self._lib_hover)
+        self.lib_tree.bind("<Leave>", lambda e: self._hover_hide())
         self.lib_info = tk.Label(f, text="", bg=bg, fg="#f0e080", wraplength=285, justify="left", anchor="w",
                                  font=("Segoe UI", 9))
         self.lib_info.pack(fill="x", padx=6, pady=4)
@@ -1520,6 +1596,134 @@ class View3D(tk.Frame):
                  fg="#6f7c8a", wraplength=285, justify="left", font=("Segoe UI", 8)).pack(fill="x", padx=6, pady=(0, 6))
         self._fill_library()
         return f
+
+    # ---- hover an object in the library: its 3D picture (library/thumb.py; game models: game_preview.py)
+    def _lib_hover(self, ev):
+        iid = self.lib_tree.identify_row(ev.y)
+        e = road_layout.catalog().get(iid) if iid else None
+        if e is None:
+            return self._hover_hide()
+        x = self.lib_tree.winfo_rootx() + self.lib_tree.winfo_width() + 8
+        y = ev.y_root - 40
+        if getattr(self, "_hover_id", None) == iid and self._hover_win is not None:
+            self._hover_win.geometry("+%d+%d" % (x, y))
+            return
+        self._hover_id = iid
+        self._hover_tries = 0
+        self._hover_show(e, x, y)
+
+    def _hover_picture(self, e):
+        """(PIL picture or None, text when there is none); starts the reading of a game model in the background"""
+        import game_preview
+        import thumb
+        cache = self.__dict__.setdefault("_hover_pics", {})
+        if e["id"] in cache:
+            return cache[e["id"]], "" if cache[e["id"]] is not None else "No picture"
+        if e.get("kind") == "import":
+            import model_import
+            img = thumb.render(model_import.preview(e["model"]), seconds=1.5)     # (the hover never waits long)
+            cache[e["id"]] = img
+            return img, "" if img else "No picture (too big to draw quickly)"
+        model = e.get("model")
+        if not model:
+            return None, "No picture"
+        tp = game_preview.thumb_path(model)
+        if os.path.exists(tp):
+            from PIL import Image
+            cache[e["id"]] = Image.open(tp).convert("RGB")
+            return cache[e["id"]], ""
+        ld = game_preview.loader()
+        if ld.get(model) is not None:                  # read before (Real shapes): the picture is quick to make
+            try:
+                game_preview.make_thumb(model, seconds=1.5)                    # (the hover never waits long)
+                return self._hover_picture(e)
+            except Exception:                         # noqa: BLE001 - no picture then
+                cache[e["id"]] = None
+                return None, "No picture (too big to draw quickly)"
+        if game_preview.key_of(model) in ld.failed:
+            return None, "No picture (the game's model reader can't read this one)"
+        return None, "Reading the model..."
+
+    def _hover_show(self, e, x, y):
+        from PIL import ImageTk
+        import blur_theme as T
+        self._hover_hide(keep_id=True)
+        img, text = self._hover_picture(e)
+        w = tk.Toplevel(self)
+        w.overrideredirect(True)
+        w.attributes("-topmost", True)
+        w.configure(bg=T.EDGE)
+        inner = tk.Frame(w, bg=T.PANEL)
+        inner.pack(padx=1, pady=1)
+        if img is not None:
+            self._hover_photo = ImageTk.PhotoImage(img)
+            tk.Label(inner, image=self._hover_photo, bg=T.PANEL).pack(padx=6, pady=(6, 2))
+        else:
+            tk.Label(inner, text=text, bg=T.PANEL, fg="#f0e080", width=24, height=6, wraplength=170,
+                     font=("Segoe UI", 9)).pack(padx=6, pady=(6, 2))
+        (x0, y0, z0), (x1, y1, z1) = e["lo"], e["hi"]
+        tk.Label(inner, text=e["name"], bg=T.PANEL, fg=T.TEXT, font=("Segoe UI", 9, "bold"),
+                 wraplength=180).pack(padx=6)
+        tk.Label(inner, text="%.0f x %.0f x %.0f m" % (x1 - x0, z1 - z0, y1 - y0) if e.get("sized") else "",
+                 bg=T.PANEL, fg=T.MUTED, font=("Segoe UI", 8)).pack(padx=6, pady=(0, 6))
+        w.geometry("+%d+%d" % (x, y))
+        self._hover_win = w
+        if img is None and text.startswith("Reading"):     # ask again until the background reader has it
+            iid = e["id"]
+            self.after(500, lambda: self._hover_retry(iid, x, y))
+
+    def _hover_retry(self, iid, x, y):
+        if getattr(self, "_hover_id", None) != iid or self._hover_win is None:
+            return
+        e = road_layout.catalog().get(iid)
+        if e is None:
+            return
+        self._hover_tries = getattr(self, "_hover_tries", 0) + 1
+        if self._hover_tries > 20:                     # 10 s without a picture: skip it, no picture
+            self.__dict__.setdefault("_hover_pics", {})[iid] = None
+        self._hover_show(e, x, y)
+
+    def _hover_hide(self, keep_id=False):
+        w = getattr(self, "_hover_win", None)
+        if w is not None:
+            try:
+                w.destroy()
+            except tk.TclError:
+                pass
+        self._hover_win = None
+        if not keep_id:
+            self._hover_id = None
+
+    def _bake(self):
+        """Bake 3D pictures: every object of the library (press again = stop)"""
+        import game_preview
+        b = getattr(self, "_baker", None)
+        if b is not None and b.running():
+            b.stop = True
+            self.bake_btn.config(text="\u2B1A Bake 3D pictures (stopping...)")
+            return
+        models = [e["model"] for e in road_layout.catalog().values() if e.get("kind") != "import" and e.get("model")]
+        self._baker = game_preview.Baker(models)
+        if not self._baker.total:
+            self.bake_btn.config(text="\u2714 3D pictures baked", bg="#58d06a", fg="#0a0f18")
+            return
+        self.bake_btn.config(bg="#ff8a1e", fg="white")
+        self._bake_tick()
+
+    def _bake_tick(self):
+        b = self._baker
+        if b.running():
+            self.bake_btn.config(text="\u23F8 Baking 3D pictures... %d / %d  (click = stop)" % (min(b.done, b.total),
+                                                                                             b.total))
+            self.after(400, self._bake_tick)
+            return
+        if b.stop:
+            self.bake_btn.config(text="\u2B1A Bake 3D pictures (stopped - click to go on)", bg="#1e9bff", fg="white")
+        else:
+            self.bake_btn.config(text="\u2714 3D pictures baked%s" % (" (%d without a picture)" % b.failed
+                                                                     if b.failed else ""), bg="#58d06a",
+                                 fg="#0a0f18")
+        self.__dict__.pop("_hover_pics", None)
 
     def _import_model(self):
         """pick a .glb -> the check window (size, texture, warnings) -> it joins "Your models" and is placed"""
@@ -1997,6 +2201,22 @@ class View3D(tk.Frame):
         gl.glLineWidth(1.0)
         gl.glEnable(gl.GL_DEPTH_TEST)
 
+    def _gl_texture(self, key, image):
+        """the GL texture of an imported model's material (made once per picture, mipmapped, repeating)"""
+        cache = self.__dict__.setdefault("_gl_textures", {})
+        if key not in cache:
+            tid = gl.glGenTextures(1)
+            gl.glBindTexture(gl.GL_TEXTURE_2D, tid)
+            gl.glPixelStorei(gl.GL_UNPACK_ALIGNMENT, 1)
+            for p_, v_ in ((gl.GL_TEXTURE_WRAP_S, gl.GL_REPEAT), (gl.GL_TEXTURE_WRAP_T, gl.GL_REPEAT),
+                           (gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR),
+                           (gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR_MIPMAP_LINEAR)):
+                gl.glTexParameteri(gl.GL_TEXTURE_2D, p_, v_)
+            glu.gluBuild2DMipmaps(gl.GL_TEXTURE_2D, gl.GL_RGB, image.width, image.height, gl.GL_RGB,
+                                  gl.GL_UNSIGNED_BYTE, image.tobytes())
+            cache[key] = tid
+        return cache[key]
+
     def draw(self, w, h):
         gl.glViewport(0, 0, max(w, 1), max(h, 1))
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
@@ -2061,6 +2281,18 @@ class View3D(tk.Frame):
                 gl.glVertexPointer(3, gl.GL_FLOAT, 0, v)
                 gl.glColorPointer(4, gl.GL_FLOAT, 0, c)
                 gl.glDrawArrays(prim, 0, len(v))
+        if sc.get("textured"):                              # imported models: their own textures
+            gl.glEnable(gl.GL_TEXTURE_2D)
+            gl.glEnableClientState(gl.GL_TEXTURE_COORD_ARRAY)
+            for t in sc["textured"]:
+                gl.glBindTexture(gl.GL_TEXTURE_2D, self._gl_texture(t["key"], t["image"]))
+                gl.glVertexPointer(3, gl.GL_FLOAT, 0, t["v"])
+                gl.glColorPointer(4, gl.GL_FLOAT, 0, t["c"])
+                gl.glTexCoordPointer(2, gl.GL_FLOAT, 0, t["uv"])
+                gl.glDrawArrays(gl.GL_TRIANGLES, 0, len(t["v"]))
+            gl.glDisableClientState(gl.GL_TEXTURE_COORD_ARRAY)
+            gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+            gl.glDisable(gl.GL_TEXTURE_2D)
         if len(sc["tv"]):                                   # see-through walls last, without writing depth
             gl.glDepthMask(gl.GL_FALSE)
             gl.glVertexPointer(3, gl.GL_FLOAT, 0, sc["tv"])

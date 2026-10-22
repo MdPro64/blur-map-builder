@@ -437,53 +437,47 @@ def build_files(base, cpmodel, wld, diff_name, mat_name, log=print):
 
 # ---------------------------------------------------------------------------------------------- 3D tab preview
 _preview = {}
+PREVIEW_TEX = GAME_TEX                 # the 3D tab shows the texture as sharp as the game does
 
 
 def preview(file):
-    """[(a, b, c, (r, g, b))] in model space (game axes) - at most PREVIEW_TRIS triangles, coloured from the
-    texture under each triangle"""
+    """the 3D tab's view of an imported model, ALL its triangles with their textures: [{"key" (texture key),
+    "image" (PIL RGB, power of two), "pos" (n * 3, 3), "nrm", "uv"}] - one entry per material, model space (game
+    axes); [] if it can't be read"""
     path = os.path.join(folder(), file)
     try:
-        key = (path, os.path.getmtime(path))
+        stamp = os.path.getmtime(path)
     except OSError:
         return []
+    key = (path, stamp)
     if key in _preview:
         return _preview[key]
     try:
         g = read_glb(path)
+        parts, _, _ = game_space(g)
     except Exception:                                    # noqa: BLE001 - the 3D tab then shows the box only
         _preview[key] = []
         return []
-    parts, _, _ = game_space(g)
-    small = {}
-    for i, m in enumerate(g["materials"]):
-        if m["image"] is not None:
-            small[i] = np.asarray(m["image"].convert("RGB").resize((32, 32)), np.float64) / 255.0
-    total = sum(len(p["tri"]) for p in parts)
-    step = max(1, int(math.ceil(total / PREVIEW_TRIS)))
+    from PIL import Image
     out = []
-    for p in parts:
-        mat = g["materials"][p["mat"]]
-        base = np.array(mat["colour"])
-        tri = p["tri"][::step]
-        a, b, c = p["pos"][tri[:, 0]], p["pos"][tri[:, 1]], p["pos"][tri[:, 2]]
-        if p["mat"] in small:
-            # the texture's average under each triangle (its uv box; a box over the whole picture = its average)
-            img = small[p["mat"]]
-            uvs = np.stack([p["uv"][tri[:, q]] for q in range(3)], axis=1)
-            lo_, hi_ = uvs.min(axis=1), uvs.max(axis=1)
-            cols = np.empty((len(tri), 3))
-            for i in range(len(tri)):
-                if (hi_[i] - lo_[i]).max() >= 1.0:
-                    cols[i] = img.mean(axis=(0, 1))
-                    continue
-                a0 = (np.mod(lo_[i], 1.0) * 32).astype(int)
-                a1 = np.maximum(a0 + 1, (a0 + (hi_[i] - lo_[i]) * 32).astype(int) + 1)
-                cols[i] = img[a0[1]:min(32, a1[1]), a0[0]:min(32, a1[0])].reshape(-1, 3).mean(axis=0)
-            cols = cols * base
+    for mi, mat in enumerate(g["materials"]):
+        mine = [p for p in parts if p["mat"] == mi]
+        if not mine:
+            continue
+        col = tuple(int(round(255 * max(0.0, min(1.0, c)))) for c in mat["colour"])
+        if mat["image"] is not None:
+            img = mat["image"].convert("RGB")
+            w, h = (min(PREVIEW_TEX, 1 << max(0, (n - 1).bit_length())) for n in img.size)
+            img = img.resize((w, h), Image.LANCZOS)
+            if col != (255, 255, 255):
+                img = Image.fromarray((np.asarray(img, np.float64) * (np.array(col) / 255.0)).clip(0, 255)
+                                      .astype(np.uint8))
         else:
-            cols = np.tile(base, (len(tri), 1))
-        for i in range(len(tri)):
-            out.append((tuple(a[i]), tuple(b[i]), tuple(c[i]), tuple(float(x) for x in cols[i])))
+            img = Image.new("RGB", (4, 4), col)
+        pos = np.concatenate([p["pos"][p["tri"].reshape(-1)] for p in mine]).astype(np.float32)
+        nrm = np.concatenate([p["nrm"][p["tri"].reshape(-1)] for p in mine]).astype(np.float32)
+        uv = np.concatenate([p["uv"][p["tri"].reshape(-1)] for p in mine]).astype(np.float32)
+        out.append({"key": "%s|%s|%d" % (path, stamp, mi), "image": img, "pos": pos, "nrm": nrm, "uv": uv,
+                    "glow": mat["glow"]})
     _preview[key] = out
     return out
