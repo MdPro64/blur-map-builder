@@ -18,7 +18,7 @@ import paths  # noqa: E402
 
 def _std_streams():
     """the exe is a WINDOW program: its sys.stdout / stderr are None, so a script run with --run printed nothing -
-    the build window stayed empty and logs\last_build.txt was missing (user 2026-10-21). Use the pipe the map
+    the build window stayed empty and logs\\last_build.txt was missing (user 2026-10-21). Use the pipe the map
     builder gave this process instead (line by line, so the build window shows each step at once)."""
     import ctypes
     import msvcrt

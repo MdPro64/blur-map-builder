@@ -8,8 +8,9 @@ Steps (each one is skipped when already done; run_all(log) runs them in order):
   level_template    levels\\showroom with its scenery hidden (the level every location starts from)
   fetch_addon       TimberStalker's BlurImportExport model reader (his public GitHub repo, pinned + hash-checked)
   make_catalog      the object library (every placeable object of the game) for the 3D tab
-  make_reborn       "Blur REBORN.exe" = Blur.exe + 4 changes: the pak-signature check off and gamedata.pak /
-                    root.pak read from rebrn\\ (Blur.exe and cache\\ stay as they are)
+  make_reborn       "Blur REBORN.exe" = Blur.exe + 5 changes: the pak-signature check off, gamedata.pak /
+                    root.pak read from rebrn\\, online the server's Multiplayer.bin not loaded (own maps in
+                    private matches); Blur.exe and cache\\ stay as they are
   install_plugin    our Amax QuickStart plugin (the map tester's "start a race on my map")
 """
 import hashlib
@@ -29,6 +30,9 @@ EXE_PATCHES = [
     (0xA668F8, b"cache/gamedata.pak\0", b"rebrn/gamedata.pak\0"),         # mount list
     (0xA66628, b"GAME:\\cache\\gamedata.pak\0", b"GAME:\\rebrn\\gamedata.pak\0"),
     (0xA66978, b"cache/root.pak\0", b"rebrn/root.pak\0"),
+    # online, the server sends its own Multiplayer.bin (title storage) and the game loaded it over ours -> no own
+    # maps in online private matches (user 2026-10-22). 0xB2E14A (VA) je -> jmp: the downloaded copy is not loaded.
+    (0x72D54A, b"\x74\x12", b"\xEB\x12"),
 ]
 KNOWN_EXE_SHA256 = {"dba0264b7808a5e38d99c8c162ecd71ab06a48fbc424feb1b9a3bc1bff2fbf3f"}   # Blur PC 1.2 (tested; 1.0 does not work)
 
@@ -221,7 +225,16 @@ def needed():
                                                os.path.join(paths.UNPACKED, "xt", "amax.bin"),
                                                os.path.join(paths.LEVEL_TEMPLATE, "level.levelstream"),
                                                os.path.join(paths.ADDON, "BlurImportExport", "__init__.py"),
-                                               paths.CATALOG, paths.REBORN_EXE))
+                                               paths.CATALOG, paths.REBORN_EXE)) or not _reborn_current()
+
+
+def _reborn_current():
+    """Blur REBORN.exe has every patch of this version (an update can add one: the exe is made again)"""
+    try:
+        d = open(paths.REBORN_EXE, "rb").read()
+    except OSError:
+        return False
+    return all(d[off:off + len(new)] == new for off, _, new in EXE_PATCHES)
 
 
 def game_info():
