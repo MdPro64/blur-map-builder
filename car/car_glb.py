@@ -105,9 +105,11 @@ def glb_model(car, glb_path, log=print):
     iroom = sum(m["data1"][0]["face_count"] for m, s in rooms)
 
     # ---- the .glb: fitted, welded, simplified to fit
-    tri = car_model.fit_glb(car_model.read_glb_body(glb_path), car_model.read_game_car(car["base"]),
-                            car.get("glb_fit") or {})["glb"].reshape(-1, 3).astype(np.float64)
+    fitted = car_model.fit_glb(car_model.read_glb_body(glb_path), car_model.read_game_car(car["base"]),
+                               car.get("glb_fit") or {})
+    tri = fitted["glb"].reshape(-1, 3).astype(np.float64)
     pts0, faces0 = _weld(tri)
+    colour = _colour_lookup(tri, np.repeat(fitted["glb_rgb"], 3, axis=0))
     n0 = len(faces0)
     src = bytes(data)
     target = int(min(vroom * 1.5, iroom / 2.6))
@@ -118,7 +120,7 @@ def glb_model(car, glb_path, log=print):
             pts, faces = fast_simplification.simplify(pts.astype(np.float32), faces.astype(np.int64),
                                                       1 - target / len(faces))
             pts, faces = np.asarray(pts, np.float64), np.asarray(faces, np.int64)
-        placed = _place(data, M, meshes, rooms, pts, faces)
+        placed = _place(data, M, meshes, rooms, pts, faces, colour(pts))
         if placed >= len(faces):
             break
         target = int(target * placed / len(faces) * 0.97)
@@ -127,8 +129,35 @@ def glb_model(car, glb_path, log=print):
     return bytes(data)
 
 
-def _place(data, M, meshes, rooms, pts, faces):
-    """hide the body car's body, write the triangles into the rooms; returns how many were placed"""
+def _colour_lookup(points, rgb, cell=0.03):
+    """fn(new points) -> their colours: the mean colour of the .glb's points in the same 3 cm cell (or the
+    nearest filled cell around it) - the simplified mesh's points are not the .glb's own"""
+    key = np.floor(points / cell).astype(np.int64)
+    cells = {}
+    for k, c in zip(map(tuple, key), rgb):
+        a = cells.setdefault(k, [np.zeros(3), 0])
+        a[0] += c
+        a[1] += 1
+    mean = {k: a[0] / a[1] for k, a in cells.items()}
+
+    def fn(pts):
+        out = np.full((len(pts), 3), 200.0)
+        for i, k in enumerate(map(tuple, np.floor(pts / cell).astype(np.int64))):
+            for r in range(4):
+                near = [mean[(k[0] + dx, k[1] + dy, k[2] + dz)] for dx in range(-r, r + 1)
+                        for dy in range(-r, r + 1) for dz in range(-r, r + 1)
+                        if (k[0] + dx, k[1] + dy, k[2] + dz) in mean]
+                if near:
+                    out[i] = np.mean(near, axis=0)
+                    break
+        return out
+    return fn
+
+
+def _place(data, M, meshes, rooms, pts, faces, rgb):
+    """hide the body car's body, write the triangles into the rooms; returns how many were placed.
+    Per point: position, normal, tangent + binormal (from the normal), one clean texture spot (the uv of the
+    body car's highest body point: plain paint) and the colour channel = the .glb's colour there."""
     nrm = np.zeros_like(pts)
     fn = np.cross(pts[faces[:, 1]] - pts[faces[:, 0]], pts[faces[:, 2]] - pts[faces[:, 0]])
     for k in range(3):
@@ -151,6 +180,20 @@ def _place(data, M, meshes, rooms, pts, faces):
         d1 = m["data1"][lod]
         struct.pack_into("<%dH" % d1["face_count"], data, fs["start"] + 2 * d1["face_offset"], *values)
 
+    # one clean texture spot: the uv of the highest point of the biggest body part
+    m0, s0 = rooms[0]
+    vs0 = M["vertex_streams"][s0]
+    o, uv_off = 0, None
+    for dd in vs0["definition"]:
+        if dd["type"] == 9 and dd["channel"] == 5 and uv_off is None:
+            uv_off = o
+        o += TYPE_SIZE.get(dd["type"], 4)
+    rows = np.frombuffer(bytes(data), np.uint8, vs0["count"] * vs0["bytes"], vs0["start"]).reshape(vs0["count"], -1)
+    b0 = m0["data2"][0]["vOffset"] // vs0["bytes"] + m0["data1"][0]["vert_offset"]
+    sub = rows[b0:b0 + m0["data1"][0]["vert_count"]]
+    top = int(np.argmax(sub[:, 0:8].copy().view(np.float16)[:, 1].astype(np.float32)))
+    ref_uv = tuple(sub[top, uv_off:uv_off + 8].copy().view(np.float16).astype(float)) if uv_off is not None else None
+
     # ---- hide the body car's body (tyres / rims / brakes stay)
     for m, el, s in meshes:
         if car_model._kind(el) not in ("tyre", "rim"):
@@ -168,7 +211,8 @@ def _place(data, M, meshes, rooms, pts, faces):
         stride = vs["bytes"]
         offs, o = {}, 0
         for dd in vs["definition"]:
-            offs.setdefault((dd["type"], dd["channel"]), o)
+            k = (dd["type"], dd["channel"]) + ((dd["sub_channel"],) if dd["channel"] == 5 and dd["type"] == 11 else ())
+            offs.setdefault(k, o)
             o += TYPE_SIZE.get(dd["type"], 4)
         # as many triangles as the vertex range holds, then fewer until the strip fits
         verts, n = {}, 0
@@ -193,9 +237,17 @@ def _place(data, M, meshes, rooms, pts, faces):
         for v, j in local.items():
             at = vs["start"] + stride * (vbase + d1["vert_offset"] + j)
             struct.pack_into("<4e", data, at, pts[v][0], pts[v][1], pts[v][2], 1.0)
-            if (11, 3) in offs:
-                struct.pack_into("<4B", data, at + offs[(11, 3)],
-                                 *(max(0, min(254, int(round(127 + 127 * c)))) for c in nrm[v]), 0)
+            nv = nrm[v]
+            t = np.cross(nv, (0.0, 1.0, 0.0)) if abs(nv[1]) < 0.9 else np.cross(nv, (1.0, 0.0, 0.0))
+            t /= np.linalg.norm(t) + 1e-9
+            for key, vec in (((11, 3), nv), ((11, 5, 2), t), ((11, 5, 3), np.cross(nv, t))):
+                if key in offs:
+                    struct.pack_into("<4B", data, at + offs[key],
+                                     *(max(0, min(254, int(round(127 + 127 * c)))) for c in vec), 0)
+            if (11, 9) in offs:
+                struct.pack_into("<4B", data, at + offs[(11, 9)], *(int(max(0, min(255, c))) for c in rgb[v]), 255)
+            if ref_uv is not None and (9, 5) in offs:
+                struct.pack_into("<4e", data, at + offs[(9, 5)], *ref_uv)
         for lod, dl in enumerate(m["data1"]):
             if dl["face_count"]:
                 s_ = strip[:dl["face_count"]]

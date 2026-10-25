@@ -188,6 +188,8 @@ def add_cars(files, wld, U, log=print):
         pt = veh.objs[pi]["blocks"][0]["type"]
         c_off, _ = veh.field(pt, "colours")
         cols = [tuple(int(h[k:k + 2], 16) / 255.0 for k in (1, 3, 5)) for h in car["paint"]]
+        if car.get("body_glb"):                      # an imported body: its own colours (in its points), white paint
+            cols = [(1.0, 1.0, 1.0)] * 2
 
         def paint_patch(data, pool, blocks):
             cb, cf, cc = struct.unpack_from("<HHI", data, blocks[0] + c_off)
