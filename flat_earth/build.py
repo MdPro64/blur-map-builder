@@ -23,7 +23,7 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MB = os.path.dirname(HERE)
-sys.path[:0] = [HERE, MB] + [os.path.join(MB, p) for p in ("kslf", "pak", "aid", "physics")]
+sys.path[:0] = [HERE, MB] + [os.path.join(MB, p) for p in ("kslf", "pak", "aid", "physics", "car")]
 import paths               # noqa: E402
 import build_track as B     # noqa: E402
 import dump                 # noqa: E402
@@ -1462,6 +1462,8 @@ def build_root(log=print, wld=None):
                     name = intro_cycle_name(m, shot) + ".cycle"
                     files[name] = data
                     aliases[name] = INTRO_CYCLE_ALIAS_OF
+    import car_build
+    aliases.update(car_build.model_aliases(wld))                     # custom cars: their models by their names
     pak.add_aliases(ROOT_BASE, tmp, aliases)
     # menu pictures: ui_frontend.bpr entries named like each route's Thumbnail
     sys.path.insert(0, os.path.join(MB, "ui"))
@@ -1685,6 +1687,9 @@ def add_flat_earth(parts, log):
     f["gamedata/xt/loc/cityandroutenames.loc"] = loc.write(loc_in, loc_out, add=names)
     os.unlink(loc_in)
     os.unlink(loc_out)
+    # the player's own cars (Custom car tab)
+    import car_build
+    car_build.add_cars(f, wld, B.U, log)
     if USE_DOCKS_SOUNDS:
         f["gamedata/xt/audio.bin"] = build_audio(open(os.path.join(B.U, "xt", "audio.bin"), "rb").read())
     # Bloom plugin row: it copies the (unused) Advanced Graphics screen's Vsync row - give that copy the title "Bloom"
