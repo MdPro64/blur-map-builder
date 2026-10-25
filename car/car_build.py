@@ -224,7 +224,7 @@ def add_cars(files, wld, U, log=print):
             car["name"], name, cd.CLASSES[car["class"]], car["base"], car.get("wheels") or car["base"], mph,
             " ".join("%s %d" % (k, v) for k, v in s.items())))
         if car.get("body_glb"):
-            log("   (imported body %s: TEST STEP 1 - the game shows %s made taller)" % (car["body_glb"], car["base"]))
+            log("   (imported body %s on the wheels of %s - written with the root pack)" % (car["body_glb"], car["base"]))
     files["gamedata/xt/racingphysics.bin"] = rp_d
     files["gamedata/xt/vehicles.bin"] = veh_d
     files["gamedata/xt/amax.bin"] = amax_d
@@ -320,12 +320,15 @@ def model_aliases(wld, U):
     return out
 
 
-def model_files(wld):
-    """root.pak {path: bytes}: the own model of each car with an imported body (car_mesh.py, step 1 = test)"""
-    import car_mesh
+def model_files(wld, log=print):
+    """root.pak {path: bytes}: the own model of each car with an imported body (car_glb.py: the .glb as the body
+    of the body car's model)"""
+    import car_glb
+    import paths
     cars = wld.get("cars") or []
     out = {}
     for car, name in zip(cars, internal_names(cars)):
         if car.get("body_glb"):
-            out["\\models\\vehicles\\" + name.lower() + ".model"] = car_mesh.test_model(car["base"])
+            out["\\models\\vehicles\\" + name.lower() + ".model"] = car_glb.glb_model(
+                car, os.path.join(paths.TRACKS, "cars", car["body_glb"]), log)
     return out
