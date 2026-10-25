@@ -9,9 +9,10 @@ Per car (uids CA400000 + 4 * i: car, physics, paint):
 and root.pak (model_aliases): the game finds a car's model by its Name: models\\vehicles\\<name>.model (+ wheels\\)
 -> aliases of the body car's model and the wheel car's wheels.
 
-FAIR HANDLING: for each stat the real cars of the class give a trend (least squares: field value against the menu
-stat), e.g. class B cars with more drift have a weaker rear grip. The body car's value moves along that trend by
-(our stat - its stat) and is clamped to the lowest .. highest value of the class - never past the class."""
+FAIR HANDLING: each stat sets its physics fields by its place in the class: a stat at the class's highest = the
+field at the class's highest (or lowest, if the class's cars go that way - the least-squares trend of the field
+against the menu stat, e.g. more drift = weaker rear grip). So a stat at the top drives like the class's most
+extreme car for it - and never past the class."""
 import os
 import struct
 import sys
@@ -121,19 +122,26 @@ def handling(car, amax, rp):
     bi = names[car["base"]]
     rpi = {c["name"]: rp.obj_of_uid(amax.ref_uid(names[c["name"]], "dynamics")) for c in cls_cars}
     rp_out, car_out = {}, {}
+    lim = cd.limits(car["class"])
+
+    def place(stat, ys, slope):
+        """the stat's place in its class range (0 = lowest car, 1 = highest) -> the same place in the field's
+        class range, in the direction the class's cars go (slope)"""
+        lo, hi = lim[stat]
+        t = 0.5 if hi == lo else (car["stats"][stat] - lo) / float(hi - lo)
+        return min(ys) + (t if slope >= 0 else 1 - t) * (max(ys) - min(ys))
     for stat, fields in TREND.items():
-        d = car["stats"][stat] - base[stat]
+        xs = [c[stat] for c in cls_cars]
         for f in fields:
-            ys = [rp.get(rpi[c["name"]], f) for c in cls_cars]
-            v0 = rp.get(rpi[car["base"]], f)
-            v = v0 + _fit([c[stat] for c in cls_cars], ys) * d
-            rp_out[f] = max(min(ys), min(max(ys), v))
+            per_kg = f == "engine.engineTorque_Rpm.yScale"        # engine power: per kg of the car's weight
+            ys = [rp.get(rpi[c["name"]], f) / (rp.get(rpi[c["name"]], "mass.mass") if per_kg else 1.0)
+                  for c in cls_cars]
+            rp_out[f] = place(stat, ys, _fit(xs, ys)) * (rp.get(rpi[car["base"]], "mass.mass") if per_kg else 1.0)
     for stat, fields in CAR_TREND.items():
-        d = car["stats"][stat] - base[stat]
+        xs = [c[stat] for c in cls_cars]
         for f in fields:
             ys = [amax.get(names[c["name"]], f) for c in cls_cars]
-            v = amax.get(bi, f) + _fit([c[stat] for c in cls_cars], ys) * d
-            car_out[f] = int(round(max(min(ys), min(max(ys), v))))
+            car_out[f] = int(round(place(stat, ys, _fit(xs, ys))))
     return rp_out, car_out
 
 
