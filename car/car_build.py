@@ -284,13 +284,26 @@ def _names(vloc, add):
         os.unlink(b)
 
 
-def model_aliases(wld):
+def wheel_file(amax, car):
+    """a car's wheels model name: its AmaxWheelModel's fileName (not always the car's name - e.g. the Shelby's
+    is shelby_mustanggt500)"""
+    wi = amax.obj_of_uid(amax.ref_uid(amax.cars()[car], "wheelModel"))
+    o = amax.objs[wi]
+    off, _ = amax.field(o["blocks"][0]["type"], "fileName")
+    at = struct.unpack_from("<I", amax.data, o["blocks"][0]["offset"] + off)[0]
+    return bytes(o["pool"][at:o["pool"].index(b"\0", at)]).decode("latin1")
+
+
+def model_aliases(wld, U):
     """root.pak {new path: existing path}: each car's model + wheels by its Name"""
     cars = wld.get("cars") or []
+    if not cars:
+        return {}
+    amax = Db(open(os.path.join(U, "xt", "amax.bin"), "rb").read())
     out = {}
     for car, name in zip(cars, internal_names(cars)):
         folder = "\\models\\vehicles\\"
         out[folder + name.lower() + ".model"] = folder + car["base"].lower() + ".model"
         out[folder + "wheels\\" + name.lower() + ".model"] = \
-            folder + "wheels\\" + (car.get("wheels") or car["base"]).lower() + ".model"
+            folder + "wheels\\" + wheel_file(amax, car.get("wheels") or car["base"]).lower() + ".model"
     return out

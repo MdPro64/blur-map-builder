@@ -363,17 +363,17 @@ class CarPanel(tk.Frame):
             return
         key = (c["base"], c.get("wheels") or c["base"], c.get("body_glb"))
         paint = tuple(int(c["paint"][0][i:i + 2], 16) for i in (1, 3, 5))
-        self._want = (key, paint, self.yaw, min(w, h) if full else min(w, h) // 3, (w, h))
+        self._want = (key, paint, self.yaw, min(w, h), full, (w, h))
         if not getattr(self, "_busy", False):
             self._busy = True
             threading.Thread(target=self._render, daemon=True).start()
-            self.after(40, self._poll)
+            self.after(15, self._poll)
 
     def _render(self):
         import car_model
         while True:
             want = self._want
-            key, paint, yaw, size, wh = want
+            key, paint, yaw, size, full, wh = want
             try:
                 if key != self._parts_key:
                     base, wheels, glb = key
@@ -384,7 +384,7 @@ class CarPanel(tk.Frame):
                         body = dict({k: v for k, v in body.items() if k.split("|")[0] in ("tyre", "rim", "centre")},
                                     **own)
                     self._parts, self._parts_key = car_model.assemble(body, whl), key
-                img = car_model.picture(self._parts, paint, max(60, size), yaw)
+                img = car_model.picture(self._parts, paint, max(60, size), yaw, smooth=full)
             except Exception as e:                   # noqa: BLE001 - shown in the view
                 img = "This car can't be shown: %s" % e
             if want is self._want:
@@ -394,7 +394,7 @@ class CarPanel(tk.Frame):
 
     def _poll(self):
         if getattr(self, "_busy", False):
-            self.after(40, self._poll)
+            self.after(15, self._poll)
             return
         res, self._result = getattr(self, "_result", None), None
         if res is None:

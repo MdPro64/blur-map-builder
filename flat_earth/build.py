@@ -1463,7 +1463,7 @@ def build_root(log=print, wld=None):
                     files[name] = data
                     aliases[name] = INTRO_CYCLE_ALIAS_OF
     import car_build
-    aliases.update(car_build.model_aliases(wld))                     # custom cars: their models by their names
+    aliases.update(car_build.model_aliases(wld, B.U))                     # custom cars: their models by their names
     pak.add_aliases(ROOT_BASE, tmp, aliases)
     # menu pictures: ui_frontend.bpr entries named like each route's Thumbnail
     sys.path.insert(0, os.path.join(MB, "ui"))

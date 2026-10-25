@@ -171,15 +171,38 @@ def mats(parts, paint):
     return out
 
 
-def picture(parts, paint, size, yaw, pitch=0.35):
-    """PIL picture of the car turned by yaw (radians)"""
-    import thumb
-    old = thumb.YAW, thumb.PITCH
-    thumb.YAW, thumb.PITCH = yaw, pitch
-    try:
-        return thumb.render(mats(parts, paint), size=size, bg=(6, 10, 20))
-    finally:
-        thumb.YAW, thumb.PITCH = old
+def picture(parts, paint, size, yaw, pitch=-0.35, smooth=True):
+    """PIL picture of the car turned by yaw (radians): flat shaded triangles, far ones first (painter's
+    algorithm, numpy + PIL - fast enough to turn the car with the mouse); smooth = drawn 2x and shrunk"""
+    from PIL import Image, ImageDraw
+    k = 2 if smooth else 1
+    S = size * k
+    kinds = sorted(parts)
+    tris = np.concatenate([parts[n] for n in kinds]).astype(np.float64)
+    cols = np.concatenate([np.repeat([paint if n == "paint" else COLOURS[n]], len(parts[n]), 0) for n in kinds])
+    cy, sy, cp, sp = np.cos(yaw), np.sin(yaw), np.cos(pitch), np.sin(pitch)
+    x, y, z = tris[..., 0], tris[..., 1], tris[..., 2]
+    x1, z1 = x * cy - z * sy, x * sy + z * cy                 # turn around the up axis
+    y2, z2 = y * cp + z1 * sp, z1 * cp - y * sp              # tilt: look down at the car
+    pts = np.stack([x1, y2, z2], -1)
+    n = np.cross(pts[:, 1] - pts[:, 0], pts[:, 2] - pts[:, 0])
+    n /= np.linalg.norm(n, axis=1, keepdims=True) + 1e-9
+    light = np.abs(n @ (np.array([0.35, 0.75, -0.55]) / np.linalg.norm([0.35, 0.75, -0.55])))
+    shade = (0.35 + 0.65 * light)[:, None]
+    rgb = np.clip(cols * shade, 0, 255).astype(np.uint8)
+    lo, hi = pts[..., :2].reshape(-1, 2).min(0), pts[..., :2].reshape(-1, 2).max(0)
+    scale = 0.9 * S / max(hi - lo)
+    mid = (lo + hi) / 2
+    sx = (pts[..., 0] - mid[0]) * scale + S / 2
+    sy2 = S / 2 - (pts[..., 1] - mid[1]) * scale
+    order = np.argsort(pts[..., 2].mean(1))                   # far (small z) first ...
+    order = order[n[order, 2] >= 0]                           # ... and only the sides facing us
+    img = Image.new("RGB", (S, S), (6, 10, 20))
+    d = ImageDraw.Draw(img)
+    xy = np.stack([sx, sy2], -1)
+    for i in order:
+        d.polygon([tuple(p) for p in xy[i]], fill=tuple(rgb[i]))
+    return img.resize((size, size), Image.LANCZOS) if k > 1 else img
 
 
 if __name__ == "__main__":
