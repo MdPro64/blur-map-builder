@@ -91,10 +91,13 @@ class CarPanel(tk.Frame):
             tk.Label(self.fit_row, text=label, bg=T.BG, fg=T.MUTED).pack(side="left", padx=(14, 2))
             tk.Button(self.fit_row, text="−", width=2, command=lambda k=key, d=-step: self._fit(k, d)).pack(side="left")
             tk.Button(self.fit_row, text="+", width=2, command=lambda k=key, d=step: self._fit(k, d)).pack(side="left", padx=2)
+        for label, key in (("Wheels side to side", "track"), ("front to back", "wb")):
+            tk.Label(self.fit_row, text=label, bg=T.BG, fg=T.MUTED).pack(side="left", padx=(14, 2))
+            tk.Button(self.fit_row, text="−", width=2, command=lambda k=key: self._fit(k, -0.02)).pack(side="left")
+            tk.Button(self.fit_row, text="+", width=2, command=lambda k=key: self._fit(k, 0.02)).pack(side="left", padx=2)
         tk.Button(self.fit_row, text="↻ Turn 90°", command=lambda: self._fit("turn", 90)).pack(side="left", padx=(14, 4))
         tk.Button(self.fit_row, text="Reset", command=lambda: self._fit(None, 0)).pack(side="left")
-        self.fit_label = tk.Label(self.fit_row, text="", bg=T.BG, fg=T.MUTED)
-        self.fit_label.pack(side="left", padx=10)
+        self.fit_label = tk.Label(r, text="", bg=T.BG, fg=T.MUTED)
         # ---- stats: one slider per stat + the bar chart against the class
         tk.Label(r, text="STATS  (each one stays inside the class's range; all together inside its point budget)",
                  bg=T.BG, fg=T.HEAD, font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(16, 2))
@@ -247,11 +250,14 @@ class CarPanel(tk.Frame):
                 w.configure(state="disabled" if glb else "normal")
         if glb:
             f = c.get("glb_fit") or {}
-            self.fit_label.configure(text="size x%.2f, forward %+.2f m, up %+.2f m, turned %d°" % (
-                f.get("size", 1.0), f.get("fwd", 0.0), f.get("up", 0.0), f.get("turn", 0)))
-            self.fit_row.pack(fill="x", pady=(8, 0), after=self.paint_btns[0].master)
+            self.fit_label.configure(text="size x%.2f, forward %+.2f m, up %+.2f m, turned %d°, wheels %+.2f / %+.2f m" % (
+                f.get("size", 1.0), f.get("fwd", 0.0), f.get("up", 0.0), f.get("turn", 0), f.get("track", 0.0),
+                f.get("wb", 0.0)))
+            self.fit_row.pack(fill="x", pady=(8, 0), before=self.view)
+            self.fit_label.pack(anchor="w", before=self.view)
         else:
             self.fit_row.pack_forget()
+            self.fit_label.pack_forget()
         for i, b in enumerate(self.paint_btns):
             b.configure(bg=c["paint"][i])
         self.loading = False
@@ -421,7 +427,8 @@ class CarPanel(tk.Frame):
                                                 body, self.car().get("glb_fit") or {})
                         body = dict({k: v for k, v in body.items() if k.split("|")[0] in ("tyre", "rim", "centre")},
                                     **own)
-                    self._parts, self._parts_key = car_model.assemble(body, whl), key
+                    self._parts, self._parts_key = car_model.assemble(
+                        body, whl, (self.car().get("glb_fit") or {}) if glb else None), key
                 img = car_model.picture(self._parts, paint, max(60, size), yaw, smooth=full)
             except Exception as e:                   # noqa: BLE001 - shown in the view
                 img = "This car can't be shown: %s" % e

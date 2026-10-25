@@ -176,24 +176,27 @@ def fit_glb(glb, body, fit):
     return {"glb": t.astype(np.float32), "glb_rgb": glb["glb_rgb"]}
 
 
-def assemble(body, wheels=None):
-    """{kind: triangles}: the body's parts; with `wheels` (another car's parts) its tyres + rims moved onto the
-    body's wheel centres"""
+def assemble(body, wheels=None, fit=None):
+    """{kind: triangles}: the body's parts with the tyres + rims of `wheels` (another car's parts; None = its
+    own) on the body's wheel centres, moved apart by fit {"track": side to side, "wb": front to back} (m)"""
+    fit = fit or {}
+    src = wheels if wheels is not None else body
     out = {}
     for k, t in body.items():
-        if k.startswith("centre|") or (wheels is not None and k.split("|")[0] in ("tyre", "rim")):
+        if k.startswith("centre|") or (k.split("|")[0] in ("tyre", "rim") and "|" in k):
+            continue
+        if wheels is not None and k == "rim":
             continue
         out.setdefault(k.split("|")[0], []).append(t)
-    if wheels is not None:
-        for c in CORNERS:
-            at = body.get("centre|" + c)
-            src = wheels.get("centre|" + c)
-            if at is None or src is None:
-                continue
-            for kind in ("tyre", "rim"):
-                t = wheels.get(kind + "|" + c)
-                if t is not None:
-                    out.setdefault(kind, []).append(t - src + at)
+    for c in CORNERS:
+        at, frm = body.get("centre|" + c), src.get("centre|" + c)
+        if at is None or frm is None:
+            continue
+        at = at + [np.sign(at[0]) * fit.get("track", 0.0) / 2, 0.0, np.sign(at[2]) * fit.get("wb", 0.0) / 2]
+        for kind in ("tyre", "rim"):
+            t = src.get(kind + "|" + c)
+            if t is not None:
+                out.setdefault(kind, []).append(t - frm + at)
     return {k: np.concatenate(v) for k, v in out.items()}
 
 
