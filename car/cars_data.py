@@ -15,7 +15,7 @@ import paths
 CLASSES = "ABCD"                                       # the game's class 0..3
 STATS = (("speed", "UiSpeed", "Top speed"), ("acceleration", "UiAcceleration", "Acceleration"),
          ("drift", "UiDrift", "Drift"), ("grip", "UiGrip", "Grip"), ("strength", "UiStrength", "Strength"))
-CACHE = os.path.join(paths.WORK, "cars_cache.json")
+CACHE = os.path.join(paths.WORK, "cars_cache2.json")
 _cars = None
 
 
@@ -31,8 +31,22 @@ def _read_game():
             yield from fields(b, base + off)
         for f in types[t]["fields"]:
             yield f["name"], f["offset"] + base, types[f["type"]]["name"] if f["type"] < len(types) else ""
+    # the cars a player can pick (multiplayer.bin car list) - boss / legend copies are not in it (and a copy of
+    # one does not show in the car select either)
+    mp = open(os.path.join(paths.UNPACKED, "xt", "multiplayer.bin"), "rb").read()
+    mk = kslf.Kslf(mp)
+    mtypes = schema.load_schema(mk)
+    mo4, mn4 = mk.sections[4]
+    mrows = [struct.unpack_from("<IHH", mp, mo4 + 8 * i) for i in range(mn4)]
+    cfg = next(o for o in kslf.Objects(mk, mtypes).objects if mtypes[o["blocks"][0]["type"]]["name"] == "MultiplayerConfig")
+    off = next(f["offset"] for f in mtypes[cfg["blocks"][0]["type"]]["fields"] if f["name"] == "vehicles")
+    blk, first, cnt = struct.unpack_from("<HHI", mp, cfg["blocks"][0]["offset"] + off)
+    picks = {mrows[struct.unpack_from("<I", mp, cfg["blocks"][blk]["offset"] + 4 * (first + j))[0]][0] for j in range(cnt)}
+    o4, n4 = k.sections[4]
+    uid_of = {struct.unpack_from("<IHH", d, o4 + 8 * i)[2]: struct.unpack_from("<I", d, o4 + 8 * i)[0]
+              for i in range(n4) if types[struct.unpack_from("<IHH", d, o4 + 8 * i)[1]]["name"] == "AmaxVehicle"}
     out = []
-    for o in kslf.Objects(k, types).objects:
+    for oi, o in enumerate(kslf.Objects(k, types).objects):
         b = o["blocks"][0]
         if types[b["type"]]["name"] != "AmaxVehicle":
             continue
@@ -45,7 +59,7 @@ def _read_game():
         def text(name):
             at = struct.unpack_from("<I", d, b["offset"] + f[name][0])[0]
             return bytes(o["pool"][at:o["pool"].index(b"\0", at)]).decode("latin1")
-        car = {"name": text("Name"), "class": num("class"), "icon": text("UiIconName"), "mph": num("UiMaxSpeed")}
+        car = {"name": text("Name"), "class": num("class"), "pick": uid_of.get(oi) in picks, "icon": text("UiIconName"), "mph": num("UiMaxSpeed")}
         for key, field, _ in STATS:
             car[key] = num(field)
         out.append(car)
@@ -68,8 +82,13 @@ def game_cars():
     return _cars
 
 
+def pickable():
+    """the cars a player can choose (no boss / legend copies)"""
+    return [c for c in game_cars() if c["pick"]]
+
+
 def class_cars(cls):
-    return [c for c in game_cars() if c["class"] == cls]
+    return [c for c in pickable() if c["class"] == cls]
 
 
 def limits(cls):

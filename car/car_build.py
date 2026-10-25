@@ -154,6 +154,9 @@ def add_cars(files, wld, U, log=print):
     added = []
     for i, (car, name) in enumerate(zip(cars, names)):
         car_uid, dyn_uid, paint_uid = UID0 + 4 * i, UID0 + 4 * i + 1, UID0 + 4 * i + 2
+        picks = [x["name"] for x in cd.class_cars(car["class"])]
+        if car["base"] not in picks:                 # a boss / legend copy does not show in the car select
+            car = dict(car, base=picks[0])
         amax, rp = Db(amax_d), Db(rp_d)
         bi = amax.cars()[car["base"]]
         wi = amax.cars().get(car.get("wheels") or car["base"], bi)
@@ -196,7 +199,7 @@ def add_cars(files, wld, U, log=print):
         mph = cd.top_speed(car["class"], s["speed"])
         sets = dict(car_vals, LocString=LOC0 + i, dynamics=dyn_row, UiSpeed=s["speed"],
                     UiAcceleration=s["acceleration"], UiDrift=s["drift"], UiGrip=s["grip"], UiStrength=s["strength"],
-                    UiMaxSpeed=mph, GameplayTopSpeed=mph, **{"class": car["class"]}, **wheel_vals)
+                    UiMaxSpeed=mph, GameplayTopSpeed=mph, BossAbilitySlot=0, **{"class": car["class"]}, **wheel_vals)
         icon_off, _ = amax.field(vt, "UiIconName")
 
         def car_patch(data, pool, blocks):

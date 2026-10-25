@@ -128,13 +128,52 @@ def read_game_car(name):
     return out
 
 
+_glb = {}
+
+
 def read_glb_body(path):
-    """an imported body (.glb): {"paint": triangles} in the same axes, standing on the ground, centred"""
+    """an imported body (.glb, one model - no damage parts): {"glb": triangles, "glb_rgb": their colours (its own
+    textures / material colours: the paint colours do not apply)}, in game axes, standing on the ground, centred"""
+    key = (path, os.path.getmtime(path))
+    if key in _glb:
+        return _glb[key]
     import model_import
     g = model_import.read_glb(path)
     parts, lo, hi = model_import.game_space(g)
-    tris = [p["pos"][p["tri"]] for p in parts]
-    return {"paint": np.concatenate(tris).astype(np.float32)}
+    tris, rgb = [], []
+    for p in parts:
+        t = p["pos"][p["tri"]]
+        mat = g["materials"][p["mat"]] if 0 <= p["mat"] < len(g["materials"]) else None
+        col = np.array([int(255 * max(0.0, min(1.0, c))) for c in (mat["colour"][:3] if mat else (0.7, 0.7, 0.7))])
+        if mat is not None and mat["image"] is not None and p.get("uv") is not None and len(p["uv"]):
+            img = np.asarray(mat["image"].convert("RGB"))
+            uv = p["uv"][p["tri"]].mean(1) % 1.0                      # each triangle: the texture at its middle
+            px = img[(uv[:, 1] * (img.shape[0] - 1)).astype(int), (uv[:, 0] * (img.shape[1] - 1)).astype(int)]
+            c = px.astype(np.float32) * (col / 255.0)
+        else:
+            c = np.repeat(col[None].astype(np.float32), len(t), 0)
+        tris.append(t)
+        rgb.append(c)
+    out = {"glb": np.concatenate(tris).astype(np.float32), "glb_rgb": np.concatenate(rgb).astype(np.float32)}
+    _glb.clear()
+    _glb[key] = out
+    return out
+
+
+def fit_glb(glb, body, fit):
+    """the imported body placed on the game body's wheels: first scaled to the game body's length and centred
+    on it, then the player's fine-tuning fit = {"size" (x), "fwd", "up" (m), "turn" (degrees, around up)}"""
+    t = glb["glb"].astype(np.float64)
+    a = np.radians(fit.get("turn", 0))
+    x, z = t[..., 0] * np.cos(a) - t[..., 2] * np.sin(a), t[..., 0] * np.sin(a) + t[..., 2] * np.cos(a)
+    t = np.stack([x, t[..., 1], z], -1)
+    ref = np.concatenate([v.reshape(-1, 3) for k, v in body.items() if k == "paint"])
+    lo, hi = t.reshape(-1, 3).min(0), t.reshape(-1, 3).max(0)
+    rlo, rhi = ref.min(0), ref.max(0)
+    k = (rhi[2] - rlo[2]) / max(1e-6, hi[2] - lo[2]) * fit.get("size", 1.0)
+    t = (t - [(lo[0] + hi[0]) / 2, lo[1], (lo[2] + hi[2]) / 2]) * k
+    t += [(rlo[0] + rhi[0]) / 2, rlo[1] + fit.get("up", 0.0), (rlo[2] + rhi[2]) / 2 + fit.get("fwd", 0.0)]
+    return {"glb": t.astype(np.float32), "glb_rgb": glb["glb_rgb"]}
 
 
 def assemble(body, wheels=None):
@@ -177,9 +216,10 @@ def picture(parts, paint, size, yaw, pitch=-0.35, smooth=True):
     from PIL import Image, ImageDraw
     k = 2 if smooth else 1
     S = size * k
-    kinds = sorted(parts)
+    kinds = sorted(k for k in parts if k != "glb_rgb")
     tris = np.concatenate([parts[n] for n in kinds]).astype(np.float64)
-    cols = np.concatenate([np.repeat([paint if n == "paint" else COLOURS[n]], len(parts[n]), 0) for n in kinds])
+    cols = np.concatenate([parts["glb_rgb"] if n == "glb" else
+                           np.repeat([paint if n == "paint" else COLOURS[n]], len(parts[n]), 0) for n in kinds])
     cy, sy, cp, sp = np.cos(yaw), np.sin(yaw), np.cos(pitch), np.sin(pitch)
     x, y, z = tris[..., 0], tris[..., 1], tris[..., 2]
     x1, z1 = x * cy - z * sy, x * sy + z * cy                 # turn around the up axis
@@ -200,6 +240,9 @@ def picture(parts, paint, size, yaw, pitch=-0.35, smooth=True):
     img = Image.new("RGB", (S, S), (6, 10, 20))
     d = ImageDraw.Draw(img)
     xy = np.stack([sx, sy2], -1)
+    area = np.abs((xy[order, 1, 0] - xy[order, 0, 0]) * (xy[order, 2, 1] - xy[order, 0, 1]) -
+                  (xy[order, 2, 0] - xy[order, 0, 0]) * (xy[order, 1, 1] - xy[order, 0, 1]))
+    order = order[area >= (0.1 if smooth else 3.0)]            # turning with the mouse: tiny triangles left out
     for i in order:
         d.polygon([tuple(p) for p in xy[i]], fill=tuple(rgb[i]))
     return img.resize((size, size), Image.LANCZOS) if k > 1 else img

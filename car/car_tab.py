@@ -79,12 +79,22 @@ class CarPanel(tk.Frame):
             tk.Button(paint, text="colour %d" % (i + 1), command=lambda i=i: self._paint(i)).pack(side="left")
             self.paint_btns.append(sw)
         tk.Label(paint, text="Wheels", bg=T.BG, fg=T.MUTED).pack(side="left", padx=(24, 4))
-        self.wheels = ttk.Combobox(paint, state="readonly", width=34, values=[c["name"] for c in cd.game_cars()])
+        self.wheels = ttk.Combobox(paint, state="readonly", width=34, values=[c["name"] for c in cd.pickable()])
         self.wheels.pack(side="left")
         self.wheels.bind("<<ComboboxSelected>>", lambda e: self._set("wheels", self.wheels.get()))
         tk.Button(paint, text="⇩ Import body (.glb)", command=self._import_body).pack(side="left", padx=(24, 4))
         self.body_btn = tk.Button(paint, text="Use the game body", command=lambda: self._set("body_glb", None))
         self.body_btn.pack(side="left")
+        self.fit_row = tk.Frame(r, bg=T.BG)                 # only for an imported body: line it up on the wheels
+        tk.Label(self.fit_row, text="Fit the body on the wheels:", bg=T.BG, fg=T.HEAD).pack(side="left")
+        for label, key, step in (("Size", "size", 0.02), ("Forward", "fwd", 0.03), ("Up", "up", 0.02)):
+            tk.Label(self.fit_row, text=label, bg=T.BG, fg=T.MUTED).pack(side="left", padx=(14, 2))
+            tk.Button(self.fit_row, text="−", width=2, command=lambda k=key, d=-step: self._fit(k, d)).pack(side="left")
+            tk.Button(self.fit_row, text="+", width=2, command=lambda k=key, d=step: self._fit(k, d)).pack(side="left", padx=2)
+        tk.Button(self.fit_row, text="↻ Turn 90°", command=lambda: self._fit("turn", 90)).pack(side="left", padx=(14, 4))
+        tk.Button(self.fit_row, text="Reset", command=lambda: self._fit(None, 0)).pack(side="left")
+        self.fit_label = tk.Label(self.fit_row, text="", bg=T.BG, fg=T.MUTED)
+        self.fit_label.pack(side="left", padx=10)
         # ---- stats: one slider per stat + the bar chart against the class
         tk.Label(r, text="STATS  (each one stays inside the class's range; all together inside its point budget)",
                  bg=T.BG, fg=T.HEAD, font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(16, 2))
@@ -141,7 +151,7 @@ class CarPanel(tk.Frame):
     def _set(self, key, value):
         if self.car() is not None and self.car().get(key) != value:
             self._edit(lambda c: c.__setitem__(key, value))
-            if key in ("wheels", "body_glb"):
+            if key in ("wheels", "body_glb", "glb_fit"):
                 self._load()
             if key == "name":
                 self.listbox.delete(self.sel)
@@ -219,6 +229,10 @@ class CarPanel(tk.Frame):
     # ------------------------------------------------------------------------------------------------- editing
     def _load(self):
         c = self.car()
+        if c["base"] not in [x["name"] for x in cd.class_cars(c["class"])]:     # (a boss / legend car of old)
+            c["base"] = cd.class_cars(c["class"])[0]["name"]
+        if c.get("wheels") and c["wheels"] not in [x["name"] for x in cd.pickable()]:
+            c["wheels"] = None
         self.loading = True
         self.name.set(c["name"])
         self.cls.set(c["class"])
@@ -226,7 +240,18 @@ class CarPanel(tk.Frame):
         self.base.set(c["base"])
         self.icon.set(c["icon"])
         self.wheels.set(c.get("wheels") or c["base"])
-        self.body_btn.configure(state="normal" if c.get("body_glb") else "disabled")
+        glb = bool(c.get("body_glb"))
+        self.body_btn.configure(state="normal" if glb else "disabled")
+        for w in self._all(self.paint_btns[0].master):          # an imported body keeps its own colours
+            if isinstance(w, tk.Button) and str(w.cget("text")).startswith("colour"):
+                w.configure(state="disabled" if glb else "normal")
+        if glb:
+            f = c.get("glb_fit") or {}
+            self.fit_label.configure(text="size x%.2f, forward %+.2f m, up %+.2f m, turned %d°" % (
+                f.get("size", 1.0), f.get("fwd", 0.0), f.get("up", 0.0), f.get("turn", 0)))
+            self.fit_row.pack(fill="x", pady=(8, 0), after=self.paint_btns[0].master)
+        else:
+            self.fit_row.pack_forget()
         for i, b in enumerate(self.paint_btns):
             b.configure(bg=c["paint"][i])
         self.loading = False
@@ -262,6 +287,8 @@ class CarPanel(tk.Frame):
 
     def _paint(self, i):
         if self.car() is None:
+            return
+        if self.car().get("body_glb"):
             return
         col = colorchooser.askcolor(self.car()["paint"][i], title="Paint colour %d" % (i + 1))[1]
         if col:
@@ -347,6 +374,16 @@ class CarPanel(tk.Frame):
         self.d.say("Body imported: %s (the 3D view shows it; in game the car still uses the body car until car "
                    "import is finished)" % name)
 
+    def _fit(self, key, d):
+        f = dict(self.car().get("glb_fit") or {}) if self.car() else {}
+        if key is None:
+            f = {}
+        elif key == "turn":
+            f["turn"] = (f.get("turn", 0) + d) % 360
+        else:
+            f[key] = round(f.get(key, 1.0 if key == "size" else 0.0) + d, 3)
+        self._set("glb_fit", f)
+
     def _turn(self, e):
         self.yaw += (e.x - getattr(self, "_drag_x", e.x)) * 0.012
         self._drag_x = e.x
@@ -361,7 +398,7 @@ class CarPanel(tk.Frame):
         w, h = self.view.winfo_width(), self.view.winfo_height()
         if w < 50 or h < 50:
             return
-        key = (c["base"], c.get("wheels") or c["base"], c.get("body_glb"))
+        key = (c["base"], c.get("wheels") or c["base"], c.get("body_glb"), repr(sorted((c.get("glb_fit") or {}).items())))
         paint = tuple(int(c["paint"][0][i:i + 2], 16) for i in (1, 3, 5))
         self._want = (key, paint, self.yaw, min(w, h), full, (w, h))
         if not getattr(self, "_busy", False):
@@ -376,11 +413,12 @@ class CarPanel(tk.Frame):
             key, paint, yaw, size, full, wh = want
             try:
                 if key != self._parts_key:
-                    base, wheels, glb = key
+                    base, wheels, glb, _ = key
                     body = car_model.read_game_car(base)
                     whl = car_model.read_game_car(wheels) if wheels != base else None
                     if glb:
-                        own = car_model.read_glb_body(os.path.join(paths.TRACKS, "cars", glb))
+                        own = car_model.fit_glb(car_model.read_glb_body(os.path.join(paths.TRACKS, "cars", glb)),
+                                                body, self.car().get("glb_fit") or {})
                         body = dict({k: v for k, v in body.items() if k.split("|")[0] in ("tyre", "rim", "centre")},
                                     **own)
                     self._parts, self._parts_key = car_model.assemble(body, whl), key
