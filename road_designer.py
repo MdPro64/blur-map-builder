@@ -24,7 +24,7 @@ import winsound
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path[:0] = [os.path.join(HERE, "flat_earth")]
+sys.path[:0] = [os.path.join(HERE, "flat_earth"), os.path.join(HERE, "car")]
 import road as road_mod   # noqa: E402
 import world as world_mod  # noqa: E402
 import minimap as minimap_mod  # noqa: E402
@@ -291,6 +291,8 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
         if self.sel is not None and self.sel >= len(self.map["points"]):
             self.sel = None
         self.sel_pick = None
+        if self.view_mode.get() == "car":                  # undo / redo: the car tab shows the restored cars
+            self.car_panel.refresh()
 
     # ================================================================================================ UI
     def _ui(self):
@@ -313,7 +315,8 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
                   font=UI_FONT, padx=4).pack(side="right", padx=(2, 0), pady=4)
         self.view_mode = tk.StringVar(value="2d")
         for val, txt in (("2d", "\u25A6 2D map"), ("3d", "\u25B2 3D"), ("collision", "\u26A0 Collision"),
-                         ("ai", "\u27BF AI path"), ("light", "\u2600 Lighting"), ("surface", "\u25A9 Surface")):
+                         ("ai", "\u27BF AI path"), ("light", "\u2600 Lighting"), ("surface", "\u25A9 Surface"),
+                         ("car", "\u26DF Custom car")):
             tk.Radiobutton(bar, text=txt, variable=self.view_mode, value=val, indicatoron=False, bg=BTN,
                            fg="white", selectcolor=SEL, activebackground=BTN_HI, relief="flat", padx=12, pady=4,
                            command=self.on_view, font=("Segoe UI Symbol", 10, "bold")).pack(side="left", padx=1, pady=4)
@@ -385,6 +388,9 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
         sf = self.surf_bar(self.toolrow, BTN, BTN_HI, SEL, FG, HEAD, UI_FONT)     # SURFACE tab: brush + road type
         common(sf)
         self.bars["surface"] = sf
+        self.bars["car"] = tk.Frame(self.toolrow, bg=BAR2)                  # CUSTOM CAR tab: no tools
+        tk.Label(self.bars["car"], text="Your own cars - fair: never better than the best car of their class",
+                 bg=BAR2, fg=HEAD, font=UI_FONT).pack(side="left", padx=10, pady=6)
         self.bars["2d"].pack(fill="x")
 
         body = tk.Frame(r, bg=BG)
@@ -452,6 +458,8 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
         self.ai_state = tk.Label(self.ai_bar, text="", bg=BAR2, fg="#9aa8b8")
         self.ai_state.pack(side="left", padx=10)
         self.light_panel = tk.Frame(body, bg=BG)                           # LIGHTING tab (light_build)
+        import car_tab
+        self.car_panel = car_tab.CarPanel(body, self)                      # CUSTOM CAR tab
         self.v3d = view3d.View3D(body, bg=BG, fg=FG, panel=PANEL)        # shown by the 3D button / F3
         self.v3d.on_edit = self.on_3d_edit
         self.v3d.on_point = self.on_3d_point
@@ -527,7 +535,7 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
 
     # ================================================================================================ 2D / 3D
     def toggle_view(self):
-        order = ["2d", "3d", "collision", "ai", "light", "surface"]
+        order = ["2d", "3d", "collision", "ai", "light", "surface", "car"]
         self.view_mode.set(order[(order.index(self.view_mode.get()) + 1) % len(order)])
         self.on_view()
 
@@ -549,6 +557,15 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
                      "install, look in game" % self.loc["name"])
             return
         self.light_panel.pack_forget()
+        if self.view_mode.get() == "car":
+            self.v3d.show(False)
+            self.v3d.pack_forget()
+            self.c.pack_forget()
+            self.car_panel.pack(fill="both", expand=True)
+            self.car_panel.refresh()
+            self.say("CUSTOM CAR: + New, pick a class and a body car, then spend the class's stat points")
+            return
+        self.car_panel.pack_forget()
         if self.view_mode.get() == "surface":
             self.v3d.show(False)
             self.v3d.pack_forget()
