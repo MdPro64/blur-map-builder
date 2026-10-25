@@ -1,9 +1,14 @@
 """CUSTOM CAR tab: the player's own cars (world["cars"]). Each is a copy of a game car of the same class with its
 own name, icon, paint and stats. The stats can never beat the class: every stat stays inside the range of the
 class's real cars, and all of them together inside the class's point budget (cars_data.limits)."""
+import os
 import re
+import shutil
+import threading
 import tkinter as tk
-from tkinter import colorchooser, ttk
+from tkinter import colorchooser, filedialog, ttk
+
+import paths
 
 import blur_theme as T
 import cars_data as cd
@@ -73,6 +78,13 @@ class CarPanel(tk.Frame):
             sw.bind("<Button-1>", lambda e, i=i: self._paint(i))
             tk.Button(paint, text="colour %d" % (i + 1), command=lambda i=i: self._paint(i)).pack(side="left")
             self.paint_btns.append(sw)
+        tk.Label(paint, text="Wheels", bg=T.BG, fg=T.MUTED).pack(side="left", padx=(24, 4))
+        self.wheels = ttk.Combobox(paint, state="readonly", width=34, values=[c["name"] for c in cd.game_cars()])
+        self.wheels.pack(side="left")
+        self.wheels.bind("<<ComboboxSelected>>", lambda e: self._set("wheels", self.wheels.get()))
+        tk.Button(paint, text="⇩ Import body (.glb)", command=self._import_body).pack(side="left", padx=(24, 4))
+        self.body_btn = tk.Button(paint, text="Use the game body", command=lambda: self._set("body_glb", None))
+        self.body_btn.pack(side="left")
         # ---- stats: one slider per stat + the bar chart against the class
         tk.Label(r, text="STATS  (each one stays inside the class's range; all together inside its point budget)",
                  bg=T.BG, fg=T.HEAD, font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(16, 2))
@@ -99,6 +111,17 @@ class CarPanel(tk.Frame):
         self.top_speed.pack(anchor="w", pady=(4, 0))
         tk.Label(r, text="Build + install puts your cars in the game (car select: their class).  The game finds a "
                          "car's 3D model by its body car.", bg=T.BG, fg=T.MUTED).pack(anchor="w", pady=(14, 0))
+        # ---- the car in 3D (drag = turn it)
+        self.view = tk.Canvas(r, bg=T.BG, highlightthickness=0, cursor="fleur")
+        self.view.pack(fill="both", expand=True, pady=(8, 0))
+        self.view.bind("<Configure>", lambda e: self._draw(True))
+        self.view.bind("<B1-Motion>", self._turn)
+        self.view.bind("<ButtonPress-1>", lambda e: setattr(self, "_drag_x", e.x))
+        self.view.bind("<ButtonRelease-1>", lambda e: self._draw(True))
+        self.yaw = -0.7
+        self._parts_key = self._parts = None
+        self._job = 0
+        self._img = None
 
     # ------------------------------------------------------------------------------------------------- data
     def cars(self):
@@ -118,6 +141,8 @@ class CarPanel(tk.Frame):
     def _set(self, key, value):
         if self.car() is not None and self.car().get(key) != value:
             self._edit(lambda c: c.__setitem__(key, value))
+            if key in ("wheels", "body_glb"):
+                self._load()
             if key == "name":
                 self.listbox.delete(self.sel)
                 self.listbox.insert(self.sel, self._label(self.car()))
@@ -200,10 +225,13 @@ class CarPanel(tk.Frame):
         self.base.configure(values=[x["name"] for x in cd.class_cars(c["class"])])
         self.base.set(c["base"])
         self.icon.set(c["icon"])
+        self.wheels.set(c.get("wheels") or c["base"])
+        self.body_btn.configure(state="normal" if c.get("body_glb") else "disabled")
         for i, b in enumerate(self.paint_btns):
             b.configure(bg=c["paint"][i])
         self.loading = False
         self._show_stats()
+        self._draw(True)
 
     def _class_changed(self):
         cls = self.cls.get()
@@ -296,3 +324,91 @@ class CarPanel(tk.Frame):
             self.sliders[key].configure(text=str(v))
             cv.create_rectangle(X(0), y - 4, X(v), y + 4, fill=T.ORANGE, outline="")
             cv.create_oval(X(v) - 7, y - 7, X(v) + 7, y + 7, fill=T.ORANGE, outline="white")
+
+    # ------------------------------------------------------------------------------------------------- 3D view
+    def _import_body(self):
+        """a .glb body (one model: no damage parts - a damaged car only smokes). Kept next to the maps."""
+        if self.car() is None:
+            return
+        path = filedialog.askopenfilename(title="Car body (.glb)", filetypes=[("glTF binary", "*.glb")])
+        if not path:
+            return
+        import car_model
+        try:
+            car_model.read_glb_body(path)
+        except Exception as e:                       # noqa: BLE001 - say why
+            self.d.say("This .glb can't be used: %s" % e)
+            return
+        folder = os.path.join(paths.TRACKS, "cars")
+        os.makedirs(folder, exist_ok=True)
+        name = os.path.basename(path)
+        shutil.copy2(path, os.path.join(folder, name))
+        self._set("body_glb", name)
+        self.d.say("Body imported: %s (the 3D view shows it; in game the car still uses the body car until car "
+                   "import is finished)" % name)
+
+    def _turn(self, e):
+        self.yaw += (e.x - getattr(self, "_drag_x", e.x)) * 0.012
+        self._drag_x = e.x
+        self._draw(False)
+
+    def _draw(self, full):
+        """render in the background (one at a time; the newest request wins); full = sharp, else quick"""
+        c = self.car()
+        if c is None or not self.winfo_ismapped():
+            self.view.delete("all")
+            return
+        w, h = self.view.winfo_width(), self.view.winfo_height()
+        if w < 50 or h < 50:
+            return
+        key = (c["base"], c.get("wheels") or c["base"], c.get("body_glb"))
+        paint = tuple(int(c["paint"][0][i:i + 2], 16) for i in (1, 3, 5))
+        self._want = (key, paint, self.yaw, min(w, h) if full else min(w, h) // 3, (w, h))
+        if not getattr(self, "_busy", False):
+            self._busy = True
+            threading.Thread(target=self._render, daemon=True).start()
+            self.after(40, self._poll)
+
+    def _render(self):
+        import car_model
+        while True:
+            want = self._want
+            key, paint, yaw, size, wh = want
+            try:
+                if key != self._parts_key:
+                    base, wheels, glb = key
+                    body = car_model.read_game_car(base)
+                    whl = car_model.read_game_car(wheels) if wheels != base else None
+                    if glb:
+                        own = car_model.read_glb_body(os.path.join(paths.TRACKS, "cars", glb))
+                        body = dict({k: v for k, v in body.items() if k.split("|")[0] in ("tyre", "rim", "centre")},
+                                    **own)
+                    self._parts, self._parts_key = car_model.assemble(body, whl), key
+                img = car_model.picture(self._parts, paint, max(60, size), yaw)
+            except Exception as e:                   # noqa: BLE001 - shown in the view
+                img = "This car can't be shown: %s" % e
+            if want is self._want:
+                self._result = (img, wh)
+                self._busy = False
+                return
+
+    def _poll(self):
+        if getattr(self, "_busy", False):
+            self.after(40, self._poll)
+            return
+        res, self._result = getattr(self, "_result", None), None
+        if res is None:
+            return
+        img, (w, h) = res
+        self.view.delete("all")
+        if isinstance(img, str):
+            self.view.create_text(w / 2, h / 2, text=img, fill=T.MUTED)
+            return
+        from PIL import ImageTk
+        side = min(w, h)
+        if img.size[0] != side:
+            img = img.resize((side, side))
+        self._img = ImageTk.PhotoImage(img)
+        self.view.create_image(w / 2, h / 2, image=self._img)
+        self.view.create_text(10, h - 8, anchor="sw", fill=T.MUTED, font=("Segoe UI", 8),
+                              text="drag = turn the car")
