@@ -2,10 +2,11 @@
   * every body part of the body car is hidden: its strips are filled with one repeated index (nothing drawn);
     tyres / rims / brakes stay
   * the .glb, fitted on the body like the 3D view (car_model.fit_glb), is cut into chunks; each chunk goes into one
-    body part of the TRIM materials (veh_Default_b_c_f[_h].fx: they draw the car's own picture "<car>_1" through
-    g_MeshTexture, no paint): its vertex range (position, normal, texture spot) and its strip room (detail level 0;
-    the other levels are pointed at level 0's strip, so the car is whole at any distance)
-  * the .glb's texture replaces the picture "<car>_1" (every stored size, 16 x 16 .. 512 x 512)
+    still body part (exterior / interior) of the TRIM materials (veh_Default_b_c_f[_h].fx: they draw one of the
+    car's own pictures through g_MeshTexture, no paint): its vertex range (position, normal, texture spot, baked
+    light) and its strip room (all detail levels' room; every level draws that strip, so the car is whole at any
+    distance)
+  * the .glb's texture replaces the pictures "<car>_1" and "<car>_2" (every stored size, 16 x 16 .. 512 x 512)
   * one point per (position, texture spot), so texture seams stay; only when that does not fit: one point per
     position, simplified (fast_simplification) to what fits, texture spot of the nearest .glb point
 Strip facts (cpmodel.py): u16 indices local to the part's vertex base; an even-position triangle (a, b, c) faces
@@ -31,15 +32,9 @@ import car_mesh
 import car_model
 
 TYPE_SIZE = {6: 12, 0xB: 4, 8: 4, 9: 8, 0xA: 4}
-TRIM_FX = "veh_default_b_c_f"           # the trim shaders that read "<car>_1"
+TRIM_FX = "veh_default_b_c_f"           # the trim shaders (they read the car's own pictures, no paint)
+TRIM_PICTURES = (b"_1", b"_2")          # the car's own pictures the .glb's texture goes into
 STILL = ("e_exterior", "e_interior")    # parts that never move; the body shell first
-# TEST 2026-10-26: with its own id + name, the picture in our model was NOT used in game (the body showed the body
-# car's trim picture). Now: the original id + name, and the .glb's texture also written into the body car's own
-# model (TEXTURE_INTO_BASE: the real body car's trim then shows it too) - does the game take it from there?
-# TEST 2 (same day): the body car's own model with the texture did not help either; 2 more models hold the same
-# picture (same id): the Astra's boss / legend copies. Now the texture goes into EVERY vehicle model with that id.
-NEW_TEXTURE_ID = False
-TEXTURE_INTO_BASE = True
 
 
 def _light_bytes(n):
@@ -193,35 +188,8 @@ def glb_model(car, glb_path, log=print):
     log("   imported body: %d triangles -> %d (%s), %d placed in %d trim parts (room %d points, %d indices)" % (
         n0, len(faces), how, placed, len(rooms), vroom, iroom))
     _grow_boxes(data, M, pts, log)
-    _put_texture(data, raw.get("glb_image"), log, car["name"] if NEW_TEXTURE_ID else None)
+    _put_texture(data, raw.get("glb_image"), log)
     return bytes(data)
-
-
-def base_with_texture(car, glb_path, log=print):
-    """{root.pak path: bytes}: every vehicle model holding the body car's trim picture (same texture id: the body
-    car and its boss / legend copies) with the .glb's texture in it (see TEXTURE_INTO_BASE)"""
-    import game_preview
-    import pak
-    import paths
-    src = game_preview._model_bytes(car_model.model_path(car["base"]))
-    names = [(m.start(), m.group(1)) for m in re.finditer(rb"([A-Za-z0-9_]{3,})RA\x01", src)]
-    a = [x for x, n in names if n.lower().endswith(b"_1")][0]
-    first = LEVEL.search(src, a)
-    tex_id = src[first.start() - 8:first.start() - 4]
-    img = car_model.read_glb_body(glb_path).get("glb_image")
-    R = pak.Pak(paths.MODEL_PAK)
-    out = {}
-    for e in R.files:
-        n = e["name"].lower()
-        if not (n.startswith("\\models\\vehicles\\") and n.endswith(".model")) or "\\wheels\\" in n:
-            continue
-        d = R.read(e)
-        if d and tex_id in d:
-            data = bytearray(d)
-            _put_texture(data, img, lambda s: None)
-            out[e["name"]] = bytes(data)
-    log("   (test: the .glb's texture also into %s)" % ", ".join(k.rsplit("\\", 1)[-1] for k in out))
-    return out
 
 
 def _grow_boxes(data, M, pts, log):
@@ -267,10 +235,9 @@ def _nearest_lookup(points, values, cell=0.03):
     return fn
 
 
-def _put_texture(data, img, log, car_name=None):
-    """the .glb's texture into every stored size of the car's own picture "<car>_1" (the trim shaders' texture);
-    with car_name: under a NEW texture id (the u32 before the first size record) and name"""
-    import zlib
+def _put_texture(data, img, log):
+    """the .glb's texture into every stored size of the car's own pictures "<car>_1" and "<car>_2" (the trim
+    shaders read one of them: in game the body showed the lights picture _2 - tests 2026-10-26)"""
     import cpmodel
     import dxt
     from PIL import Image
@@ -278,32 +245,25 @@ def _put_texture(data, img, log, car_name=None):
         log("   (the .glb has no texture: the body shows the car's trim picture)")
         return
     names = [(m.start(), m.group(1)) for m in re.finditer(rb"([A-Za-z0-9_]{3,})RA\x01", data)]
-    pick = [(a, n) for a, n in names if n.lower().endswith(b"_1")]
-    if not pick:
-        log("   (no trim picture <car>_1 found: the .glb's texture is not used)")
-        return
-    a, name = pick[0]
-    end = next((b for b, _ in names if b > a), len(data))
-    sizes = []
-    for k, m in enumerate(LEVEL.finditer(data, a, end)):
-        if k == 0 and car_name:
-            old = struct.unpack_from("<I", data, m.start() - 8)[0]
-            new = old ^ (zlib.crc32(("bmb car " + car_name).encode()) | 1)
-            struct.pack_into("<I", data, m.start() - 8, new)
-            # ... and its own name too, same length (in case the game finds pictures by name)
-            renamed = (b"bmb%08x" % new + b"x" * len(name))[:len(name) - 2] + b"_1"
-            data[a:a + len(name)] = renamed
-            log("   texture id %08X -> %08X, name %s -> %s" % (old, new, name.decode(), renamed.decode()))
-        w, h, mips, size = (struct.unpack("<I", m.group(i))[0] for i in (1, 2, 3, 4))
-        px = img.resize((w, h), Image.LANCZOS).tobytes()
-        enc = cpmodel.encode_mips(px, w, h, mips) if size == cpmodel.texture_bytes(w, h, mips) else \
-            dxt.dxt1_encode(px, w, h)
-        if len(enc) != size:
-            log("   (picture %s %d x %d: unexpected size, left as it is)" % (name.decode(), w, h))
+    for suffix in TRIM_PICTURES:
+        pick = [(a, n) for a, n in names if n.lower().endswith(suffix)]
+        if not pick:
+            log("   (no picture <car>%s found)" % suffix.decode())
             continue
-        data[m.end() + 20:m.end() + 20 + size] = enc
-        sizes.append(w)
-    log("   the .glb's texture -> %s (%s)" % (name.decode(), ", ".join("%d" % s for s in sizes)))
+        a, name = pick[0]
+        end = next((b for b, _ in names if b > a), len(data))
+        sizes = []
+        for m in LEVEL.finditer(data, a, end):
+            w, h, mips, size = (struct.unpack("<I", m.group(i))[0] for i in (1, 2, 3, 4))
+            px = img.resize((w, h), Image.LANCZOS).tobytes()
+            enc = cpmodel.encode_mips(px, w, h, mips) if size == cpmodel.texture_bytes(w, h, mips) else \
+                dxt.dxt1_encode(px, w, h)
+            if len(enc) != size:
+                log("   (picture %s %d x %d: unexpected size, left as it is)" % (name.decode(), w, h))
+                continue
+            data[m.end() + 20:m.end() + 20 + size] = enc
+            sizes.append(w)
+        log("   the .glb's texture -> %s (%s)" % (name.decode(), ", ".join("%d" % s for s in sizes)))
 
 
 def _index_room(m):

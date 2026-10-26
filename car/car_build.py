@@ -331,8 +331,6 @@ def model_files(wld, log=print):
     out = {}
     for car, name in zip(cars, internal_names(cars)):
         if car.get("body_glb"):
-            glb = os.path.join(paths.TRACKS, "cars", car["body_glb"])
-            out["\\models\\vehicles\\" + name.lower() + ".model"] = car_glb.glb_model(car, glb, log)
-            if car_glb.TEXTURE_INTO_BASE:
-                out.update(car_glb.base_with_texture(car, glb, log))
+            out["\\models\\vehicles\\" + name.lower() + ".model"] = car_glb.glb_model(
+                car, os.path.join(paths.TRACKS, "cars", car["body_glb"]), log)
     return out
