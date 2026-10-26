@@ -10,8 +10,10 @@
     position, simplified (fast_simplification) to what fits, texture spot of the nearest .glb point
 Strip facts (cpmodel.py): u16 indices local to the part's vertex base; an even-position triangle (a, b, c) faces
 along cross(b - a, c - a).
-Car model facts (2026-10-26): material_index = index into the fx file list; the colour channel (0xB, 9) is damage
-data (neutral = 0, 127, 127, 127), not a colour. The car's own pictures are stored as several records, one per
+Car model facts (2026-10-26): material_index = index into the fx file list; the colour channel (0xB, 9) is BAKED
+LIGHT (ambient amount + light direction, see _light_bytes; read from the disassembled shader veh_Default_b_c_f in
+shaders-speed.pak), not a colour; the pixel shader shows lerp(material colour, texture, texture alpha) * that light.
+The car's own pictures are stored as several records, one per
 size: "...1c 00 00 00, w, h, 1, mips, DXTn, 0, 3, 'RA' 0 0, size, 0x10, 16 bytes" then the data (16 x 16 = all its
 mips, the bigger ones only their top level)."""
 import os
@@ -30,7 +32,14 @@ import car_model
 
 TYPE_SIZE = {6: 12, 0xB: 4, 8: 4, 9: 8, 0xA: 4}
 TRIM_FX = "veh_default_b_c_f"           # the trim shaders that read "<car>_1"
-NO_DAMAGE = (0, 127, 127, 127)
+STILL = ("e_exterior", "e_interior")    # parts that never move; the body shell first
+
+
+def _light_bytes(n):
+    """the colour channel = BAKED LIGHT (vertex shader: x = ambient amount, yzw = light direction, 2x - 1, into the
+    SH sky light; 0 everywhere = a black car): a fit over the Astra's lit body points, n = (x, up, forward)"""
+    vals = (71 + 15 * n[1], 119 - 37 * n[1], 127 + 45 * n[2], 127 - 47 * n[0])
+    return tuple(max(0, min(255, int(round(v)))) for v in vals)
 LEVEL = re.compile(rb"\x1c\x00\x00\x00(....)(....)\x01\x00\x00\x00(....)DXT1\x00\x00\x00\x00\x03\x00\x00\x00RA\x00\x00"
                    rb"(....)", re.S)
 
@@ -134,17 +143,19 @@ def glb_model(car, glb_path, log=print):
     meshes = [(m, els[m["object_index"]]["name"] if m["object_index"] < len(els) else "",
                sidx.get(types(M["vert_definitions"][m["definition"]]))) for m in M["meshes"]]
     # room = the body parts drawn with the trim shaders (they show the car's own picture, no paint)
+    # ... of the still parts only: doors / boot / mirrors / wiper / exhausts / steering wheel / gear stick move,
+    # come off or are cut by their own small box (in game: holes at the side)
     rooms = []
     for m, el, s in meshes:
-        if s is None or car_model._kind(el) in ("tyre", "rim") or not fx[m["material_index"]].startswith(TRIM_FX):
+        if s is None or el.lower() not in STILL or not fx[m["material_index"]].startswith(TRIM_FX):
             continue
         defs = M["vertex_streams"][s]["definition"]
         if defs[0]["type"] == 9 and any(d["type"] == 11 and d["channel"] == 3 for d in defs) and \
                 any(d["type"] == 9 and d["channel"] == 5 for d in defs):
             rooms.append((m, s))
-    rooms.sort(key=lambda r: -r[0]["data1"][0]["vert_count"])
+    rooms.sort(key=lambda r: (STILL.index(els[r[0]["object_index"]]["name"].lower()), -r[0]["data1"][0]["vert_count"]))
     vroom = sum(m["data1"][0]["vert_count"] for m, s in rooms)
-    iroom = sum(m["data1"][0]["face_count"] for m, s in rooms)
+    iroom = sum(_index_room(m) for m, s in rooms)
 
     # ---- the .glb: fitted; texture seams kept if it fits, else simplified
     raw = car_model.read_glb_body(glb_path)
@@ -174,8 +185,27 @@ def glb_model(car, glb_path, log=print):
         how = "simplified"
     log("   imported body: %d triangles -> %d (%s), %d placed in %d trim parts (room %d points, %d indices)" % (
         n0, len(faces), how, placed, len(rooms), vroom, iroom))
+    _grow_boxes(data, M, pts, log)
     _put_texture(data, raw.get("glb_image"), log, car["name"])
     return bytes(data)
+
+
+def _grow_boxes(data, M, pts, log):
+    """the boxes of the still parts and of the models (the game skips a part whose box is off screen) grown to
+    hold the whole .glb body: every copy of each old box (stored as min x, up, forward, max x, up, forward)"""
+    lo, hi = pts.min(0) - 0.02, pts.max(0) + 0.02
+    boxes = [e["bounding_box"] for e in M["elements"] if e and e.get("name", "").lower() in STILL]
+    boxes += [m["bounding_box"] for m in M["models"] if m and "bounding_box" in m]
+    done = 0
+    for bb in boxes:
+        old = (bb[0]["x"], bb[0]["z"], bb[0]["y"], bb[1]["x"], bb[1]["z"], bb[1]["y"])
+        new = tuple(np.minimum(old[:3], lo)) + tuple(np.maximum(old[3:], hi))
+        if new == old or old[0] > old[3]:
+            continue
+        a, b = struct.pack("<6f", *old), struct.pack("<6f", *new)
+        done += data.count(a)
+        data[:] = data.replace(a, b)
+    log("   boxes grown to hold the body: %d" % done)
 
 
 def _nearest_lookup(points, values, cell=0.03):
@@ -243,6 +273,18 @@ def _put_texture(data, img, log, car_name):
     log("   the .glb's texture -> %s (%s)" % (name.decode(), ", ".join("%d" % s for s in sizes)))
 
 
+def _index_room(m):
+    """index room of a part: its detail levels' strips lie one after another, so level 0 can take all of them
+    (every level then draws that one strip)"""
+    d1 = m["data1"]
+    n = d1[0]["face_count"]
+    for a, b in zip(d1, d1[1:]):
+        if b["face_offset"] != a["face_offset"] + a["face_count"]:
+            break
+        n += b["face_count"]
+    return n
+
+
 def _lod_records(data, M):
     """{(mesh index, level): byte offset of its data1 record (face offset, face count, vert offset, vert count)}"""
     out = {}
@@ -261,7 +303,7 @@ def _lod_records(data, M):
 def _place(data, M, meshes, rooms, pts, faces, uvs):
     """hide the body car's body, write the triangles into the rooms; returns how many were placed.
     Per point: position, normal (smooth over all points at the same spot), tangent + binormal, the .glb's texture
-    spot and no damage."""
+    spot and the baked light for its normal."""
     key = np.round(pts / 1e-4).astype(np.int64)
     _, same = np.unique(key, axis=0, return_inverse=True)
     same = same.reshape(-1)
@@ -304,6 +346,7 @@ def _place(data, M, meshes, rooms, pts, faces, uvs):
             break
         vs = M["vertex_streams"][s]
         d1 = m["data1"][0]
+        room = _index_room(m)
         stride = vs["bytes"]
         offs, o = {}, 0
         for dd in vs["definition"]:
@@ -324,9 +367,9 @@ def _place(data, M, meshes, rooms, pts, faces, uvs):
             used = {v for i in take for v in faces[i]}
             local = {v: j for j, v in enumerate(sorted(used, key=lambda v: verts[v]))}
             strip = stripify([tuple(d1["vert_offset"] + local[v] for v in faces[i]) for i in take])
-            if len(strip) <= d1["face_count"]:
+            if len(strip) <= room:
                 break
-            n = int(n * d1["face_count"] / len(strip) * 0.97)
+            n = int(n * room / len(strip) * 0.97)
         if not n:
             continue
         vbase = m["data2"][0]["vOffset"] // stride
@@ -341,15 +384,17 @@ def _place(data, M, meshes, rooms, pts, faces, uvs):
                     struct.pack_into("<4B", data, at + offs[k],
                                      *(max(0, min(254, int(round(127 + 127 * c)))) for c in vec), 0)
             if (11, 9) in offs:
-                struct.pack_into("<4B", data, at + offs[(11, 9)], *NO_DAMAGE)
+                struct.pack_into("<4B", data, at + offs[(11, 9)], *_light_bytes(nv))
             if (9, 5) in offs:
                 struct.pack_into("<4e", data, at + offs[(9, 5)], uvs[v][0], uvs[v][1], 0.0, 0.0)
-        put_indices(m, 0, strip + [strip[-1]] * (d1["face_count"] - len(strip)))
-        # the other detail levels draw level 0's strip: a cut strip left holes at a distance
+        fs = M["face_streams"][m["face_stream_index"]]
+        struct.pack_into("<%dH" % room, data, fs["start"] + 2 * d1["face_offset"],
+                         *(strip + [strip[-1]] * (room - len(strip))))
+        # every detail level draws this one strip (over all the levels' room): a cut strip left holes at a distance
         i = index[id(m)]
-        for lod in range(1, len(m["data1"])):
+        for lod in range(len(m["data1"])):
             if (i, lod) in lods:
-                struct.pack_into("<4I", data, lods[(i, lod)], d1["face_offset"], d1["face_count"],
+                struct.pack_into("<4I", data, lods[(i, lod)], d1["face_offset"], room,
                                  d1["vert_offset"], d1["vert_count"])
         pos += n
     return pos
