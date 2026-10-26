@@ -36,6 +36,8 @@ STILL = ("e_exterior", "e_interior")    # parts that never move; the body shell 
 # TEST 2026-10-26: with its own id + name, the picture in our model was NOT used in game (the body showed the body
 # car's trim picture). Now: the original id + name, and the .glb's texture also written into the body car's own
 # model (TEXTURE_INTO_BASE: the real body car's trim then shows it too) - does the game take it from there?
+# TEST 2 (same day): the body car's own model with the texture did not help either; 2 more models hold the same
+# picture (same id): the Astra's boss / legend copies. Now the texture goes into EVERY vehicle model with that id.
 NEW_TEXTURE_ID = False
 TEXTURE_INTO_BASE = True
 
@@ -196,11 +198,30 @@ def glb_model(car, glb_path, log=print):
 
 
 def base_with_texture(car, glb_path, log=print):
-    """bytes of the body car's OWN model with the .glb's texture in its trim picture (see TEXTURE_INTO_BASE)"""
+    """{root.pak path: bytes}: every vehicle model holding the body car's trim picture (same texture id: the body
+    car and its boss / legend copies) with the .glb's texture in it (see TEXTURE_INTO_BASE)"""
     import game_preview
-    data = bytearray(game_preview._model_bytes(car_model.model_path(car["base"])))
-    _put_texture(data, car_model.read_glb_body(glb_path).get("glb_image"), log)
-    return bytes(data)
+    import pak
+    import paths
+    src = game_preview._model_bytes(car_model.model_path(car["base"]))
+    names = [(m.start(), m.group(1)) for m in re.finditer(rb"([A-Za-z0-9_]{3,})RA\x01", src)]
+    a = [x for x, n in names if n.lower().endswith(b"_1")][0]
+    first = LEVEL.search(src, a)
+    tex_id = src[first.start() - 8:first.start() - 4]
+    img = car_model.read_glb_body(glb_path).get("glb_image")
+    R = pak.Pak(paths.MODEL_PAK)
+    out = {}
+    for e in R.files:
+        n = e["name"].lower()
+        if not (n.startswith("\\models\\vehicles\\") and n.endswith(".model")) or "\\wheels\\" in n:
+            continue
+        d = R.read(e)
+        if d and tex_id in d:
+            data = bytearray(d)
+            _put_texture(data, img, lambda s: None)
+            out[e["name"]] = bytes(data)
+    log("   (test: the .glb's texture also into %s)" % ", ".join(k.rsplit("\\", 1)[-1] for k in out))
+    return out
 
 
 def _grow_boxes(data, M, pts, log):
