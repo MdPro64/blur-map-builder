@@ -136,16 +136,19 @@ _glb = {}
 
 def read_glb_body(path):
     """an imported body (.glb, one model - no damage parts): {"glb": triangles, "glb_rgb": their colours (its own
-    textures / material colours: the paint colours do not apply)}, in game axes, standing on the ground, centred"""
+    textures / material colours: the paint colours do not apply), "glb_uv": each corner's texture spot (n, 3, 2),
+    "glb_image": the texture (PIL) of the biggest textured part, or None}, in game axes, standing on the ground,
+    centred"""
     key = (path, os.path.getmtime(path))
     if key in _glb:
         return _glb[key]
     import model_import
     g = model_import.read_glb(path)
     parts, lo, hi = model_import.game_space(g)
-    tris, rgb = [], []
+    tris, rgb, uvs, image, most = [], [], [], None, 0
     for p in parts:
         t = p["pos"][p["tri"]]
+        uvs.append(p["uv"][p["tri"]] if p.get("uv") is not None and len(p["uv"]) else np.zeros((len(t), 3, 2)))
         mat = g["materials"][p["mat"]] if 0 <= p["mat"] < len(g["materials"]) else None
         col = np.array([int(255 * max(0.0, min(1.0, c))) for c in (mat["colour"][:3] if mat else (0.7, 0.7, 0.7))])
         if mat is not None and mat["image"] is not None and p.get("uv") is not None and len(p["uv"]):
@@ -153,11 +156,14 @@ def read_glb_body(path):
             uv = p["uv"][p["tri"]].mean(1) % 1.0                      # each triangle: the texture at its middle
             px = img[(uv[:, 1] * (img.shape[0] - 1)).astype(int), (uv[:, 0] * (img.shape[1] - 1)).astype(int)]
             c = px.astype(np.float32) * (col / 255.0)
+            if len(t) > most:
+                image, most = mat["image"].convert("RGB"), len(t)
         else:
             c = np.repeat(col[None].astype(np.float32), len(t), 0)
         tris.append(t)
         rgb.append(c)
-    out = {"glb": np.concatenate(tris).astype(np.float32), "glb_rgb": np.concatenate(rgb).astype(np.float32)}
+    out = {"glb": np.concatenate(tris).astype(np.float32), "glb_rgb": np.concatenate(rgb).astype(np.float32),
+           "glb_uv": np.concatenate(uvs).astype(np.float32), "glb_image": image}
     _glb.clear()
     _glb[key] = out
     return out
