@@ -100,7 +100,13 @@ def glb_model(car, glb_path, log=print):
         defs = M["vertex_streams"][s]["definition"]
         if defs[0]["type"] == 9 and any(d["type"] == 11 and d["channel"] == 3 for d in defs):
             rooms.append((m, s))
-    rooms.sort(key=lambda r: (r[0]["material_index"] not in paint, -r[0]["data1"][0]["vert_count"]))
+    # ONE material only: chunks in different materials looked different in game (paint / white / dark patches)
+    per_mat = defaultdict(int)
+    for m, s in rooms:
+        per_mat[m["material_index"]] += m["data1"][0]["vert_count"]
+    one = max(per_mat, key=per_mat.get)
+    rooms = [r for r in rooms if r[0]["material_index"] == one]
+    rooms.sort(key=lambda r: -r[0]["data1"][0]["vert_count"])
     vroom = sum(m["data1"][0]["vert_count"] for m, s in rooms)
     iroom = sum(m["data1"][0]["face_count"] for m, s in rooms)
 

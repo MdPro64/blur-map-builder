@@ -60,8 +60,11 @@ def read_game_car(name):
     """{"<kind>[|corner]": triangles (n, 3, 3)} + "centre|<corner>" (3,) wheel centres; cached"""
     p = os.path.join(folder(), name.lower() + ".npz")
     if os.path.exists(p):
-        z = np.load(p)
-        return {k: z[k] for k in z.files}
+        try:
+            z = np.load(p)
+            return {k: z[k] for k in z.files}
+        except (OSError, ValueError, EOFError):            # a broken cache file: read the car again
+            os.remove(p)
     import game_preview
     import cpmodel
     data = game_preview._model_bytes(model_path(name))
