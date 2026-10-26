@@ -231,12 +231,20 @@ def picture(parts, paint, size, yaw, pitch=-0.35, smooth=True):
     x1, z1 = x * cy - z * sy, x * sy + z * cy                 # turn around the up axis
     y2, z2 = y * cp + z1 * sp, z1 * cp - y * sp              # tilt: look down at the car
     pts = np.stack([x1, y2, z2], -1)
+    blo, bhi = tris.reshape(-1, 3).min(0), tris.reshape(-1, 3).max(0)   # FRONT arrow on the ground: from the front
+    L, W = bhi[2] - blo[2], bhi[0] - blo[0]                             # wheels out past the nose (forward = +z)
+    fz = max((parts[k][..., 2].max() for k in ("tyre", "rim") if k in parts), default=bhi[2] - 0.2 * L)
+    arr = np.array([[0, blo[1], fz], [0, blo[1], bhi[2] + 0.3 * L], [-0.25 * W, blo[1], bhi[2] + 0.15 * L],
+                    [0.25 * W, blo[1], bhi[2] + 0.15 * L]], np.float64)
+    ax1, az1 = arr[:, 0] * cy - arr[:, 2] * sy, arr[:, 0] * sy + arr[:, 2] * cy
+    arr = np.stack([ax1, arr[:, 1] * cp + az1 * sp], -1)
     n = np.cross(pts[:, 1] - pts[:, 0], pts[:, 2] - pts[:, 0])
     n /= np.linalg.norm(n, axis=1, keepdims=True) + 1e-9
     light = np.abs(n @ (np.array([0.35, 0.75, -0.55]) / np.linalg.norm([0.35, 0.75, -0.55])))
     shade = (0.35 + 0.65 * light)[:, None]
     rgb = np.clip(cols * shade, 0, 255).astype(np.uint8)
-    lo, hi = pts[..., :2].reshape(-1, 2).min(0), pts[..., :2].reshape(-1, 2).max(0)
+    allp = np.concatenate([pts[..., :2].reshape(-1, 2), arr])
+    lo, hi = allp.min(0), allp.max(0)
     scale = 0.9 * S / max(hi - lo)
     mid = (lo + hi) / 2
     sx = (pts[..., 0] - mid[0]) * scale + S / 2
@@ -249,8 +257,27 @@ def picture(parts, paint, size, yaw, pitch=-0.35, smooth=True):
     area = np.abs((xy[order, 1, 0] - xy[order, 0, 0]) * (xy[order, 2, 1] - xy[order, 0, 1]) -
                   (xy[order, 2, 0] - xy[order, 0, 0]) * (xy[order, 1, 1] - xy[order, 0, 1]))
     order = order[area >= (0.1 if smooth else 3.0)]            # turning with the mouse: tiny triangles left out
+    a = np.stack([(arr[:, 0] - mid[0]) * scale + S / 2, S / 2 - (arr[:, 1] - mid[1]) * scale], -1)
+
+    def front_arrow():
+        red, lw = (255, 70, 60), max(2, int(S / 110))
+        d.line([tuple(a[0]), tuple(a[1])], fill=red, width=lw)
+        d.line([tuple(a[2]), tuple(a[1]), tuple(a[3])], fill=red, width=lw, joint="curve")
+        try:
+            from PIL import ImageFont
+            font = ImageFont.truetype("segoeuib.ttf", max(10, int(S / 28)))
+        except OSError:
+            font = None
+        d.text(((a[0, 0] + a[1, 0]) / 2, (a[0, 1] + a[1, 1]) / 2 - S * 0.04), "FRONT", fill=red, font=font,
+               anchor="mm")                                             # above the middle of the arrow
+
+    towards_us = az1[1] > az1[0]                  # nose towards us: arrow on top; away: the car hides it
+    if not towards_us:
+        front_arrow()
     for i in order:
         d.polygon([tuple(p) for p in xy[i]], fill=tuple(rgb[i]))
+    if towards_us:
+        front_arrow()
     return img.resize((size, size), Image.LANCZOS) if k > 1 else img
 
 
