@@ -33,6 +33,11 @@ import car_model
 TYPE_SIZE = {6: 12, 0xB: 4, 8: 4, 9: 8, 0xA: 4}
 TRIM_FX = "veh_default_b_c_f"           # the trim shaders that read "<car>_1"
 STILL = ("e_exterior", "e_interior")    # parts that never move; the body shell first
+# TEST 2026-10-26: with its own id + name, the picture in our model was NOT used in game (the body showed the body
+# car's trim picture). Now: the original id + name, and the .glb's texture also written into the body car's own
+# model (TEXTURE_INTO_BASE: the real body car's trim then shows it too) - does the game take it from there?
+NEW_TEXTURE_ID = False
+TEXTURE_INTO_BASE = True
 
 
 def _light_bytes(n):
@@ -186,7 +191,15 @@ def glb_model(car, glb_path, log=print):
     log("   imported body: %d triangles -> %d (%s), %d placed in %d trim parts (room %d points, %d indices)" % (
         n0, len(faces), how, placed, len(rooms), vroom, iroom))
     _grow_boxes(data, M, pts, log)
-    _put_texture(data, raw.get("glb_image"), log, car["name"])
+    _put_texture(data, raw.get("glb_image"), log, car["name"] if NEW_TEXTURE_ID else None)
+    return bytes(data)
+
+
+def base_with_texture(car, glb_path, log=print):
+    """bytes of the body car's OWN model with the .glb's texture in its trim picture (see TEXTURE_INTO_BASE)"""
+    import game_preview
+    data = bytearray(game_preview._model_bytes(car_model.model_path(car["base"])))
+    _put_texture(data, car_model.read_glb_body(glb_path).get("glb_image"), log)
     return bytes(data)
 
 
@@ -233,10 +246,9 @@ def _nearest_lookup(points, values, cell=0.03):
     return fn
 
 
-def _put_texture(data, img, log, car_name):
-    """the .glb's texture into every stored size of the car's own picture "<car>_1" (the trim shaders' texture),
-    under a NEW texture id (the u32 before the first size record): the game keeps one texture per id, so with the
-    body car's id it showed the body car's picture (in game test 2026-10-26: a black body)"""
+def _put_texture(data, img, log, car_name=None):
+    """the .glb's texture into every stored size of the car's own picture "<car>_1" (the trim shaders' texture);
+    with car_name: under a NEW texture id (the u32 before the first size record) and name"""
     import zlib
     import cpmodel
     import dxt
@@ -253,7 +265,7 @@ def _put_texture(data, img, log, car_name):
     end = next((b for b, _ in names if b > a), len(data))
     sizes = []
     for k, m in enumerate(LEVEL.finditer(data, a, end)):
-        if k == 0:
+        if k == 0 and car_name:
             old = struct.unpack_from("<I", data, m.start() - 8)[0]
             new = old ^ (zlib.crc32(("bmb car " + car_name).encode()) | 1)
             struct.pack_into("<I", data, m.start() - 8, new)
