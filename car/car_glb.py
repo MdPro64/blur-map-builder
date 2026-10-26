@@ -174,7 +174,7 @@ def glb_model(car, glb_path, log=print):
         how = "simplified"
     log("   imported body: %d triangles -> %d (%s), %d placed in %d trim parts (room %d points, %d indices)" % (
         n0, len(faces), how, placed, len(rooms), vroom, iroom))
-    _put_texture(data, raw.get("glb_image"), log)
+    _put_texture(data, raw.get("glb_image"), log, car["name"])
     return bytes(data)
 
 
@@ -203,8 +203,11 @@ def _nearest_lookup(points, values, cell=0.03):
     return fn
 
 
-def _put_texture(data, img, log):
-    """the .glb's texture into every stored size of the car's own picture "<car>_1" (the trim shaders' texture)"""
+def _put_texture(data, img, log, car_name):
+    """the .glb's texture into every stored size of the car's own picture "<car>_1" (the trim shaders' texture),
+    under a NEW texture id (the u32 before the first size record): the game keeps one texture per id, so with the
+    body car's id it showed the body car's picture (in game test 2026-10-26: a black body)"""
+    import zlib
     import cpmodel
     import dxt
     from PIL import Image
@@ -219,7 +222,15 @@ def _put_texture(data, img, log):
     a, name = pick[0]
     end = next((b for b, _ in names if b > a), len(data))
     sizes = []
-    for m in LEVEL.finditer(data, a, end):
+    for k, m in enumerate(LEVEL.finditer(data, a, end)):
+        if k == 0:
+            old = struct.unpack_from("<I", data, m.start() - 8)[0]
+            new = old ^ (zlib.crc32(("bmb car " + car_name).encode()) | 1)
+            struct.pack_into("<I", data, m.start() - 8, new)
+            # ... and its own name too, same length (in case the game finds pictures by name)
+            renamed = (b"bmb%08x" % new + b"x" * len(name))[:len(name) - 2] + b"_1"
+            data[a:a + len(name)] = renamed
+            log("   texture id %08X -> %08X, name %s -> %s" % (old, new, name.decode(), renamed.decode()))
         w, h, mips, size = (struct.unpack("<I", m.group(i))[0] for i in (1, 2, 3, 4))
         px = img.resize((w, h), Image.LANCZOS).tobytes()
         enc = cpmodel.encode_mips(px, w, h, mips) if size == cpmodel.texture_bytes(w, h, mips) else \
