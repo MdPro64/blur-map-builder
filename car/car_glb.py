@@ -318,8 +318,8 @@ def _lod_records(data, M):
 
 def _place(data, M, meshes, rooms, pts, faces, uvs):
     """hide the body car's body, write the triangles into the rooms; returns how many were placed.
-    Per point: position, normal (smooth over all points at the same spot), tangent + binormal, the .glb's texture
-    spot and the baked light for its normal."""
+    Per point: position, normal (smooth over all points at the same spot), no dent, the .glb's texture spot and
+    the baked light for its normal."""
     key = np.round(pts / 1e-4).astype(np.int64)
     _, same = np.unique(key, axis=0, return_inverse=True)
     same = same.reshape(-1)
@@ -394,12 +394,14 @@ def _place(data, M, meshes, rooms, pts, faces, uvs):
             struct.pack_into("<4e", data, at, pts[v][0], pts[v][1], pts[v][2], 0.0)   # 4th = 0 in every game
             # car point (1.0 gave spikes at the first crash: the game's crush code reads it)
             nv = nrm[v]
-            t = np.cross(nv, (0.0, 1.0, 0.0)) if abs(nv[1]) < 0.9 else np.cross(nv, (1.0, 0.0, 0.0))
-            t /= np.linalg.norm(t) + 1e-9
-            for k, vec in (((11, 3), nv), ((11, 5, 2), t), ((11, 5, 3), np.cross(nv, t))):
+            if (11, 3) in offs:
+                struct.pack_into("<4B", data, at + offs[(11, 3)],
+                                 *(max(0, min(254, int(round(127 + 127 * c)))) for c in nv), 0)
+            # (11, 5, 2) / (11, 5, 3) = the point's DENT: position / normal move by (byte * 2 - 1) * damage
+            # (veh_Paint vertex shader; 2026-10-27: tangents there threw the body into spikes at a power-up hit)
+            for k in ((11, 5, 2), (11, 5, 3)):
                 if k in offs:
-                    struct.pack_into("<4B", data, at + offs[k],
-                                     *(max(0, min(254, int(round(127 + 127 * c)))) for c in vec), 0)
+                    struct.pack_into("<4B", data, at + offs[k], 127, 127, 127, 0)
             if (11, 9) in offs:
                 struct.pack_into("<4B", data, at + offs[(11, 9)], *_light_bytes(nv))
             if (9, 5) in offs:
