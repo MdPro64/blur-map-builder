@@ -191,6 +191,7 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
         self.scale, self.ox, self.oz = 0.25, 0.0, 0.0
         self.drag = None
         self.lap_snap = False      # dragging the end point onto the start (green ring): lap track when let go
+        self.start_hover = False   # the mouse over the start point: the same ring as a hint
         self.pan = None
         self.building = False
         self.road = None
@@ -1235,13 +1236,16 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
             if p.get("w"):
                 tag += "  w%.0f" % p["w"]
             c.create_text(sx, sy - 15, text=tag, fill="#cfd6df", font=("Segoe UI", 8))
-        if self._lap_drag() is not None and pts:          # dragging the end point: the start is a target (lap)
-            sx, sy = self.to_screen(pts[0]["x"], pts[0]["z"])
-            if self.lap_snap:
+        if pts and (self._lap_drag() is not None or (self.start_hover and self._can_lap())):
+            sx, sy = self.to_screen(pts[0]["x"], pts[0]["z"])  # the start as the lap target (dragging the end /
+            if self.lap_snap:                                   # the mouse over it)
                 c.create_oval(sx - 20, sy - 20, sx + 20, sy + 20, outline="#35e05a", width=4)
                 c.create_text(sx, sy + 30, text="let go = LAP TRACK", fill="#35e05a", font=("Segoe UI", 10, "bold"))
             else:
                 c.create_oval(sx - 14, sy - 14, sx + 14, sy + 14, outline="#35e05a", width=2, dash=(3, 3))
+                if self.start_hover and self._lap_drag() is None:
+                    c.create_text(sx, sy + 28, text="drag the end point here = LAP TRACK", fill="#35e05a",
+                                  font=("Segoe UI", 9, "bold"))
         self.measure_draw(c)
         if not light:
             self.show_checks(others)
@@ -2177,12 +2181,15 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
             self.changed()
         self.pan = None
 
+    def _can_lap(self):
+        """the road could become a lap track by dropping its end point on its start"""
+        return not self.map.get("laps") and len(self.points()) >= 4
+
     def _lap_drag(self):
         """the point index being dragged if it is the road's END point and the road could become a lap track"""
-        if not self.drag or self.drag[0] != "point" or self.map.get("laps"):
+        if not self.drag or self.drag[0] != "point" or not self._can_lap():
             return None
-        pts = self.points()
-        return self.drag[1] if len(pts) >= 4 and self.drag[1] == len(pts) - 1 else None
+        return self.drag[1] if self.drag[1] == len(self.points()) - 1 else None
 
     def on_hover(self, e):
         x, z = self.to_world(e.x, e.y)
@@ -2198,7 +2205,18 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
             self.mouse_world = (x, z)
             self.redraw_soon()
             return
-        if self.road:
+        pts = self.points()
+        hover = False
+        if self._can_lap() and pts:                     # over the start: the lap ring shows where the end can go
+            sx, sy = self.to_screen(pts[0]["x"], pts[0]["z"])
+            hover = math.hypot(e.x - sx, e.y - sy) <= LAP_SNAP_PX
+        if hover != self.start_hover:
+            self.start_hover = hover
+            self.redraw_soon()
+        if hover:
+            self.say("Drag the END point (white) onto this start point = lap track (the end joins the start)",
+                     "#35e05a")
+        elif self.road:
             s, lat = self.road.project(x, z)
             self.say("x %.0f  z %.0f   |   %.0f m along the road, %.0f m from its middle, height %.1f m   |   %s"
                      % (x, z, s, lat, self.road.h_at(s), dict((t[0], t[1]) for t in TOOLS)[self.tool.get()]), "#9aa8b8")

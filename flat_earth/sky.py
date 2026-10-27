@@ -111,12 +111,26 @@ def texture(header, path):
 
 
 def preview(path, width=420):
-    """small RGB picture of what the sky picture will hold (colour x brightness)"""
-    from PIL import Image
-    a = sky_rgba(path).astype(np.float32) / 255.0
-    rgb = a[..., :3] * a[..., 3:] ** 0.6
-    im = Image.fromarray((np.clip(rgb, 0, 1) * 255).astype(np.uint8), "RGB")
-    return im.resize((width, width * H // W), Image.LANCZOS)
+    """small RGB picture of the whole panorama in its own shape (2:1): the top half (the sky) bright, the bottom
+    half dimmed, the horizon marked - so a panorama does not look squashed"""
+    from PIL import Image, ImageDraw
+    pano = read_panorama(path)
+    g = np.maximum(pano, 0) ** (1 / 2.2)
+    g /= max(float(np.percentile(g.max(-1), 99.0)), 1e-6)
+    im = Image.fromarray((np.clip(g, 0, 1) * 255).astype(np.uint8), "RGB")
+    h = max(1, round(width * pano.shape[0] / pano.shape[1]))
+    im = im.resize((width, h), Image.LANCZOS)
+    a = np.asarray(im).astype(np.float32)
+    a[h // 2:] *= 0.35
+    im = Image.fromarray(a.astype(np.uint8), "RGB")
+    d = ImageDraw.Draw(im)
+    d.line([(0, h // 2), (width, h // 2)], fill=(255, 210, 60), width=1)
+    d.text((6, h // 2 - 14), "top half = the sky", fill=(255, 210, 60))
+    d.text((6, h // 2 + 3), "bottom half: not used", fill=(160, 160, 160))
+    if abs(pano.shape[1] / pano.shape[0] - 2.0) > 0.05:
+        d.text((6, 4), "not 2:1 (%d x %d) - a 360 panorama is twice as wide as high" % (pano.shape[1], pano.shape[0]),
+               fill=(255, 110, 110))
+    return im
 
 
 def preset_preview(city_obj, width=420):
