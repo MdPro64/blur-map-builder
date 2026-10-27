@@ -767,6 +767,7 @@ class View3D(tk.Frame):
             self.gl = None
             return
         self.lib = self._build_library(self, panel, fg)      # object library side bar (3D mode only)
+        self.outl = self._build_outliner(self, panel, fg)    # every object of the map (right side bar)
         self.gl = GLView(self, self, width=900, height=600)
         self.gl.pack(fill="both", expand=True)
         self.gl.animate = 0
@@ -847,10 +848,12 @@ class View3D(tk.Frame):
         if self.gl is not None:
             if self.mode == "3d":
                 self.lib.pack(side="left", fill="y", before=self.gl)
+                self.outl.pack(side="right", fill="y", before=self.gl)
                 self.cam_bar.pack(side="top", fill="x", after=self.top_bar)
             else:
                 self._stop_placing()
                 self.lib.pack_forget()
+                self.outl.pack_forget()
                 self.cam_bar.pack_forget()
         self._cam_info()
         try:
@@ -868,6 +871,7 @@ class View3D(tk.Frame):
             return str(ex)
         self.info.config(text=stats + "   (%d triangles)" % ((len(self.scene["v"]) + len(self.scene["tv"])) // 3),
                          fg="#9aa8b8")
+        self._fill_outliner()
         if not getattr(self, "_placed", False):
             self.reset()
             self._placed = True
@@ -917,7 +921,120 @@ class View3D(tk.Frame):
                 self._solo_off()
             elif self._solo_key(p) != self.solo:
                 self._solo_on(p)
+        self._outliner_show(p)
         self._panel_show(p)
+        self.refresh()
+
+    # ---- the outliner (right side bar): every object of the map by group; the selection is highlighted
+    OUTLINER_GROUPS = (("obj", "Placed objects"), ("side", "Roadside & scenery"), ("fixed", "Road layout (fixed)"),
+                       ("pickup", "Power-ups"), ("point", "Track points"))
+
+    def _build_outliner(self, parent, bg, fg):
+        from tkinter import ttk
+        f = tk.Frame(parent, bg=bg, width=270)
+        f.pack_propagate(False)
+        self.outl_title = tk.Label(f, text="OBJECTS IN THIS MAP", bg=bg, fg="#8fb6e0", font=("Segoe UI", 9, "bold"))
+        self.outl_title.pack(anchor="w", padx=6, pady=(6, 2))
+        tk.Label(f, text="Search:", bg=bg, fg=fg).pack(anchor="w", padx=6)
+        self.outl_search = tk.StringVar()
+        tk.Entry(f, textvariable=self.outl_search, bg="#1a1e24", fg=fg, insertbackground=fg,
+                 relief="flat").pack(fill="x", padx=6, pady=(0, 4))
+        self.outl_search.trace_add("write", lambda *a: self._fill_outliner())
+        tk.Label(f, text="Click = select   Double-click = go to it   / = Solo", bg=bg, fg="#6f7c8a",
+                 font=("Segoe UI", 8)).pack(side="bottom", anchor="w", padx=6, pady=(2, 6))
+        box = tk.Frame(f, bg=bg)
+        box.pack(fill="both", expand=True, padx=(6, 0))
+        self.outl_tree = ttk.Treeview(box, show="tree", selectmode="browse", style="Lib.Treeview")
+        sb = ttk.Scrollbar(box, command=self.outl_tree.yview)
+        self.outl_tree.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        self.outl_tree.pack(side="left", fill="both", expand=True)
+        self.outl_tree.tag_configure("group", foreground="#8fb6e0")
+        self.outl_tree.bind("<<TreeviewSelect>>", lambda e: self._outliner_pick())
+        self.outl_tree.bind("<Double-1>", lambda e: self._outliner_go())
+        self._outl_open = {"grp:obj"}
+        self._outl_sync = False
+        return f
+
+    def _outliner_group(self, p):
+        if "point" in p:
+            return "point"
+        if "pickup" in p:
+            return "pickup"
+        if p["key"].startswith("obj:"):
+            return "obj"
+        return "side" if p["editable"] else "fixed"
+
+    def _fill_outliner(self):
+        t = getattr(self, "outl_tree", None)
+        if t is None:
+            return
+        for g in t.get_children():
+            if t.item(g, "open"):
+                self._outl_open.add(g)
+            else:
+                self._outl_open.discard(g)
+            t.delete(g)
+        find = self.outl_search.get().strip().lower()
+        rows, n = {}, 0
+        for p in self.picks():
+            iid = self._solo_key(p)                     # (a power-up row: one line for all its lanes)
+            if iid in rows.setdefault(self._outliner_group(p), {}):
+                continue
+            short = p["label"].split("  (")[0].split(" - ")[0]
+            text = "%s   [%s]" % (short, iid)
+            if find and find not in text.lower():
+                continue
+            rows[self._outliner_group(p)][iid] = text
+        for g, title in self.OUTLINER_GROUPS:
+            items = rows.get(g) or {}
+            if not items:
+                continue
+            gid = "grp:" + g
+            t.insert("", "end", iid=gid, text="%s  (%d)" % (title, len(items)), tags=("group",),
+                     open=bool(find) or gid in self._outl_open)
+            for iid, text in items.items():
+                t.insert(gid, "end", iid=iid, text=text)
+                n += 1
+        self.outl_title.config(text="OBJECTS IN THIS MAP  (%d)" % n)
+        self._outliner_show(self._pick(self.sel))
+
+    def _outliner_show(self, p):
+        """highlight the selected object's line (its group opened, scrolled into view)"""
+        t = getattr(self, "outl_tree", None)
+        if t is None:
+            return
+        iid = self._solo_key(p) if p is not None else None
+        self._outl_sync = True
+        try:
+            if iid and t.exists(iid):
+                t.item(t.parent(iid), open=True)
+                t.selection_set(iid)
+                t.see(iid)
+            elif t.selection():
+                t.selection_remove(*t.selection())
+        finally:
+            self.after_idle(lambda: setattr(self, "_outl_sync", False))
+
+    def _outliner_pick(self):
+        if self._outl_sync:
+            return
+        s = self.outl_tree.selection()
+        if not s or s[0].startswith("grp:"):
+            return
+        key = next((p["key"] for p in self.picks() if self._solo_key(p) == s[0]), None)
+        if key and key != self.sel:
+            self.select(key)
+
+    def _outliner_go(self):
+        """double-click: the view flies to the object (keeps its angle; closer if far away)"""
+        p = self._pick(self.sel)
+        if p is None:
+            return
+        cs = np.array(box_corners(p), np.float64)
+        self.target = list((cs.min(0) + cs.max(0)) / 2)
+        self.dist = min(self.dist, float(max(cs.max(0) - cs.min(0))) * 4.0 + 40.0)
+        self.drive = self.cam_anim = None
         self.refresh()
 
     # ---- Solo (Blender's local view): only the selected object, framed; / again (or Esc) = everything back
