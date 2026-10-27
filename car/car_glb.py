@@ -7,6 +7,7 @@
     light) and its strip room (all detail levels' room; every level draws that strip, so the car is whole at any
     distance)
   * the .glb's texture replaces the pictures "<car>_1" and "<car>_2" (every stored size, 16 x 16 .. 512 x 512)
+  * the wheel spots moved by the fit's "track" / "wb" (car_build moves the physics' wheel base / track widths too)
   * one point per (position, texture spot), so texture seams stay; only when that does not fit: one point per
     position, simplified (fast_simplification) to what fits, texture spot of the nearest .glb point
 Strip facts (cpmodel.py): u16 indices local to the part's vertex base; an even-position triangle (a, b, c) faces
@@ -187,9 +188,31 @@ def glb_model(car, glb_path, log=print):
         how = "simplified"
     log("   imported body: %d triangles -> %d (%s), %d placed in %d trim parts (room %d points, %d indices)" % (
         n0, len(faces), how, placed, len(rooms), vroom, iroom))
-    _grow_boxes(data, M, pts, log)
+    wheels = _move_wheels(data, M, car.get("glb_fit") or {}, log)
+    _grow_boxes(data, M, np.vstack([pts] + [w + d for w in wheels for d in ((-.2, -.4, -.4), (.2, .4, .4))]), log)
     _put_texture(data, raw.get("glb_image"), log)
     return bytes(data)
+
+
+def _move_wheels(data, M, fit, log):
+    """the wheel spots moved apart like the 3D view (car_model.assemble): fit "track" side to side, "wb" front to
+    back (m). Each corner's wheel, tyre, rim and brake parts share one position (stored x, up, forward after the
+    3 x 3 turn): every copy of it is moved. Returns the new wheel centres (x, up, forward)"""
+    spots = {tuple(e["matrix"]["position"]) for e in M["elements"]
+             if isinstance(e, dict) and car_model._corner(e["name"]) and
+             (car_model._kind(e["name"]) in ("tyre", "rim") or e["name"].lower().startswith("e_wheel_"))}
+    track, wb = fit.get("track", 0.0), fit.get("wb", 0.0)
+    out, done = [], 0
+    for x, fwd, up in spots:
+        nx, nfwd = x + np.sign(x) * track / 2, fwd + np.sign(fwd) * wb / 2
+        out.append(np.array([nx, up, nfwd]))
+        if track or wb:
+            a, b = struct.pack("<3f", x, up, fwd), struct.pack("<3f", nx, up, nfwd)
+            done += data.count(a)
+            data[:] = data.replace(a, b)
+    if track or wb:
+        log("   wheels moved %+.2f m side to side, %+.2f m front to back (%d spots)" % (track, wb, done))
+    return out
 
 
 def _grow_boxes(data, M, pts, log):

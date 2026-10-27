@@ -1,6 +1,7 @@
 """BUILD the player's custom cars (world["cars"], Custom car tab) into the game's database.
 Per car (uids CA400000 + 4 * i: car, physics, paint):
-  racingphysics.bin  RP_CarDynamics = copy of the body car's, every stat moved along its class's trend (below)
+  racingphysics.bin  RP_CarDynamics = copy of the body car's, every stat moved along its class's trend (below);
+                                      an imported body's wheel spacing (fit track / wb) added to its geometry
   vehicles.bin       VEH_PaintJob   = copy of the body car's first paint, our two colours
   amax.bin           AmaxVehicle    = copy of the body car: own name, class stats, icon, top speed, physics, paint,
                                       wheels of the wheel car (wheelModel + sizes)
@@ -172,6 +173,11 @@ def add_cars(files, wld, U, log=print):
         # ---- physics
         ri = rp.obj_of_uid(amax.ref_uid(bi, "dynamics"))
         rt = rp.objs[ri]["blocks"][0]["type"]
+        fit = (car.get("glb_fit") or {}) if car.get("body_glb") else {}
+        for f, d in (("geometry.wheelBase", fit.get("wb", 0.0)), ("geometry.trackWidthFront", fit.get("track", 0.0)),
+                     ("geometry.trackWidthRear", fit.get("track", 0.0))):
+            if d:                                    # the wheels where the model has them (car_glb._move_wheels)
+                rp_vals[f] = rp.get(ri, f) + d
 
         def dyn_patch(data, pool, blocks):
             for f, v in rp_vals.items():
