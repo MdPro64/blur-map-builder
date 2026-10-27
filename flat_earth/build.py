@@ -1479,6 +1479,7 @@ def build_root(log=print, wld=None):
             if not pic or not os.path.exists(pic):
                 pic = thumbnail_png(loc, m, os.path.join(WORK, "thumb_%s.png" % m["route_name"].lower()))
             frontend = bpr.set_picture(frontend, m["route_name"], pic)
+    frontend = car_build.menu_pictures(frontend, wld)                         # custom cars: menu pictures
     files[FRONTEND_BPR] = frontend
     pak.replace_files(tmp, ROOT_OUT, files)
     os.remove(tmp)

@@ -79,6 +79,19 @@ def set_picture(bpr_bytes, name, png_path):
     return write(b)
 
 
+def alias_picture(bpr_bytes, name, like):
+    """a new picture `name` that shows picture `like` (its record copied: same data, size and format)"""
+    b = parse(bpr_bytes)
+    names = [name_of(b, r) for r in b["recs"]]
+    if name in names:
+        return bpr_bytes
+    src = b["recs"][names.index(like)]
+    name_off = len(b["names"])
+    b["names"] += name.encode("latin1") + b"\0"
+    b["recs"].insert(len(b["recs"]) - 1, [REC.size, name_off] + list(src[2:]))
+    return write(b)
+
+
 if __name__ == "__main__":
     src, dst, name, png = sys.argv[1:5]
     out = set_picture(open(src, "rb").read(), name, png)

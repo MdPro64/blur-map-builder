@@ -222,7 +222,8 @@ def add_cars(files, wld, U, log=print):
             for f, v in sets.items():
                 _set(amax.field, data, blocks[0], vt, f, v)
             struct.pack_into("<I", data, blocks[0] + icon_off, len(pool))
-            pool += car["icon"].encode("latin1") + b"\0"
+            pool += name.encode("latin1") + b"\0"            # own icon name: the car list's silhouette (car_icon)
+                                                               # + the menu picture (menu_pictures) are found by it
             pb, pf, _ = struct.unpack_from("<HHI", data, blocks[0] + p_off)
             struct.pack_into("<I", data, blocks[pb] + 4 * pf, paint_row)             # paint 1 = ours, only one
             struct.pack_into("<HHI", data, blocks[0] + p_off, pb, pf, 1)
@@ -326,6 +327,15 @@ def model_aliases(wld, U):
         out[folder + "wheels\\" + name.lower() + ".model"] = \
             folder + "wheels\\" + wheel_file(amax, car.get("wheels") or car["base"]).lower() + ".model"
     return out
+
+
+def menu_pictures(frontend, wld):
+    """ui_frontend.bpr with each car's menu picture under its own icon name (= its Name): the chosen game icon's"""
+    import bpr
+    cars = wld.get("cars") or []
+    for car, name in zip(cars, internal_names(cars)):
+        frontend = bpr.alias_picture(frontend, name, car["icon"])
+    return frontend
 
 
 def icon_files(wld, log=print):
