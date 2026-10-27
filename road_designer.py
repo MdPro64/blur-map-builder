@@ -95,6 +95,7 @@ UNDO_STEPS = 30
 W_PREV, H_PREV = 960, 540
 SNAP = 10.0
 MIN_RADIUS = 35.0
+MAX_ROAD_WIDTH = 200.0                   # map + point width (m); new maps still start at 60 m
 MIN_LEN, MAX_LEN = 900.0, 5300.0
 LINE_STEP = 20.0                         # Start / Finish -/+ buttons (m); drag the lines for any spot
 PICKUP_STEP, LANES, MAX_PICKUPS = 150.0, 5, 109
@@ -1719,7 +1720,7 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
         self.change()
         p = self.points()[self.sel]
         if key == "w":
-            p["w"] = max(30.0, min(100.0, (p.get("w") or self.map.get("width", 60.0)) + delta))
+            p["w"] = max(30.0, min(MAX_ROAD_WIDTH, (p.get("w") or self.map.get("width", 60.0)) + delta))
         elif key == "h":
             p["h"] = max(0.0, min(30.0, (p.get("h") or 0.0) + delta))
         elif key == "corner":
@@ -1731,7 +1732,7 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
 
     def map_width(self, d):
         self.change()
-        self.map["width"] = max(30.0, min(100.0, self.map.get("width", 60.0) + d))
+        self.map["width"] = max(30.0, min(MAX_ROAD_WIDTH, self.map.get("width", 60.0) + d))
         self.changed()
 
     def map_num(self, key, d, lo, hi, default):

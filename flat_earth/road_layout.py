@@ -114,7 +114,9 @@ def tile_spots(fe, road, info, m, keys=False):
     s0, s1 = _line_s(road, info)
     for s in ((s0,) if getattr(road, "closed", False) else (s0, s1)):     # a lap track: one start/finish strip
         x, z, a = road.at(s)
-        spots.append((x, _y(fe, road, s) - fe.LINE_TOP_BELOW, z, fe.LINE_DEF_UID, a - HALF_PI, road.pitch_at(s)))
+        across = max(1.0, (road.w_at(s) + 8.0) / fe.LINE_LEN)          # (a road wider than 60 m: stretched)
+        spots.append((x, _y(fe, road, s) - fe.LINE_TOP_BELOW, z, fe.LINE_DEF_UID, a - HALF_PI, road.pitch_at(s),
+                      [1.0, 1.0, across]))
         # (the red containers at both ends of the strip were removed at the user's request, 2026-10-20; they had
         # no collision - only fe.TEST_DEF_UID spots here)
         # the START / FINISH ARCH over the line (build.ARCHES): sign facing the cars (turn a + pi: model +z points

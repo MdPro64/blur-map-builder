@@ -422,10 +422,11 @@ def build_scene(m):
         if uid == fe.LINE_DEF_UID:                       # checkered strip: LINE_W along the road x LINE_LEN across
             c, s = math.cos(turn), math.sin(turn)
             cells = 12
+            ln = fe.LINE_LEN * kvec(k)[2]                # (stretched across a road wider than 60 m)
             for k in range(cells):
                 for j in range(2):
-                    lz0 = -fe.LINE_LEN / 2 + fe.LINE_LEN * k / cells
-                    lz1 = lz0 + fe.LINE_LEN / cells
+                    lz0 = -ln / 2 + ln * k / cells
+                    lz1 = lz0 + ln / cells
                     lx0 = -fe.LINE_W / 2 + fe.LINE_W * j / 2
                     lx1 = lx0 + fe.LINE_W / 2
                     q = [(x + lx * c + lz * s, y + .08, z - lx * s + lz * c) for lx, lz in
