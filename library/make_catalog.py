@@ -86,6 +86,7 @@ def model_sizes(files):
         if not os.path.exists(p):
             open(p, "wb").write(R.read(e))
         paths[p] = fn.lower()
+    R.close()                                  # (the workers read the extracted files: root.pak not needed any more)
     sizes, todo = {}, list(paths)
     worker = os.path.join(HERE, "model_worker.py")
     import threading

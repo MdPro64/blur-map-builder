@@ -12,6 +12,7 @@ Stored data: 0x40 packs = one zlib stream; 0x28 packs = u32 0x10000, then per 64
 raw deflate data (stored size includes these headers).
 The game checks a signature over the directory: modified packs need Blur_mod.exe (one-byte bypass)."""
 import hashlib
+import mmap
 import struct
 import sys
 import zlib
@@ -37,7 +38,11 @@ def name_hash(name):
 class Pak:
     def __init__(self, path):
         self.path = path
-        d = self.d = open(path, "rb").read()
+        # the file MAPPED, not read: Windows pages in only what is used (root.pak is 534 MB; reading it whole made
+        # the first start's object library hold it in RAM for minutes - user 2026-10-27). Read only; it is let go
+        # when the Pak object goes (or close()), so the file can be replaced afterwards.
+        with open(path, "rb") as f:
+            d = self.d = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
         assert d[:4] == b"2KAP", d[:4]
         self.version, self.align = struct.unpack_from("<II", d, 4)
         self.esize = 0x40 if d[0x11] == 1 else 0x28
@@ -60,6 +65,9 @@ class Pak:
             self.files.append({"at": a, "hash": h, "name_off": noff, "unk": unk, "size": size, "time": time,
                                "offset": off, "crc": crc, "zsize": zsize, "name": name})
         self.dir_end = self.dir_off + 8 + self.esize * count
+
+    def close(self):
+        self.d.close()
 
     def find(self, name):
         h = name_hash(name)
