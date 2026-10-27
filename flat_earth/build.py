@@ -1465,6 +1465,7 @@ def build_root(log=print, wld=None):
     import car_build
     aliases.update(car_build.model_aliases(wld, B.U))                     # custom cars: their models by their names
     files.update(car_build.model_files(wld, log))                              # (+ their own body model)
+    files.update(car_build.icon_files(wld, log))                               # (+ their mini icons)
     pak.add_aliases(ROOT_BASE, tmp, aliases)
     # menu pictures: ui_frontend.bpr entries named like each route's Thumbnail
     sys.path.insert(0, os.path.join(MB, "ui"))

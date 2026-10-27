@@ -209,6 +209,21 @@ def assemble(body, wheels=None, fit=None):
     return {k: np.concatenate(v) for k, v in out.items()}
 
 
+def car_parts(car):
+    """{kind: triangles} of a custom car (world["cars"] entry) as the 3D view shows it: the body car (or its
+    imported .glb body, fitted) with the wheels of the wheel car"""
+    base = car["base"]
+    wheels = car.get("wheels") or base
+    body = read_game_car(base)
+    whl = read_game_car(wheels) if wheels != base else None
+    fit = None
+    if car.get("body_glb"):
+        fit = car.get("glb_fit") or {}
+        own = fit_glb(read_glb_body(os.path.join(paths.TRACKS, "cars", car["body_glb"])), body, fit)
+        body = dict({k: v for k, v in body.items() if k.split("|")[0] in ("tyre", "rim", "centre")}, **own)
+    return assemble(body, whl, fit)
+
+
 def mats(parts, paint):
     """the renderer's material list: one flat colour per kind (paint = the car's colour 1)"""
     from PIL import Image

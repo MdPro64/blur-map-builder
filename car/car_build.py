@@ -328,6 +328,12 @@ def model_aliases(wld, U):
     return out
 
 
+def icon_files(wld, log=print):
+    """root.pak {path: bytes}: the car icon sheet with each car's mini icon (car_icon.py)"""
+    import car_icon
+    return car_icon.files(wld, internal_names(wld.get("cars") or []), log)
+
+
 def model_files(wld, log=print):
     """root.pak {path: bytes}: the own model of each car with an imported body (car_glb.py: the .glb as the body
     of the body car's model)"""

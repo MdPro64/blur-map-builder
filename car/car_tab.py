@@ -67,6 +67,12 @@ class CarPanel(tk.Frame):
         self.icon = ttk.Combobox(top, state="readonly", width=30, values=sorted({c["icon"] for c in cd.game_cars()}))
         self.icon.grid(row=1, column=3, sticky="w")
         self.icon.bind("<<ComboboxSelected>>", lambda e: self._set("icon", self.icon.get()))
+        tk.Label(top, text="Mini icon (car list)", bg=T.BG, fg=T.MUTED).grid(row=0, column=4, sticky="w", padx=(16, 0))
+        self.mini = ttk.Combobox(top, state="readonly", width=30)
+        self.mini.grid(row=1, column=4, sticky="w", padx=(16, 0))
+        self.mini.bind("<<ComboboxSelected>>", lambda e: self._set_mini())
+        self.mini_pic = tk.Label(top, bg=T.BG)
+        self.mini_pic.grid(row=0, column=5, rowspan=2, sticky="w", padx=(12, 0))
         paint = tk.Frame(r, bg=T.BG)
         paint.pack(fill="x", pady=(12, 0))
         tk.Label(paint, text="Paint", bg=T.BG, fg=T.MUTED).pack(side="left")
@@ -154,7 +160,7 @@ class CarPanel(tk.Frame):
     def _set(self, key, value):
         if self.car() is not None and self.car().get(key) != value:
             self._edit(lambda c: c.__setitem__(key, value))
-            if key in ("wheels", "body_glb", "glb_fit"):
+            if key in ("wheels", "body_glb", "glb_fit", "mini_icon"):
                 self._load()
             if key == "name":
                 self.listbox.delete(self.sel)
@@ -260,9 +266,31 @@ class CarPanel(tk.Frame):
             self.fit_label.pack_forget()
         for i, b in enumerate(self.paint_btns):
             b.configure(bg=c["paint"][i])
+        self._show_mini(c)
         self.loading = False
         self._show_stats()
         self._draw(True)
+
+    MINI_AUTO = "Auto (side view of this car)"
+
+    def _show_mini(self, c):
+        """the mini icon choice + its preview (blue silhouette, like the game's car list)"""
+        import car_icon
+        try:
+            shapes = sorted(car_icon.game_shapes())
+            pick = car_icon.choice(c)
+            self.mini.configure(values=[self.MINI_AUTO] + shapes)
+            self.mini.set(self.MINI_AUTO if pick == car_icon.AUTO else pick)
+            from PIL import ImageTk
+            self._mini_img = ImageTk.PhotoImage(car_icon.preview(c, 150))
+            self.mini_pic.configure(image=self._mini_img, text="")
+        except Exception as e:                           # noqa: BLE001 - shown instead of the picture
+            self.mini_pic.configure(image="", text="(no preview: %s)" % e, fg=T.MUTED)
+
+    def _set_mini(self):
+        import car_icon
+        v = self.mini.get()
+        self._set("mini_icon", car_icon.AUTO if v == self.MINI_AUTO else v)
 
     def _class_changed(self):
         cls = self.cls.get()
@@ -419,16 +447,7 @@ class CarPanel(tk.Frame):
             key, paint, yaw, size, full, wh = want
             try:
                 if key != self._parts_key:
-                    base, wheels, glb, _ = key
-                    body = car_model.read_game_car(base)
-                    whl = car_model.read_game_car(wheels) if wheels != base else None
-                    if glb:
-                        own = car_model.fit_glb(car_model.read_glb_body(os.path.join(paths.TRACKS, "cars", glb)),
-                                                body, self.car().get("glb_fit") or {})
-                        body = dict({k: v for k, v in body.items() if k.split("|")[0] in ("tyre", "rim", "centre")},
-                                    **own)
-                    self._parts, self._parts_key = car_model.assemble(
-                        body, whl, (self.car().get("glb_fit") or {}) if glb else None), key
+                    self._parts, self._parts_key = car_model.car_parts(self.car()), key
                 img = car_model.picture(self._parts, paint, max(60, size), yaw, smooth=full)
             except Exception as e:                   # noqa: BLE001 - shown in the view
                 img = "This car can't be shown: %s" % e
