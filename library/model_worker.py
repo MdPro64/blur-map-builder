@@ -11,6 +11,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "model"))
 import cpmodel  # noqa: E402
 
+cpmodel.limit_memory()             # a runaway model: MemoryError (reported below), not gigabytes
 B = cpmodel._reader()
 for path in sys.argv[1:]:
     try:

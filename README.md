@@ -3,7 +3,8 @@
 > **Needs Blur PC version 1.2.** Blur 1.0 is not supported.
 
 Make your own tracks for **Blur** (Bizarre Creations, 2010, PC): draw the road, add branches, lane splits, bridges,
-power-ups, surfaces (dirt, water...), scenery, your own 3D models (.glb) and lighting — then race them in the game with **Blur REBORN**.
+power-ups, surfaces (dirt, water...), scenery, your own 3D models (.glb), lighting and skies — and your own cars
+(stats, paint, wheels, or your own .glb body) — then race them in the game with **Blur REBORN**.
 
 ![Blur Map Builder](release/icon.ico)
 
@@ -11,7 +12,7 @@ power-ups, surfaces (dirt, water...), scenery, your own 3D models (.glb) and lig
 
 | File (in your Blur folder) | What it is |
 |---|---|
-| **Blur Map Builder.exe** | the map editor (2D / 3D / collision / AI / lighting / surface tabs), Build + install |
+| **Blur Map Builder.exe** | the map editor (2D / 3D / collision / AI / lighting / surface / custom car tabs), Build + install |
 | **Blur Map Tester.exe** | starts the game straight into a LAN race on the map you built last |
 | **Blur REBORN.exe** | made on your PC from your own `Blur.exe`: plays the game with your maps |
 
@@ -64,7 +65,8 @@ python road_designer.py          # (from a checkout inside your Blur folder)
 python release/build_exe.py      # the two .exe files (needs pyinstaller)
 ```
 
-* `road_designer.py` + `designer_*.py` + `view3d.py` — the editor
+* `road_designer.py` + `designer_*.py` + `view3d.py` — the editor; `car/` — the Custom car tab (cars in the
+  game's database, an imported .glb body in the body car's model, the car list icon)
 * `flat_earth/` — the build: roads (`road.py`, `road_mesh.py`, `network.py`), race path (`gen_aid.py`), level
   (`build.py`), surfaces, lighting, start cameras (`intro_cam.py`: the `.cycle` camera format)
 * `kslf/`, `pak/`, `aid/`, `physics/`, `model/`, `tex/`, `ui/` — readers / writers of the game's file formats

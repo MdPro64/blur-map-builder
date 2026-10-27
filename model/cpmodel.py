@@ -29,6 +29,40 @@ sys.path[:0] = [os.path.join(HERE, "..", "tex")]
 import dxt  # noqa: E402
 
 TYPE_SIZE = {6: 12, 0xB: 4, 8: 4, 9: 8, 0xA: 4}
+WORKER_MB = 1024                    # memory cap of a model reader worker (limit_memory)
+
+
+def limit_memory(mb=WORKER_MB):
+    """Windows: this process may hold at most mb MB (a job object); more = MemoryError. For the model READER
+    workers: on a few broken models the reader runs away and grabbed 9 - 14 GB per worker in seconds (4 workers =
+    43 GB at the first start, user 2026-10-27) - now that model just fails and is skipped. True if set."""
+    if os.name != "nt":
+        return False
+    import ctypes
+    from ctypes import wintypes as wt
+
+    class Basic(ctypes.Structure):
+        _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+                    ("LimitFlags", wt.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                    ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wt.DWORD),
+                    ("Affinity", ctypes.c_size_t), ("PriorityClass", wt.DWORD), ("SchedulingClass", wt.DWORD)]
+
+    class Extended(ctypes.Structure):
+        _fields_ = [("BasicLimitInformation", Basic), ("IoInfo", ctypes.c_uint64 * 6),
+                    ("ProcessMemoryLimit", ctypes.c_size_t), ("JobMemoryLimit", ctypes.c_size_t),
+                    ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateJobObjectW.restype = wt.HANDLE
+    k32.GetCurrentProcess.restype = wt.HANDLE
+    k32.SetInformationJobObject.argtypes = [wt.HANDLE, ctypes.c_int, ctypes.c_void_p, wt.DWORD]
+    k32.AssignProcessToJobObject.argtypes = [wt.HANDLE, wt.HANDLE]
+    job = k32.CreateJobObjectW(None, None)
+    info = Extended()
+    info.BasicLimitInformation.LimitFlags = 0x100               # JOB_OBJECT_LIMIT_PROCESS_MEMORY
+    info.ProcessMemoryLimit = mb << 20
+    ok = job and k32.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info)) and \
+        k32.AssignProcessToJobObject(job, k32.GetCurrentProcess())   # (9 = JobObjectExtendedLimitInformation)
+    return bool(ok)
 
 
 def _reader():

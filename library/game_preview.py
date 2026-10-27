@@ -188,6 +188,8 @@ def make_thumb(model, seconds=PICTURE_SECONDS):
 
 
 def worker_main(argv):
+    import cpmodel
+    cpmodel.limit_memory()                            # a runaway model: MemoryError (reported), not gigabytes
     thumbs = argv[:1] == ["--thumbs"]                 # also the hover pictures (Bake 3D pictures)
     argv = argv[1:] if thumbs else argv
     out = argv[0]
