@@ -9,7 +9,9 @@
   * the .glb's texture replaces the pictures "<car>_1" and "<car>_2" (every stored size, 16 x 16 .. 512 x 512)
   * the wheel spots moved by the fit's "track" / "wb" (car_build moves the physics' wheel base / track widths too)
   * one point per (position, texture spot), so texture seams stay; only when that does not fit: one point per
-    position, simplified (fast_simplification) to what fits, texture spot of the nearest .glb point
+    position (texture spot of the nearest .glb point); still too big: what fits is placed and the log says so - the
+    player makes the body smaller himself (no simplifying here: the fast_simplification package gave errors in the
+    exe; the tab warns above MAX_TRIS)
 Strip facts (cpmodel.py): u16 indices local to the part's vertex base; an even-position triangle (a, b, c) faces
 along cross(b - a, c - a).
 Car model facts (2026-10-26): material_index = index into the fx file list; the colour channel (0xB, 9) is BAKED
@@ -36,6 +38,7 @@ TYPE_SIZE = {6: 12, 0xB: 4, 8: 4, 9: 8, 0xA: 4}
 TRIM_FX = "veh_default_b_c_f"           # the trim shaders (they read the car's own pictures, no paint)
 TRIM_PICTURES = (b"_1", b"_2")          # the car's own pictures the .glb's texture goes into
 STILL = ("e_exterior", "e_interior")    # parts that never move; the body shell first
+MAX_TRIS = 10_000                       # an imported body above this: the tab warns (the Astra holds ~12k)
 
 
 def _light_bytes(n):
@@ -133,7 +136,6 @@ def _weld_uv(tri, uv):
 
 def glb_model(car, glb_path, log=print):
     """bytes of the body car's model with the .glb as its body"""
-    import fast_simplification
     import game_preview
     data = bytearray(game_preview._model_bytes(car_model.model_path(car["base"])))
     M = car_mesh._read(bytes(data))
@@ -170,24 +172,17 @@ def glb_model(car, glb_path, log=print):
     n0 = len(faces)
     placed = _place(data, M, meshes, rooms, pts, faces, uvs)
     how = "texture seams kept"
+    if placed < len(faces):                      # one point per position (fewer points; seams blend)
+        data[:] = src
+        pts, faces = _weld(tri)
+        placed = _place(data, M, meshes, rooms, pts, faces, _nearest_lookup(tri, uv)(pts))
+        how = "points shared at texture seams"
+    log("   imported body: %d triangles (%s), %d placed in %d trim parts (room %d points, %d indices)" % (
+        n0, how, placed, len(rooms), vroom, iroom))
     if placed < len(faces):
-        pts0, faces0 = _weld(tri)
-        spot = _nearest_lookup(tri, uv)
-        target = int(min(vroom * 0.9, iroom / 2.6))
-        for attempt in range(6):                 # fewer triangles until all of them fit (no holes)
-            data[:] = src
-            pts, faces = pts0, faces0
-            if len(faces) > target:
-                pts, faces = fast_simplification.simplify(pts.astype(np.float32), faces.astype(np.int64),
-                                                          1 - target / len(faces))
-                pts, faces = np.asarray(pts, np.float64), np.asarray(faces, np.int64)
-            placed = _place(data, M, meshes, rooms, pts, faces, spot(pts))
-            if placed >= len(faces):
-                break
-            target = int(target * placed / len(faces) * 0.97)
-        how = "simplified"
-    log("   imported body: %d triangles -> %d (%s), %d placed in %d trim parts (room %d points, %d indices)" % (
-        n0, len(faces), how, placed, len(rooms), vroom, iroom))
+        log("   WARNING: the body is too detailed for %s - %d of its %d triangles are missing (holes). Make it "
+            "smaller in your 3D program (Blender: Decimate) to about %d triangles and import it again." % (
+                car["base"], len(faces) - placed, len(faces), MAX_TRIS))
     wheels = _move_wheels(data, M, car.get("glb_fit") or {}, log)
     _grow_boxes(data, M, np.vstack([pts] + [w + d for w in wheels for d in ((-.2, -.4, -.4), (.2, .4, .4))]), log)
     _put_texture(data, raw.get("glb_image"), log)

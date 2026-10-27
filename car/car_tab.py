@@ -6,7 +6,7 @@ import re
 import shutil
 import threading
 import tkinter as tk
-from tkinter import colorchooser, filedialog, ttk
+from tkinter import colorchooser, filedialog, messagebox, ttk
 
 import paths
 
@@ -394,19 +394,26 @@ class CarPanel(tk.Frame):
         path = filedialog.askopenfilename(title="Car body (.glb)", filetypes=[("glTF binary", "*.glb")])
         if not path:
             return
+        import car_glb
         import car_model
         try:
-            car_model.read_glb_body(path)
+            n = len(car_model.read_glb_body(path)["glb"])
         except Exception as e:                       # noqa: BLE001 - say why
             self.d.say("This .glb can't be used: %s" % e)
+            return
+        if n > car_glb.MAX_TRIS and not messagebox.askyesno(
+                "Car body", "This body has %d triangles - more than %d.\n\nA car body this detailed may not fit: the "
+                "game car's model only has room for about %d, the rest would be missing (holes).\n\nMake it smaller "
+                "in your 3D program first (Blender: Decimate modifier), or import it anyway?" % (
+                    n, car_glb.MAX_TRIS, car_glb.MAX_TRIS), icon="warning", parent=self):
             return
         folder = os.path.join(paths.TRACKS, "cars")
         os.makedirs(folder, exist_ok=True)
         name = os.path.basename(path)
         shutil.copy2(path, os.path.join(folder, name))
         self._set("body_glb", name)
-        self.d.say("Body imported: %s (the 3D view shows it; in game the car still uses the body car until car "
-                   "import is finished)" % name)
+        self.d.say("Body imported: %s (%d triangles%s)" % (
+            name, n, " - MORE than %d: it may have holes in game" % car_glb.MAX_TRIS if n > car_glb.MAX_TRIS else ""))
 
     def _fit(self, key, d):
         f = dict(self.car().get("glb_fit") or {}) if self.car() else {}
