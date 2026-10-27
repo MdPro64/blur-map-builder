@@ -96,6 +96,7 @@ W_PREV, H_PREV = 960, 540
 SNAP = 10.0
 MIN_RADIUS = 35.0
 MAX_ROAD_WIDTH = 200.0                   # map + point width (m); new maps still start at 60 m
+LAP_SNAP_PX = 20                         # the end point dropped this close to the start = lap track
 MIN_LEN, MAX_LEN = 900.0, 5300.0
 LINE_STEP = 20.0                         # Start / Finish -/+ buttons (m); drag the lines for any spot
 PICKUP_STEP, LANES, MAX_PICKUPS = 150.0, 5, 109
@@ -189,6 +190,7 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
         self.undo, self.redo = [], []
         self.scale, self.ox, self.oz = 0.25, 0.0, 0.0
         self.drag = None
+        self.lap_snap = False      # dragging the end point onto the start (green ring): lap track when let go
         self.pan = None
         self.building = False
         self.road = None
@@ -1233,6 +1235,13 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
             if p.get("w"):
                 tag += "  w%.0f" % p["w"]
             c.create_text(sx, sy - 15, text=tag, fill="#cfd6df", font=("Segoe UI", 8))
+        if self._lap_drag() is not None and pts:          # dragging the end point: the start is a target (lap)
+            sx, sy = self.to_screen(pts[0]["x"], pts[0]["z"])
+            if self.lap_snap:
+                c.create_oval(sx - 20, sy - 20, sx + 20, sy + 20, outline="#35e05a", width=4)
+                c.create_text(sx, sy + 30, text="let go = LAP TRACK", fill="#35e05a", font=("Segoe UI", 10, "bold"))
+            else:
+                c.create_oval(sx - 14, sy - 14, sx + 14, sy + 14, outline="#35e05a", width=2, dash=(3, 3))
         self.measure_draw(c)
         if not light:
             self.show_checks(others)
@@ -2135,6 +2144,10 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
             elif kind == "point":
                 p = self.points()[i]
                 p["x"], p["z"] = x, z
+                if self._lap_drag() is not None:        # the end point near the start: a lap track when let go
+                    p0 = self.points()[0]
+                    sx, sy = self.to_screen(p0["x"], p0["z"])
+                    self.lap_snap = math.hypot(e.x - sx, e.y - sy) <= LAP_SNAP_PX
             else:
                 it = self.map["pickups"][i]
                 it["x"], it["z"] = round(x, 1), round(z, 1)
@@ -2150,9 +2163,26 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
             self.ai_pen_up(e)
             return
         if self.drag:
+            if self._lap_drag() is not None and self.lap_snap:
+                self.points().pop()                       # (the start is already there: the road closes on it)
+                self.sel = None
+                m = self.map
+                m["laps"] = m.get("laps_last", 3)
+                m.pop("finish_m", None)
+                m.pop("start_m", None)
+                self.say("Lap track: the end now joins the start, %d laps (change with Laps - / +)" % m["laps"],
+                         "#35e05a")
+            self.lap_snap = False
             self.drag = None
             self.changed()
         self.pan = None
+
+    def _lap_drag(self):
+        """the point index being dragged if it is the road's END point and the road could become a lap track"""
+        if not self.drag or self.drag[0] != "point" or self.map.get("laps"):
+            return None
+        pts = self.points()
+        return self.drag[1] if len(pts) >= 4 and self.drag[1] == len(pts) - 1 else None
 
     def on_hover(self, e):
         x, z = self.to_world(e.x, e.y)
