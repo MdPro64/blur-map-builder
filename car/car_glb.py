@@ -391,7 +391,8 @@ def _place(data, M, meshes, rooms, pts, faces, uvs):
         vbase = m["data2"][0]["vOffset"] // stride
         for v, j in local.items():
             at = vs["start"] + stride * (vbase + d1["vert_offset"] + j)
-            struct.pack_into("<4e", data, at, pts[v][0], pts[v][1], pts[v][2], 1.0)
+            struct.pack_into("<4e", data, at, pts[v][0], pts[v][1], pts[v][2], 0.0)   # 4th = 0 in every game
+            # car point (1.0 gave spikes at the first crash: the game's crush code reads it)
             nv = nrm[v]
             t = np.cross(nv, (0.0, 1.0, 0.0)) if abs(nv[1]) < 0.9 else np.cross(nv, (1.0, 0.0, 0.0))
             t /= np.linalg.norm(t) + 1e-9
