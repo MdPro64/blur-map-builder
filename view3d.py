@@ -74,6 +74,12 @@ class Mesh:
         self.tv, self.tc = [], []        # transparent triangles
         self.lv, self.lc = [], []        # lines
         self.cur_rot = (0.0, 0.0)        # tilts of the object being drawn (box() uses them)
+        self.owner = None                # key of the object being drawn (Solo shows only its triangles)
+        self.owners = {}                 # owner key -> number; per vertex: its owner's number (-1 = none)
+        self.vo, self.tvo, self.lo = [], [], []
+
+    def _oid(self):
+        return -1 if self.owner is None else self.owners.setdefault(self.owner, len(self.owners))
 
     def tri(self, a, b, c, col, alpha=1.0, shade=True, both=True):
         # plain floats (numpy on single 3-vectors was most of the 3D tab's start time)
@@ -89,9 +95,10 @@ class Mesh:
             if ln > 1e-9:
                 k = 0.45 + 0.55 * abs((nx * SUN_X + ny * SUN_Y + nz * SUN_Z) / ln)
         col4 = (col[0] * k, col[1] * k, col[2] * k, alpha)
-        tv, tc = (self.v, self.c) if alpha >= 1.0 else (self.tv, self.tc)
+        tv, tc, to = (self.v, self.c, self.vo) if alpha >= 1.0 else (self.tv, self.tc, self.tvo)
         tv += [a, b, c]
         tc += [col4] * 3
+        to += [self._oid()] * 3
 
     def quad(self, a, b, c, d, col, alpha=1.0, shade=True):
         self.tri(a, b, c, col, alpha, shade)
@@ -100,6 +107,7 @@ class Mesh:
     def line(self, a, b, col, alpha=1.0):
         self.lv += [a, b]
         self.lc += [(col[0], col[1], col[2], alpha)] * 2
+        self.lo += [self._oid()] * 2
 
     def box(self, centre, size, turn, col, lift=0.0, origin="centre", k=1.0):
         """box size (sx, sy, sz) in model axes (x, y up, z); placed like an actor: local x -> world
@@ -125,8 +133,11 @@ class Mesh:
     def arrays(self):
         def a(x, n):
             return np.ascontiguousarray(np.array(x, np.float32).reshape(-1, n)) if x else np.zeros((0, n), np.float32)
+        def o(x):
+            return np.array(x, np.int32)
         return {"v": a(self.v, 3), "c": a(self.c, 4), "tv": a(self.tv, 3), "tc": a(self.tc, 4),
-                "lv": a(self.lv, 3), "lc": a(self.lc, 4)}
+                "lv": a(self.lv, 3), "lc": a(self.lc, 4), "vo": o(self.vo), "tvo": o(self.tvo), "lo": o(self.lo),
+                "owners": dict(self.owners)}
 
 
 def build_collision(m):
@@ -247,7 +258,7 @@ def build_scene(m):
                 light = 0.45 + 0.55 * np.abs(wn @ sun) if mt["glow"] < 0.5 else np.ones(len(wn))
                 col = np.c_[np.repeat(light[:, None], 3, axis=1), np.ones(len(wn))]
                 textured.append({"key": mt["key"], "image": mt["image"], "v": wpos.astype(np.float32),
-                                 "c": col.astype(np.float32), "uv": mt["uv"]})
+                                 "c": col.astype(np.float32), "uv": mt["uv"], "owner": key})
         else:
             M.box(pos, (x1_ - x0_, max(y1_ - y0_, .05), z1_ - z0_), turn, KIND_RGB.get(e.get("kind"), (.7, .7, .7)),
                   lift=y0_, origin=(x0_, x1_, z0_, z1_), k=k)
@@ -397,6 +408,7 @@ def build_scene(m):
         k = t[6] if len(t) > 6 else 1.0
         rot = tuple(t[7]) if len(t) > 7 else (0.0, 0.0)
         M.cur_rot = rot
+        M.owner = key
         box = PICK_BOX.get(key.split(":")[0])
         if box:
             pick(key, (x, y, z), turn, box, k, rot=rot)
@@ -469,6 +481,7 @@ def build_scene(m):
         x, y, z, turn = sp[:4]
         kind = R.get(sp[4]) if len(sp) > 4 else "lamp"
         M.cur_rot = tuple(sp[5]) if len(sp) > 5 else (0.0, 0.0)
+        M.owner = key
         if key.startswith("obj:"):                       # the user's breakable object from the library
             placed_box(key, (x, y, z), turn, 1.0, M.cur_rot, False)
             continue
@@ -502,6 +515,7 @@ def build_scene(m):
     lane = {}
     for (x, y, z, a, t), owner in zip(pickups, pickup_owner):
         col = TYPE_RGB.get(name_of.get(t, ""), (.8, .8, .8))
+        M.owner = "pickup:%d" % owner                    # (Solo: the whole row)
         M.box((x, y + .3, z), (1.6, .12, 2.6), a, col)
         it = pickup_list[owner]
         row = it.get("kind") != "single"
@@ -512,6 +526,8 @@ def build_scene(m):
                       "label": "Power-up %s: %s  (%s %d)" % ("row" if row else "single", it.get("type") or
                                                              ("mixed" if row else name_of.get(t, "?")),
                                                              "row" if row else "item", owner + 1)})
+
+    M.owner = None
 
     # the road's control points (as in the 2D view: first green, last white, others orange) - selectable, G moves
     # them (Z = height); drawn as dots on top by the view
@@ -731,6 +747,10 @@ class View3D(tk.Frame):
             tk.Radiobutton(self.sel_frame, text=txt, variable=self.gizmo, value=val, indicatoron=False, bg="#3a4228",
                            fg="white", selectcolor="#c08a1a", activebackground="#4a5430", padx=8, pady=2,
                            command=self.refresh, font=("Segoe UI Symbol", 9, "bold")).pack(side="left", padx=1, pady=2)
+        self.solo = None           # Solo: owner key of the only object drawn ("obj:3", "pickup:2"), or None
+        self.solo_btn = tk.Button(self.sel_frame, text="◎ Solo (/)", command=lambda: self.toggle_solo(),
+                                  bg="#3a3428", fg="white", font=("Segoe UI Symbol", 9))
+        self.solo_btn.pack(side="left", padx=3)
         for txt, cmd in (("✖ Hide (X)", lambda: self._hide()),
                          ("↺ Reset object", lambda: self._reset_object())):
             tk.Button(self.sel_frame, text=txt, command=cmd, bg="#3a3428", fg="white",
@@ -773,7 +793,8 @@ class View3D(tk.Frame):
                         ("<Delete>", lambda e: self._hide()), ("<Return>", lambda e: self._confirm_op()),
                         ("<KP_Enter>", lambda e: self._confirm_op()), ("<Escape>", lambda e: self._escape()),
                         ("<Alt-g>", lambda e: self._clear("move")), ("<Alt-r>", lambda e: self._clear("turn")),
-                        ("<Alt-s>", lambda e: self._clear("scale")), ("<Alt-h>", lambda e: self._unhide_all())):
+                        ("<Alt-s>", lambda e: self._clear("scale")), ("<Alt-h>", lambda e: self._unhide_all()),
+                        ("<slash>", lambda e: self.toggle_solo()), ("<KP_Divide>", lambda e: self.toggle_solo())):
             g.bind(key, lambda e, fn=fn: (fn(e), "break")[1])
         g.bind("<MouseWheel>", self._wheel)
         g.bind("<Enter>", lambda e: g.focus_set())
@@ -891,8 +912,63 @@ class View3D(tk.Frame):
             self.sel_bar.config(text="%s   [%s]   %s   |   %s" % (p["label"], key, ", ".join(changed) or "as placed",
                                                                   how))
             self.sel_frame.pack(side="top", fill="x", before=self.gl)
+        if self.solo is not None:                       # Solo follows the selection; nothing selected = all back
+            if p is None or "point" in p:
+                self._solo_off()
+            elif self._solo_key(p) != self.solo:
+                self._solo_on(p)
         self._panel_show(p)
         self.refresh()
+
+    # ---- Solo (Blender's local view): only the selected object, framed; / again (or Esc) = everything back
+    @staticmethod
+    def _solo_key(p):
+        return "pickup:%d" % p["pickup"] if "pickup" in p else p["key"]
+
+    def toggle_solo(self):
+        if self.solo is not None:
+            self._solo_off()
+            return
+        p = self._pick(self.sel)
+        if p is None or "point" in p:
+            self.info.config(text="Solo: select an object first (a track point has no shape)", fg="#f0e080")
+            return
+        self._solo_cam = (list(self.target), self.dist, self.yaw, self.pitch, self.ortho)
+        self._solo_on(p)
+
+    def _solo_on(self, p):
+        self.solo = self._solo_key(p)
+        group = [q for q in self.picks() if self._solo_key(q) == self.solo]
+        cs = np.array([c for q in group for c in box_corners(q)], np.float64)
+        lo, hi = cs.min(0), cs.max(0)
+        self.target = list((lo + hi) / 2)
+        self.dist = float(max(hi - lo)) * 2.2 + 4.0
+        self.drive = self.cam_anim = None
+        self.solo_btn.config(text="◎ Show all (/)", bg="#c08a1a")
+        self.info.config(text="SOLO: only %s   ( / or Esc = show everything )" % p["label"], fg="#f0e080")
+        self.refresh()
+
+    def _solo_off(self):
+        self.solo = None
+        cam = getattr(self, "_solo_cam", None)
+        if cam:
+            self.target, self.dist, self.yaw, self.pitch, self.ortho = list(cam[0]), cam[1], cam[2], cam[3], cam[4]
+        self.solo_btn.config(text="◎ Solo (/)", bg="#3a3428")
+        self.info.config(text="", fg="#9aa8b8")
+        self.refresh()
+
+    def _solo_scene(self, sc):
+        """the scene arrays with only the Solo object's triangles / lines (cached per scene + object)"""
+        key = (id(sc), self.solo)
+        if getattr(self, "_solo_cache", (None,))[0] != key:
+            oid = sc.get("owners", {}).get(self.solo, -2)
+            out = dict(sc)
+            for v, c, o in (("v", "c", "vo"), ("tv", "tc", "tvo"), ("lv", "lc", "lo")):
+                keep = sc[o] == oid if len(sc.get(o, ())) == len(sc[v]) else np.zeros(len(sc[v]), bool)
+                out[v], out[c] = np.ascontiguousarray(sc[v][keep]), np.ascontiguousarray(sc[c][keep])
+            out["textured"] = [t for t in sc.get("textured", []) if t.get("owner") == self.solo]
+            self._solo_cache = (key, out)
+        return self._solo_cache[1]
 
     # ---- the panel at the bottom left: location / rotation / scale of the selection, typed values
     def _panel_show(self, p):
@@ -1234,6 +1310,8 @@ class View3D(tk.Frame):
             kind = {"move": "move", "rotate": "turn", "scale": "scale"}[self.gizmo.get()]
             self._start_op(kind, axis=None if h in ("centre", "ring") else h, m=(e.x, e.y), drag=True)
             return "break"
+        if self.solo is not None:                       # Solo: the shown object stays selected (handles above)
+            return "break"
         for p in self.picks():                          # track points first: a dot within 10 pixels
             if "point" in p:
                 s = self._screen((p["pos"][0], p["pos"][1] + 0.5, p["pos"][2]))
@@ -1413,6 +1491,8 @@ class View3D(tk.Frame):
             self._stop_placing()
         elif self.op:
             self._cancel_op()
+        elif self.solo is not None:                     # first Esc: everything back (the selection stays)
+            self._solo_off()
         else:
             self.select(None)
 
@@ -2273,7 +2353,7 @@ class View3D(tk.Frame):
             self._mats = (np.linalg.inv(self._fwd), max(w, 1), max(h, 1))
         except np.linalg.LinAlgError:
             self._mats = None
-        sc = self.scene
+        sc = self._solo_scene(self.scene) if self.solo is not None else self.scene
         gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
         gl.glEnableClientState(gl.GL_COLOR_ARRAY)
         for v, c, prim in ((sc["v"], sc["c"], gl.GL_TRIANGLES), (sc["lv"], sc["lc"], gl.GL_LINES)):
@@ -2303,7 +2383,7 @@ class View3D(tk.Frame):
         gl.glDisableClientState(gl.GL_COLOR_ARRAY)
         p = self._pick(self.sel)
         op = self.op or {}
-        if self.mode == "3d":                               # track points: dots on top of everything
+        if self.mode == "3d" and self.solo is None:         # track points: dots on top of everything
             gl.glDisable(gl.GL_DEPTH_TEST)
             gl.glPointSize(9.0)
             gl.glBegin(gl.GL_POINTS)
