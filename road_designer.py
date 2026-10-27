@@ -551,6 +551,8 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
 
     def on_view(self):
         self.show_toolbar()
+        self.light_panel.pack_forget()                  # (both first: Custom car -> Lighting showed the car tab too)
+        self.car_panel.pack_forget()
         if self.view_mode.get() == "light":
             self.v3d.show(False)
             self.v3d.pack_forget()
@@ -560,7 +562,6 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
             self.say("LIGHTING of the location '%s': pick a game city as the start, change what you like, Build + "
                      "install, look in game" % self.loc["name"])
             return
-        self.light_panel.pack_forget()
         if self.view_mode.get() == "car":
             self.v3d.show(False)
             self.v3d.pack_forget()
@@ -569,7 +570,6 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
             self.car_panel.refresh()
             self.say("CUSTOM CAR: + New, pick a class and a body car, then spend the class's stat points")
             return
-        self.car_panel.pack_forget()
         if self.view_mode.get() == "surface":
             self.v3d.show(False)
             self.v3d.pack_forget()
