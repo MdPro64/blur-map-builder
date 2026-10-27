@@ -148,6 +148,36 @@ def presets():
     return out
 
 
+def sky_files(wld, maps_dir, read_root, log=print):
+    """root.pak ({path: bytes}, {path: alias of}) of the locations' custom skies (loc["lighting"]["sky_image"], a
+    file in maps_dir): each one under the name lighting.prepare gives its record; read_root(path) = a base file"""
+    import sys
+    sys.path.insert(0, os.path.join(HERE, "..", "kslf"))
+    sys.path.insert(0, os.path.join(HERE, ".."))
+    import dump
+    import paths
+    import sky
+    files, aliases = {}, {}
+    F = None
+    for li, loc in enumerate(wld["locations"]):
+        lt = loc.get("lighting") or {}
+        if not lt.get("sky_image"):
+            continue
+        src = os.path.join(maps_dir, lt["sky_image"])
+        if not os.path.exists(src):
+            log("custom sky of %s: %s is missing - the preset's sky stays" % (loc["name"], src))
+            continue
+        F = F or dump.File(os.path.join(paths.UNPACKED, "xt", "amax.bin"))
+        city = PRESETS.get(lt.get("preset"), PRESETS[DEFAULT_PRESET])
+        old = sky.record_sky(F.d, F.O[ls_object(F, city)])[0]
+        name = "\\" + sky.own_name(old, li).replace("/", "\\")
+        base = "\\" + old.replace("/", "\\")
+        files[name] = sky.texture(read_root(base), src)
+        aliases[name] = base
+        log("custom sky of %s: %s -> %s" % (loc["name"], lt["sky_image"], name))
+    return files, aliases
+
+
 def ls_object(F, city_obj):
     """object index of a City's LightingSettings record"""
     uid = F.top(F.O[city_obj])["EnvironmentSettings"]["lightingSettings"]["uid"]
@@ -190,6 +220,12 @@ def prepare(amax, wld, dump, kslf_write, tmp):
                         struct.pack_into("<%df" % n, data, b + off, *[float(x) for x in v[:n]])
             _, amax = kslf_write.clone_object_any(src, None, uid, patch, data_in=amax)
         A = dump.File(tmp(amax))                       # rows may have moved: read the city bytes now
+        if lt.get("sky_image"):                        # custom sky: the record's sky name -> ours (sky.py)
+            import sky
+            oi = next(oi for u, t, oi in A.refs if u == uid) if uid is not None else ls_object(A, city)
+            old = sky.record_sky(amax, A.O[oi])[0]
+            amax = sky.set_record_sky(amax, A.O[oi], sky.own_name(old, li))
+            A = dump.File(tmp(amax))
         b = A.O[city]["blocks"][0]["offset"]
         env = bytearray(amax[b + 52:b + 132])
         if uid is not None:

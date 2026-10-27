@@ -1463,8 +1463,55 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
             vals[key] = [round(float(x), 5) for x in value]
         for k, v in (many or {}).items():
             vals[k] = list(v)
-        self.loc["lighting"] = {"preset": name, "values": vals}
+        sky = (self.loc.get("lighting") or {}).get("sky_image")
+        self.loc["lighting"] = dict({"preset": name, "values": vals}, **({"sky_image": sky} if sky else {}))
         self.changed()                                  # (rebuilds this tab)
+
+    def light_sky(self, path):
+        """custom sky (sky.py): a 360 panorama copied into the maps folder (skies\\), or None = the preset's sky"""
+        if path:
+            import shutil
+            folder = os.path.join(paths.TRACKS, "skies")
+            os.makedirs(folder, exist_ok=True)
+            dst = os.path.join(folder, os.path.basename(path))
+            if os.path.abspath(path) != os.path.abspath(dst):
+                shutil.copy2(path, dst)
+        self.change()
+        name, vals = self.light_data()
+        lt = {"preset": name, "values": dict(vals)}
+        if path:
+            lt["sky_image"] = "skies/" + os.path.basename(path)
+        self.loc["lighting"] = lt
+        self.changed()
+
+    def _light_pick_sky(self):
+        path = filedialog.askopenfilename(parent=self.root, title="360 sky panorama (2:1, the top half becomes the sky)",
+                                          filetypes=[("Sky panorama", "*.hdr *.exr *.png *.jpg *.jpeg"),
+                                                     ("All files", "*.*")])
+        if path:
+            try:
+                import sky as sky_mod
+                sky_mod.read_panorama(path)
+            except Exception as e:                      # noqa: BLE001 - told to the user
+                messagebox.showerror("Custom sky", "Cannot read this picture:\n%s" % e)
+                return
+            self.light_sky(path)
+
+    def _light_sky_picture(self, width=420):
+        """PIL picture of the location's sky (its own panorama, or the preset's sky texture); cached"""
+        import sky as sky_mod
+        lt = self.loc.get("lighting") or {}
+        name, _ = self.light_data()
+        own = lt.get("sky_image")
+        key = (own, name, os.path.getmtime(os.path.join(paths.TRACKS, own))
+               if own and os.path.exists(os.path.join(paths.TRACKS, own)) else 0)
+        cache = self.__dict__.setdefault("_sky_pics", {})
+        if key not in cache:
+            if own:
+                cache[key] = sky_mod.preview(os.path.join(paths.TRACKS, own), width)
+            else:
+                cache[key] = sky_mod.preset_preview(lighting_mod.PRESETS[name], width)
+        return cache[key]
 
     def light_build(self):
         f = self.light_panel
@@ -1496,9 +1543,33 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
         body.pack(fill="both", expand=True, padx=12)
         rows = tk.Frame(body, bg=BG)
         rows.pack(side="left", fill="y")
-        self.light_prev = tk.Canvas(body, width=420, height=300, bg="#000", highlightthickness=1,
+        right = tk.Frame(body, bg=BG)
+        right.pack(side="left", anchor="n", padx=16)
+        self.light_prev = tk.Canvas(right, width=420, height=300, bg="#000", highlightthickness=1,
                                     highlightbackground="#3a4250")
-        self.light_prev.pack(side="left", anchor="n", padx=16)
+        self.light_prev.pack(anchor="n")
+        own_sky = (self.loc.get("lighting") or {}).get("sky_image")
+        tk.Label(right, text="SKY PICTURE  -  %s" % ("yours: " + os.path.basename(own_sky) if own_sky else
+                                                    "the preset's (%s)" % name),
+                 bg=BG, fg="#ffd23b", font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(10, 2))
+        sky_lbl = tk.Label(right, bg="#000", text="", fg="#ff8080")
+        sky_lbl.pack(anchor="w")
+        try:
+            from PIL import ImageTk
+            self._sky_tk = ImageTk.PhotoImage(self._light_sky_picture())
+            sky_lbl.config(image=self._sky_tk)
+        except Exception as e:                          # noqa: BLE001 - shown instead of the picture
+            sky_lbl.config(text="(no sky preview: %s)" % e)
+        sb = tk.Frame(right, bg=BG)
+        sb.pack(anchor="w", pady=4)
+        tk.Button(sb, text="🌄 Custom sky (HDRI)...", bg="#1e9bff", fg="white", font=("Segoe UI Symbol", 9, "bold"),
+                  command=self._light_pick_sky).pack(side="left")
+        tk.Button(sb, text="Use the preset's sky", bg=BTN, fg=FG, font=UI_FONT,
+                  state="normal" if own_sky else "disabled", command=lambda: self.light_sky(None)).pack(side="left", padx=6)
+        tk.Label(right, text="A 360 panorama (2:1, .hdr / .exr / .png / .jpg): its top half becomes the sky, from straight "
+                             "up down to the horizon. 'Sky picture rotation' turns it, 'Sky picture brightness' sets how "
+                             "bright. Needs Build + install.", bg=BG, fg="#9aa8b8", wraplength=420,
+                 justify="left").pack(anchor="w")
         fields = [(k, f[0], f[1], f[2]) for k, f in lighting_mod.SAMPLE_FIELDS.items()]
         fields += [(k, f[1], f[2], f[3]) for k, f in lighting_mod.FIELDS.items()]
         for key, n, label, mx in fields:
