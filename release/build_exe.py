@@ -58,7 +58,8 @@ def scan_imports(files, ours):
     keep = set()
     for n in names:
         top = n.split(".")[0]
-        if top in ours or top in ("bpy", "bmesh", "bpy_extras", "mathutils", "capstone", "lupa", "BlurImportExport"):
+        if top in ours or top in ("bpy", "bmesh", "bpy_extras", "mathutils", "capstone", "lupa", "BlurImportExport",
+                                  "cv2", "fast_simplification"):    # (cv2: .exr skies only, ~100 MB: not shipped)
             continue
         try:
             __import__(n)
