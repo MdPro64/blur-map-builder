@@ -1244,8 +1244,8 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
             else:
                 c.create_oval(sx - 14, sy - 14, sx + 14, sy + 14, outline="#35e05a", width=2, dash=(3, 3))
                 if self.start_hover and self._lap_drag() is None:
-                    c.create_text(sx, sy + 28, text="drag the end point here = LAP TRACK", fill="#35e05a",
-                                  font=("Segoe UI", 9, "bold"))
+                    c.create_text(sx, sy + 28, text="click = LAP TRACK" if self.tool.get() == "add" else
+                                  "drag the end point here = LAP TRACK", fill="#35e05a", font=("Segoe UI", 9, "bold"))
         self.measure_draw(c)
         if not light:
             self.show_checks(others)
@@ -2079,6 +2079,12 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
                 self.pan_start(e)
         elif tool == "add":
             self.change()
+            if self.start_hover and self._can_lap():     # a click on the start (green ring): the road closes
+                self.start_hover = False
+                self.sel = None
+                self._close_lap()
+                self.changed()
+                return
             pts.append({"x": x, "z": z})
             self.sel = len(pts) - 1
             self.changed()
@@ -2170,20 +2176,23 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
             if self._lap_drag() is not None and self.lap_snap:
                 self.points().pop()                       # (the start is already there: the road closes on it)
                 self.sel = None
-                m = self.map
-                m["laps"] = m.get("laps_last", 3)
-                m.pop("finish_m", None)
-                m.pop("start_m", None)
-                self.say("Lap track: the end now joins the start, %d laps (change with Laps - / +)" % m["laps"],
-                         "#35e05a")
+                self._close_lap()
             self.lap_snap = False
             self.drag = None
             self.changed()
         self.pan = None
 
     def _can_lap(self):
-        """the road could become a lap track by dropping its end point on its start"""
-        return not self.map.get("laps") and len(self.points()) >= 4
+        """the road could become a lap track on its start: drop its end point there (Move: 4+ points, the end point
+        goes) or click it with Add point (3+ points: the road closes from its end)"""
+        return not self.map.get("laps") and len(self.points()) >= (3 if self.tool.get() == "add" else 4)
+
+    def _close_lap(self):
+        m = self.map
+        m["laps"] = m.get("laps_last", 3)
+        m.pop("finish_m", None)
+        m.pop("start_m", None)
+        self.say("Lap track: the end now joins the start, %d laps (change with Laps - / +)" % m["laps"], "#35e05a")
 
     def _lap_drag(self):
         """the point index being dragged if it is the road's END point and the road could become a lap track"""
@@ -2214,7 +2223,8 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
             self.start_hover = hover
             self.redraw_soon()
         if hover:
-            self.say("Drag the END point (white) onto this start point = lap track (the end joins the start)",
+            self.say("Click = lap track (the road closes back to its start)" if self.tool.get() == "add" else
+                     "Drag the END point (white) onto this start point = lap track (the end joins the start)",
                      "#35e05a")
         elif self.road:
             s, lat = self.road.project(x, z)
