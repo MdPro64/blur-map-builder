@@ -7,12 +7,12 @@
     light) and its strip room (all detail levels' room; every level draws that strip, so the car is whole at any
     distance)
   * the .glb's texture replaces the pictures "<car>_1" and "<car>_2" (every stored size, 16 x 16 .. 512 x 512)
-  * the wheel spots moved by the fit's "track" / "wb" (car_build moves the physics' wheel base / track widths too)
+  * the wheels stay where the body car has them (an own wheel spacing changed the REAL body car too): the .glb
+    is fitted to them (size / forward / up / turn)
   * one point per (position, texture spot), so texture seams stay; too big for the body car (GLB_BODY of the
     class, room()): what fits is placed and the log says so - the player makes the body smaller himself (no
     simplifying here: the fast_simplification package gave errors in the exe; the tab shows the room)
-  * the body car's lights put under the ground; only our own file's part list is changed for the wheels (the
-    matrices at the file's end are shared with the real car in game)
+  * the body car's lights put under the ground
 Strip facts (cpmodel.py): u16 indices local to the part's vertex base; an even-position triangle (a, b, c) faces
 along cross(b - a, c - a).
 Car model facts (2026-10-26): material_index = index into the fx file list; the colour channel (0xB, 9) is BAKED
@@ -231,36 +231,21 @@ def glb_model(car, glb_path, log=print):
         log("   WARNING: the class's body car %s has room for only part of this body - %d of its %d triangles are "
             "missing (holes). Make the .glb smaller (Blender: Decimate) - the Custom car tab says to about how many "
             "triangles." % (car["base"], len(faces) - placed, len(faces)))
-    wheels = _move_wheels(data, M, car.get("glb_fit") or {}, log)
+    wheels = _wheel_spots(M)
     _hide_lights(data, M, meshes, log)
     _grow_boxes(data, M, np.vstack([pts] + [w + d for w in wheels for d in ((-.2, -.4, -.4), (.2, .4, .4))]), log)
     _put_texture(data, raw.get("glb_image"), log)
     return bytes(data)
 
 
-def _move_wheels(data, M, fit, log):
-    """the wheel spots moved apart like the 3D view (car_model.assemble): fit "track" side to side, "wb" front to
-    back (m). Each corner's wheel, tyre, rim and brake parts share one position (stored x, up, forward after the
-    3 x 3 turn): every copy of it is moved. Returns the new wheel centres (x, up, forward)"""
+def _wheel_spots(M):
+    """the body car's wheel centres (x, up, forward). They are NOT moved any more: the game draws the wheels where
+    the physics (geometry.wheelBase / trackWidth) puts them, not at these spots - and other physics values on a
+    custom car gave the REAL body car the same wheel spacing (tests 2026-10-28)"""
     spots = {tuple(e["matrix"]["position"]) for e in M["elements"]
              if isinstance(e, dict) and car_model._corner(e["name"]) and
              (car_model._kind(e["name"]) in ("tyre", "rim") or e["name"].lower().startswith("e_wheel_"))}
-    track, wb = fit.get("track", 0.0), fit.get("wb", 0.0)
-    # ONLY the part list (before the vertex streams): not inside the points / triangles (a spot like (0, 0, 0) is
-    # everywhere there - 35,567 places wrecked the RatRod model) and NOT the 4 x 4 matrices near the file's end:
-    # the game shares those with the REAL body car (its file unchanged, its wheels moved too - user 2026-10-28)
-    head = min(vs["start"] for vs in M["vertex_streams"])
-    out, done = [], 0
-    for x, fwd, up in spots:
-        nx, nfwd = x + np.sign(x) * track / 2, fwd + np.sign(fwd) * wb / 2
-        out.append(np.array([nx, up, nfwd]))
-        if (track or wb) and abs(x) > 0.05 and abs(fwd) > 0.05:    # (a wheel at the middle: not a real spot)
-            a, b = struct.pack("<3f", x, up, fwd), struct.pack("<3f", nx, up, nfwd)
-            done += data.count(a, 0, head)
-            data[:head] = data[:head].replace(a, b)
-    if track or wb:
-        log("   wheels moved %+.2f m side to side, %+.2f m front to back (%d spots)" % (track, wb, done))
-    return out
+    return [np.array([x, up, fwd]) for x, fwd, up in spots]
 
 
 BURIED_BOX = (-0.01, -20.0, -0.01, 0.01, -19.99, 0.01)  # (min x, up, fwd, max ...): a speck 20 m under the ground
