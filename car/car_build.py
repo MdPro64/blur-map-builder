@@ -29,6 +29,7 @@ import kslf_write
 import schema
 
 UID0 = 0xCA400000
+DRIVER_DOWN = 1.5                                  # an imported body: the driver this much lower (out of sight)
 LOC0 = 0x4D440000
 TREND = {                                         # stat -> RP_CarDynamics fields that follow it
     "speed": ("friction.airFriction", "gears.finalRatio"),
@@ -223,6 +224,8 @@ def add_cars(files, wld, U, log=print):
         sets = dict(car_vals, LocString=LOC0 + i, dynamics=dyn_row, UiSpeed=s["speed"],
                     UiAcceleration=s["acceleration"], UiDrift=s["drift"], UiGrip=s["grip"], UiStrength=s["strength"],
                     UiMaxSpeed=mph, GameplayTopSpeed=mph, BossAbilitySlot=0, **{"class": car["class"]}, **wheel_vals)
+        if car.get("body_glb"):                      # the body car's driver stuck out of the imported body (Bowler:
+            sets["DriverOffset.vy"] = amax.get(bi, "DriverOffset.vy") - DRIVER_DOWN     # an open buggy): down
         icon_off, _ = amax.field(vt, "UiIconName")
 
         def car_patch(data, pool, blocks):

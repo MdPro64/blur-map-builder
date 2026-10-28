@@ -17,8 +17,8 @@ import numpy as np
 import car_model
 
 AUTO = "auto"
-SHEETS = ["\\ui\\data\\ipf\\car_icons_%s.ipf" % c for c in "abcd"]
-OURS = SHEETS[0]                  # our cars' shapes go into this sheet (its "layer 1" group)
+SHEETS = ["\\ui\\data\\ipf\\car_icons_%s.ipf" % c for c in "abcd"]   # one per class (A B C D); a car's shape goes
+                                                                     # into its class's sheet ("layer 1" group)
 WIDE = 480                        # side view raster width (pixels = the icon's length)
 _HEAD = bytes.fromhex("010000000000803f0000803f0000803f0e0010000f000f001000110000000000ff00")   # the Astra's
 
@@ -199,18 +199,20 @@ def draw(node, width=WIDE):
 def files(wld, names, log=print):
     """root.pak {path: bytes}: the car icon sheet with one shape per custom car (names = their game Names)"""
     cars = wld.get("cars") or []
-    if not cars:
-        return {}
-    d = bytearray(_sheet(OURS))
-    at, kids = _top(bytes(d))
-    have = {n.lower() for n, a, b in kids}
-    add = b""
-    count = len(kids)
-    for car, name in zip(cars, names):
-        if name.lower() in have:
-            continue
-        add += shape_of(car, name)
-        count += 1
-        log("   mini icon %s: %s" % (name, "side view" if choice(car) == AUTO else "like " + choice(car)))
-    struct.pack_into("<I", d, at, count)
-    return {OURS: bytes(d) + add}
+    out = {}
+    for sheet in sorted({SHEETS[c["class"]] for c in cars}):     # each class has its own sheet (a = class A ...):
+        d = bytearray(_sheet(sheet))                              # a class B car in sheet a was not found (2026-10-28)
+        at, kids = _top(bytes(d))
+        have = {n.lower() for n, a, b in kids}
+        add = b""
+        count = len(kids)
+        for car, name in zip(cars, names):
+            if SHEETS[car["class"]] != sheet or name.lower() in have:
+                continue
+            add += shape_of(car, name)
+            count += 1
+            log("   mini icon %s (class %s): %s" % (name, "ABCD"[car["class"]],
+                                                    "side view" if choice(car) == AUTO else "like " + choice(car)))
+        struct.pack_into("<I", d, at, count)
+        out[sheet] = bytes(d) + add
+    return out

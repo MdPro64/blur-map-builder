@@ -252,6 +252,7 @@ def glb_model(car, glb_path, log=print):
             "(holes). Pick a body car with more room (the Custom car tab lists them) or make the .glb smaller "
             "(Blender: Decimate)." % (car["base"], len(faces) - placed, len(faces)))
     wheels = _move_wheels(data, M, car.get("glb_fit") or {}, log)
+    _hide_lights(data, M, log)
     _grow_boxes(data, M, np.vstack([pts] + [w + d for w in wheels for d in ((-.2, -.4, -.4), (.2, .4, .4))]), log)
     _put_texture(data, raw.get("glb_image"), log)
     return bytes(data)
@@ -281,6 +282,27 @@ def _move_wheels(data, M, fit, log):
     if track or wb:
         log("   wheels moved %+.2f m side to side, %+.2f m front to back (%d spots)" % (track, wb, done))
     return out
+
+
+EMPTY_BOX = (2.0 ** 126,) * 3 + (-2.0 ** 126,) * 3    # min > max: "nothing here" (the game's own wheel markers)
+
+
+def _hide_lights(data, M, log):
+    """the body car's lights: their parts get the empty box - their meshes are hidden already, but the game still
+    drew their glows (brake / indicator flares) where the body car has its lights (user 2026-10-28, Bowler body).
+    In the part list only."""
+    head = min(vs["start"] for vs in M["vertex_streams"])
+    new = struct.pack("<6f", *EMPTY_BOX)
+    done = 0
+    for e in M["elements"]:
+        if not isinstance(e, dict) or car_model._kind(e["name"]) != "light":
+            continue
+        bb = e["bounding_box"]
+        old = struct.pack("<6f", bb[0]["x"], bb[0]["z"], bb[0]["y"], bb[1]["x"], bb[1]["z"], bb[1]["y"])
+        if old != new:
+            done += data.count(old, 0, head)
+            data[:head] = data[:head].replace(old, new)
+    log("   the body car's lights hidden (%d boxes emptied)" % done)
 
 
 def _grow_boxes(data, M, pts, log):
