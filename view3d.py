@@ -610,6 +610,7 @@ OBJECT_LABELS = {
     "rwbarrier": "Road-works barrier - can be knocked down", "cone": "Cone - can be knocked down",
 }
 PICK_BOX = road_layout.OBJECT_BOX       # (also what "Solid" turns into a wall box)
+MULTI = "__group__"                     # the selection key while several objects are selected (View3D._multi_pick)
 
 
 def pick_axes(p, dturn=0.0, drot=(0.0, 0.0)):
@@ -899,12 +900,52 @@ class View3D(view3d_scatter.ScatterTools, tk.Frame):
         return (self.scene or {}).get("picks", [])
 
     def _pick(self, key):
+        if key == MULTI:
+            return self._multi_pick()
         return next((p for p in self.picks() if p["key"] == key), None) if key else None
+
+    # ---- several selected: ONE pick for all of them (a box round them all, its middle = the pivot), so the same
+    #      handles / G R S keys work; when let go every member gets its own change (_member_change)
+    def _members(self):
+        out = []
+        for k in self.multi:
+            q = next((p for p in self.picks() if p["key"] == k), None)
+            if q is not None and q["editable"] and "point" not in q and "pickup" not in q:
+                out.append(q)
+        return out
+
+    def _multi_pick(self):
+        ms = self._members()
+        if len(ms) < 2:
+            return None
+        cs = np.array([c for q in ms for c in box_corners(q)], np.float64)
+        lo, hi = cs.min(0), cs.max(0)
+        cx, cz = (lo[0] + hi[0]) / 2, (lo[2] + hi[2]) / 2
+        return {"key": MULTI, "label": "%d objects" % len(ms), "pos": (cx, lo[1], cz), "turn": 0.0, "rot": (0.0, 0.0),
+                "scale": 1.0, "box": (lo[0] - cx, hi[0] - cx, 0.0, hi[1] - lo[1], lo[2] - cz, hi[2] - cz),
+                "editable": True, "scalable": True, "multi": True}
+
+    @staticmethod
+    def _member_change(g, q, op):
+        """(delta, dturn, dscale) of member q while the group g has op: it swings round the group's middle (turn,
+        about up only), its distance from the middle grows with the scale (all axes, from the group's bottom);
+        objects that can't be scaled only move"""
+        s = kvec(op.get("dscale", 1.0))[0]
+        t = op.get("dturn", 0.0)
+        rel = np.array(q["pos"], float) - np.array(g["pos"], float)
+        new = rel * s
+        c, si = math.cos(t), math.sin(t)
+        new = np.array([new[0] * c + new[2] * si, new[1], -new[0] * si + new[2] * c])   # (an actor's turn)
+        d = new - rel + np.array(op.get("delta", (0.0, 0.0, 0.0)), float)
+        return tuple(float(v) for v in d), t, (s if q["scalable"] else 1.0)
 
     def edits(self):
         return dict((self.m or {}).get("edits") or {})
 
     def select(self, key, keep_multi=False):
+        if key == MULTI:                                # (the map rebuilt after a group change: still the group)
+            self._set_multi(self.multi)
+            return
         if not keep_multi:
             self.multi = []
         self.sel = key
@@ -1117,13 +1158,20 @@ class View3D(view3d_scatter.ScatterTools, tk.Frame):
         return "break"
 
     def _set_multi(self, keys, sync=True):
-        """several objects selected: yellow boxes; Delete / Ctrl+G / Ctrl+D work on all of them (no handles)"""
+        """several objects selected: yellow boxes; Delete / Ctrl+G / Ctrl+D work on all of them, and one set of
+        handles (move / turn about up / size) moves all of them together (sel = MULTI)"""
         self.op = None
         if self.solo is not None:
             self._solo_off()
         self.multi = list(keys)
-        self.sel = None
-        self.sel_frame.pack_forget()
+        g = self._multi_pick()                          # the movable ones together: handles + G / R / S
+        self.sel = MULTI if g else None
+        if g:
+            self.sel_bar.config(text="%s selected   |   drag a handle, or G move / R turn / S size (all of them "
+                                     "together)   Delete, Ctrl+G group, Ctrl+D copy   Esc = none" % g["label"])
+            self.sel_frame.pack(side="top", fill="x", before=self.gl)
+        else:
+            self.sel_frame.pack_forget()
         self._panel_show(None)
         if sync:
             self._outliner_show(None)
@@ -1152,8 +1200,8 @@ class View3D(view3d_scatter.ScatterTools, tk.Frame):
             self._solo_off()
             return
         p = self._pick(self.sel)
-        if p is None or "point" in p:
-            self.info.config(text="Solo: select an object first (a track point has no shape)", fg="#f0e080")
+        if p is None or "point" in p or p.get("multi"):
+            self.info.config(text="Solo: select ONE object first (a track point has no shape)", fg="#f0e080")
             return
         self._solo_cam = (list(self.target), self.dist, self.yaw, self.pitch, self.ortho)
         self._solo_on(p)
@@ -1276,7 +1324,7 @@ class View3D(view3d_scatter.ScatterTools, tk.Frame):
     def _panel_apply(self):
         """the panel's values -> the object's edit (or the track point)"""
         p = self._pick(self.sel)
-        if p is None or not p["editable"] or self.op:
+        if p is None or not p["editable"] or self.op or p.get("multi"):
             return
         g = self.scene["ground"]
         loc = self._panel_values("loc", 3)
@@ -1326,6 +1374,12 @@ class View3D(view3d_scatter.ScatterTools, tk.Frame):
     def _reset_object(self):
         p = self._pick(self.sel)
         if p is None or "point" in p or "pickup" in p:
+            return
+        if p.get("multi"):                              # several: each back to as placed
+            new = self.edits()
+            for q in self._members():
+                new[q["key"]] = {k: v for k, v in new.get(q["key"], {}).items() if k in ("hidden", "solid")}
+            self._store_all(new)
             return
         e = {k: v for k, v in self.edits().get(p["key"], {}).items() if k in ("hidden", "solid")}
         self._store(p["key"], e)
@@ -1382,6 +1436,10 @@ class View3D(view3d_scatter.ScatterTools, tk.Frame):
             v = np.cross(nv, u)
             rings[name] = ([c + 0.85 * ln * (math.cos(q) * u + math.sin(q) * v) for q in np.linspace(0, 2 * math.pi, 49)],
                            nv)
+        if p.get("multi"):                                  # several: turn about up only, size all axes (the dot)
+            rings = {"z": rings["z"]}
+            if self.gizmo.get() == "scale":
+                axes = []
         return c, ln, axes, rings
 
     def _handle_at(self, mx, my):
@@ -1615,6 +1673,8 @@ class View3D(view3d_scatter.ScatterTools, tk.Frame):
         self.refresh()
 
     def _axis(self, a):
+        if self.op and self.sel == MULTI and self.op["kind"] != "move":
+            return                                      # several: turn about up / size all axes only
         if self.op and self.op["kind"] in ("move", "scale"):
             self.op["axis"] = None if self.op["axis"] == a else a
             self._op_text()
@@ -1761,6 +1821,17 @@ class View3D(view3d_scatter.ScatterTools, tk.Frame):
             return
         self.op = None
         p = self._pick(key)
+        if p is not None and p.get("multi"):            # several: each member its own change, one undo step
+            new = self.edits()
+            for q in self._members():
+                d, t, s = self._member_change(p, q, op)
+                e = dict(new.get(q["key"], {}))
+                e["dx"], e["dy"], e["dz"] = e.get("dx", 0.0) + d[0], e.get("dy", 0.0) + d[1], e.get("dz", 0.0) + d[2]
+                e["turn"] = e.get("turn", 0.0) + t
+                e["scale"] = kmul(e.get("scale", 1.0), s)
+                new[q["key"]] = e
+            self._store_all(new)
+            return
         if p is not None and "pickup" in p:             # a power-up row / single: move its list item
             d = op["delta"]
             if abs(d[0]) > 1e-6 or abs(d[2]) > 1e-6:
@@ -1825,6 +1896,9 @@ class View3D(view3d_scatter.ScatterTools, tk.Frame):
 
     def _hide(self):
         p = self._pick(self.sel)
+        if p is not None and p.get("multi"):            # several: X = Delete (all of them)
+            self.delete_selection()
+            return
         if p is not None and "pickup" in p and self.mode == "3d":
             self._delete_pickup(p)                      # X / Delete on a power-up: remove its row / single
             return
@@ -1841,6 +1915,15 @@ class View3D(view3d_scatter.ScatterTools, tk.Frame):
     def _clear(self, what):
         p = self._pick(self.sel)
         if p is None or self.op:
+            return
+        if p.get("multi"):                              # several: that change undone on each of them
+            new = self.edits()
+            for q in self._members():
+                e = dict(new.get(q["key"], {}))
+                for k in {"move": ("dx", "dy", "dz"), "turn": ("turn", "rx", "rz"), "scale": ("scale",)}[what]:
+                    e.pop(k, None)
+                new[q["key"]] = e
+            self._store_all(new)
             return
         e = dict(self.edits().get(p["key"], {}))
         if "point" in p or "pickup" in p:
@@ -2344,7 +2427,7 @@ class View3D(view3d_scatter.ScatterTools, tk.Frame):
             if "obj:%d" % i in edits:
                 edits["obj:%d" % (len(objs) - 1)] = dict(edits["obj:%d" % i])
             new.append("obj:%d" % (len(objs) - 1))
-        self.multi, self.sel = new, None
+        self.multi, self.sel = new, MULTI                 # (the copies: selected, with the group handles)
         self._set_objects(objs, edits)
 
     def _set_objects(self, objs, edits):
@@ -2764,19 +2847,25 @@ class View3D(view3d_scatter.ScatterTools, tk.Frame):
             gl.glPointSize(1.0)
             gl.glEnable(gl.GL_DEPTH_TEST)
         self._sc_draw_gl()
+        movable = {q["key"] for q in self._members()} if p is not None and p.get("multi") else set()
         for k in self.multi:                                # several selected: a yellow box each
             q = self._pick(k)
             if q is not None and "point" not in q:
-                self._box_lines(box_corners(q), (1, .9, .1, 1))
+                if op and k in movable:                     # (moving with the group: where it goes + a dim box)
+                    d, t, s = self._member_change(p, q, op)
+                    self._box_lines(box_corners(q), (.6, .6, .3, .5))
+                    self._box_lines(box_corners(q, d, t, s), (1, .9, .1, 1))
+                else:
+                    self._box_lines(box_corners(q), (1, .9, .1, 1))
         if p is not None:                                   # the selection: a yellow box (seen through everything)
             group = [q for q in self.picks() if "pickup" in q and q["pickup"] == p["pickup"]] if "pickup" in p \
                 else ([] if "point" in p else [p])         # a power-up row: all its lanes light up
             for q in group:
                 cs = box_corners(q, op.get("delta", (0, 0, 0)), op.get("dturn", 0.0), op.get("dscale", 1.0),
                                  op.get("drot", (0.0, 0.0)))
-                if op:                                      # where it was: a dim box
+                if op and not q.get("multi"):               # where it was: a dim box
                     self._box_lines(box_corners(q), (.6, .6, .3, .5))
-                self._box_lines(cs, (1, .9, .1, 1))
+                self._box_lines(cs, (.45, .8, 1, .8) if q.get("multi") else (1, .9, .1, 1))   # (several: blue)
             self._draw_handles()
         if getattr(self, "snapshot", None):                # save what was drawn (testing / sharing)
             path, self.snapshot = self.snapshot, None

@@ -2197,7 +2197,8 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
     def _can_lap(self):
         """the road could become a lap track on its start: drop its end point there (Move: 4+ points, the end point
         goes) or click it with Add point (3+ points: the road closes from its end)"""
-        return not self.map.get("laps") and len(self.points()) >= (3 if self.tool.get() == "add" else 4)
+        return self.view_mode.get() == "2d" and not self.map.get("laps") and \
+            len(self.points()) >= (3 if self.tool.get() == "add" else 4)          # (2D tab only, not AI path)
 
     def _close_lap(self):
         m = self.map
