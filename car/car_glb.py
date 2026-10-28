@@ -7,8 +7,8 @@
     light) and its strip room (all detail levels' room; every level draws that strip, so the car is whole at any
     distance)
   * the .glb's texture replaces the pictures "<car>_1" and "<car>_2" (every stored size, 16 x 16 .. 512 x 512)
-  * the wheels stay where the body car has them (an own wheel spacing changed the REAL body car too): the .glb
-    is fitted to them (size / forward / up / turn)
+  * the wheels: the game draws them where the PHYSICS puts them (car_build: geometry + the fit's track / wb), not at
+    this model's wheel spots - so the model's spots stay as they are
   * one point per (position, texture spot), so texture seams stay; too big for the body car (GLB_BODY of the
     class, room()): what fits is placed and the log says so - the player makes the body smaller himself (no
     simplifying here: the fast_simplification package gave errors in the exe; the tab shows the room)
@@ -239,9 +239,8 @@ def glb_model(car, glb_path, log=print):
 
 
 def _wheel_spots(M):
-    """the body car's wheel centres (x, up, forward). They are NOT moved any more: the game draws the wheels where
-    the physics (geometry.wheelBase / trackWidth) puts them, not at these spots - and other physics values on a
-    custom car gave the REAL body car the same wheel spacing (tests 2026-10-28)"""
+    """the body car's wheel centres (x, up, forward). Not moved: the game draws the wheels where the physics
+    (geometry.wheelBase / trackWidth, car_build) puts them, not at these spots (tests 2026-10-28)"""
     spots = {tuple(e["matrix"]["position"]) for e in M["elements"]
              if isinstance(e, dict) and car_model._corner(e["name"]) and
              (car_model._kind(e["name"]) in ("tyre", "rim") or e["name"].lower().startswith("e_wheel_"))}

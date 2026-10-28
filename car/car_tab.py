@@ -97,6 +97,10 @@ class CarPanel(tk.Frame):
             tk.Label(self.fit_row, text=label, bg=T.BG, fg=T.MUTED).pack(side="left", padx=(14, 2))
             tk.Button(self.fit_row, text="−", width=2, command=lambda k=key, d=-step: self._fit(k, d)).pack(side="left")
             tk.Button(self.fit_row, text="+", width=2, command=lambda k=key, d=step: self._fit(k, d)).pack(side="left", padx=2)
+        for label, key in (("Wheels side to side", "track"), ("front to back", "wb")):
+            tk.Label(self.fit_row, text=label, bg=T.BG, fg=T.MUTED).pack(side="left", padx=(14, 2))
+            tk.Button(self.fit_row, text="−", width=2, command=lambda k=key: self._fit(k, -0.02)).pack(side="left")
+            tk.Button(self.fit_row, text="+", width=2, command=lambda k=key: self._fit(k, 0.02)).pack(side="left", padx=2)
         tk.Button(self.fit_row, text="↻ Turn 90°", command=lambda: self._fit("turn", 90)).pack(side="left", padx=(14, 4))
         tk.Button(self.fit_row, text="Reset", command=lambda: self._fit(None, 0)).pack(side="left")
         self.fit_label = tk.Label(r, text="", bg=T.BG, fg=T.MUTED)
@@ -259,9 +263,9 @@ class CarPanel(tk.Frame):
                 w.configure(state="disabled" if glb else "normal")
         if glb:
             f = c.get("glb_fit") or {}
-            self.fit_label.configure(text="size x%.2f, forward %+.2f m, up %+.2f m, turned %d°   (the wheels stay where "
-                                          "the body car has them: fit the body to them)" % (
-                f.get("size", 1.0), f.get("fwd", 0.0), f.get("up", 0.0), f.get("turn", 0)))
+            self.fit_label.configure(text="size x%.2f, forward %+.2f m, up %+.2f m, turned %d°, wheels %+.2f / %+.2f m" % (
+                f.get("size", 1.0), f.get("fwd", 0.0), f.get("up", 0.0), f.get("turn", 0), f.get("track", 0.0),
+                f.get("wb", 0.0)))
             self.fit_row.pack(fill="x", pady=(8, 0), before=self.view)
             self.fit_label.pack(anchor="w", before=self.view)
             self.room_label.configure(**self._room_text(c))

@@ -1,7 +1,8 @@
 """BUILD the player's custom cars (world["cars"], Custom car tab) into the game's database.
 Per car (uids CA400000 + 4 * i: car, physics, paint, its own copy of the wheel car's AmaxWheelModel):
   racingphysics.bin  RP_CarDynamics = copy of the body car's, every stat moved along its class's trend (below);
-                                      its geometry (wheel base / track) never changed: the real car took it over
+                                      an imported body's wheel spacing (fit track / wb) added to its geometry; own
+                                      "name" (with the source's name the real car took over our spacing)
   vehicles.bin       VEH_PaintJob   = copy of the body car's first paint, our two colours
   amax.bin           AmaxVehicle    = copy of the body car: own name, class stats, icon, top speed, physics, paint,
                                       wheels of the wheel car (wheelModel + sizes)
@@ -156,6 +157,13 @@ def handling(car, amax, rp):
     return rp_out, car_out
 
 
+def _own_name(data, pool, blocks, text):
+    """a copied record's "name" (sz8 at +0 of RP_CarDynamics / VEH_PaintJob) -> its own: with the source's name
+    the game used ONE setup for both - the REAL body car got our car's wheel spacing (2026-10-28)"""
+    struct.pack_into("<I", data, blocks[0], len(pool))
+    pool += text.encode("latin1") + b"\0"
+
+
 def _set(db_types_field, data, at, t, path, value):
     off, tn = db_types_field(t, path)
     struct.pack_into(PACK.get(tn, "<I"), data, at + off, value)
@@ -183,13 +191,18 @@ def add_cars(files, wld, U, log=print):
         # ---- physics
         ri = rp.obj_of_uid(amax.ref_uid(bi, "dynamics"))
         rt = rp.objs[ri]["blocks"][0]["type"]
-        # (no own wheel spacing: the game draws the wheels where geometry.wheelBase / trackWidth put them, and a
-        # custom car with other values gave the REAL body car its spacing too - tested 2026-10-28; the imported
-        # body is fitted to the body car's wheels instead)
+        # an imported body's wheel spacing (fit track / wb): the game draws the wheels where the physics geometry
+        # puts them (not at the model's wheel spots - tested 2026-10-28)
+        fit = (car.get("glb_fit") or {}) if car.get("body_glb") else {}
+        for f, d in (("geometry.wheelBase", fit.get("wb", 0.0)), ("geometry.trackWidthFront", fit.get("track", 0.0)),
+                     ("geometry.trackWidthRear", fit.get("track", 0.0))):
+            if d:
+                rp_vals[f] = rp.get(ri, f) + d
 
         def dyn_patch(data, pool, blocks):
             for f, v in rp_vals.items():
                 _set(rp.field, data, blocks[0], rt, f, v)
+            _own_name(data, pool, blocks, name + "_physics")
         _, rp_d = kslf_write.clone_object_any(ri, None, dyn_uid, dyn_patch, data_in=rp_d)
         # ---- paint: the body car's first paint job, our colours
         vt = amax.objs[bi]["blocks"][0]["type"]
@@ -209,6 +222,7 @@ def add_cars(files, wld, U, log=print):
             cb, cf, cc = struct.unpack_from("<HHI", data, blocks[0] + c_off)
             for j in range(cc):
                 struct.pack_into("<3f", data, blocks[cb] + 12 * (cf + j), *cols[min(j, 1)])
+            _own_name(data, pool, blocks, name + "_paint")
         _, veh_d = kslf_write.clone_object_any(pi, None, paint_uid, paint_patch, data_in=veh_d)
         # ---- the car
         amax_d, _ = kslf_write.insert_uid(amax_d, dyn_uid, "RP_CarDynamics")

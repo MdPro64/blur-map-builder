@@ -217,8 +217,8 @@ def car_parts(car):
     body = read_game_car(base)
     whl = read_game_car(wheels) if wheels != base else None
     fit = None
-    if car.get("body_glb"):                      # (no own wheel spacing any more: the game can't - car_glb._wheel_spots)
-        fit = {k: v for k, v in (car.get("glb_fit") or {}).items() if k not in ("track", "wb")}
+    if car.get("body_glb"):
+        fit = car.get("glb_fit") or {}
         own = fit_glb(read_glb_body(os.path.join(paths.TRACKS, "cars", car["body_glb"])), body, fit)
         body = dict({k: v for k, v in body.items() if k.split("|")[0] in ("tyre", "rim", "centre")}, **own)
     return assemble(body, whl, fit)
