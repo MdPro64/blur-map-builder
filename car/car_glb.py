@@ -8,10 +8,11 @@
     distance)
   * the .glb's texture replaces the pictures "<car>_1" and "<car>_2" (every stored size, 16 x 16 .. 512 x 512)
   * the wheel spots moved by the fit's "track" / "wb" (car_build moves the physics' wheel base / track widths too)
-  * one point per (position, texture spot), so texture seams stay; only when that does not fit: one point per
-    position (texture spot of the nearest .glb point); still too big: what fits is placed and the log says so - the
-    player makes the body smaller himself (no simplifying here: the fast_simplification package gave errors in the
-    exe; the tab warns above MAX_TRIS)
+  * one point per (position, texture spot), so texture seams stay; too big for the body car (GLB_BODY of the
+    class, room()): what fits is placed and the log says so - the player makes the body smaller himself (no
+    simplifying here: the fast_simplification package gave errors in the exe; the tab shows the room)
+  * the body car's lights put under the ground; only our own file's part list is changed for the wheels (the
+    matrices at the file's end are shared with the real car in game)
 Strip facts (cpmodel.py): u16 indices local to the part's vertex base; an even-position triangle (a, b, c) faces
 along cross(b - a, c - a).
 Car model facts (2026-10-26): material_index = index into the fx file list; the colour channel (0xB, 9) is BAKED
@@ -120,17 +121,6 @@ def stripify(tris):
     return out
 
 
-def _weld(tri):
-    key = np.round(tri / 1e-4).astype(np.int64)
-    _, inv = np.unique(key, axis=0, return_inverse=True)
-    inv = inv.reshape(-1)
-    pts = np.zeros((inv.max() + 1, 3))
-    np.add.at(pts, inv, tri)
-    pts /= np.bincount(inv)[:, None]
-    f = inv.reshape(-1, 3)
-    return pts, f[(f[:, 0] != f[:, 1]) & (f[:, 1] != f[:, 2]) & (f[:, 0] != f[:, 2])]
-
-
 def _weld_uv(tri, uv):
     """one point per (position, texture spot): (points, faces, their uv)"""
     key = np.c_[np.round(tri / 1e-4), np.round(uv / 1e-5)].astype(np.int64)
@@ -205,10 +195,11 @@ def need(glb_path):
 
 
 def fits(base, glb_path):
-    """the whole .glb fits this body car (points, and its strip: about 2.3 indices a triangle)"""
+    """the whole .glb fits this body car (points + 10 %: cut into the parts, points at the cuts count twice - the
+    Navara OffRoad's 9,703 placed 98 % of a body needing 8,941; and its strip: about 2.3 indices a triangle)"""
     v, i = room(base)
     p, t = need(glb_path)
-    return v >= p and i >= 2.3 * t
+    return v >= 1.1 * p and i >= 2.3 * t
 
 
 def roomy_bodies(cls, glb_path):
@@ -225,28 +216,17 @@ def glb_model(car, glb_path, log=print):
     M = car_mesh._read(bytes(data))
     meshes, rooms, vroom, iroom = _rooms(M)
 
-    # ---- the .glb: fitted, texture seams kept; one point per position (seams blend) only if then ALL of it fits
-    # (a half-fitting merged body looked smeared - user 2026-10-28, BMW M3 Drift body: holes are better)
+    # ---- the .glb: fitted, one point per (position, texture spot) - texture seams always kept. (Points shared at
+    # the seams fitted more, but a seam point got the AVERAGE of two unrelated texture spots: the whole body a
+    # mosaic - user 2026-10-28, Navara OffRoad body. Too big = holes + the warning below.)
     raw = car_model.read_glb_body(glb_path)
     fitted = car_model.fit_glb(raw, car_model.read_game_car(car["base"]), car.get("glb_fit") or {})
     tri = fitted["glb"].reshape(-1, 3).astype(np.float64)
     uv = raw["glb_uv"].reshape(-1, 2).astype(np.float64)
-    src = bytes(data)
     pts, faces, uvs = _weld_uv(tri, uv)
-    n0 = len(faces)
     placed = _place(data, M, meshes, rooms, pts, faces, uvs)
-    how = "texture seams kept"
-    if placed < len(faces):
-        kept = bytes(data), pts, faces, placed
-        data[:] = src
-        pts, faces = _weld(tri)
-        placed = _place(data, M, meshes, rooms, pts, faces, _nearest_lookup(tri, uv)(pts))
-        how = "points shared at texture seams"
-        if placed < len(faces):                  # not all of it either way: the texture right, the rest missing
-            data[:], pts, faces, placed = kept
-            how = "texture seams kept"
-    log("   imported body: %d triangles (%s), %d placed in %d trim parts (room %d points, %d indices)" % (
-        n0, how, placed, len(rooms), vroom, iroom))
+    log("   imported body: %d triangles, %d placed in %d trim parts (room %d points, %d indices)" % (
+        len(faces), placed, len(rooms), vroom, iroom))
     if placed < len(faces):
         log("   WARNING: the body car %s has room for only part of this body - %d of its %d triangles are missing "
             "(holes). Pick a body car with more room (the Custom car tab lists them) or make the .glb smaller "
@@ -266,33 +246,32 @@ def _move_wheels(data, M, fit, log):
              if isinstance(e, dict) and car_model._corner(e["name"]) and
              (car_model._kind(e["name"]) in ("tyre", "rim") or e["name"].lower().startswith("e_wheel_"))}
     track, wb = fit.get("track", 0.0), fit.get("wb", 0.0)
-    # the part list (before the vertex streams) + the 4 x 4 matrices near the file's end - NOT inside the points /
-    # triangles: a spot like (0, 0, 0) is everywhere there (2026-10-28: 35,567 places wrecked the RatRod model)
+    # ONLY the part list (before the vertex streams): not inside the points / triangles (a spot like (0, 0, 0) is
+    # everywhere there - 35,567 places wrecked the RatRod model) and NOT the 4 x 4 matrices near the file's end:
+    # the game shares those with the REAL body car (its file unchanged, its wheels moved too - user 2026-10-28)
     head = min(vs["start"] for vs in M["vertex_streams"])
-    tail = max(fs["start"] + 2 * fs["count"] for fs in M["face_streams"])
     out, done = [], 0
     for x, fwd, up in spots:
         nx, nfwd = x + np.sign(x) * track / 2, fwd + np.sign(fwd) * wb / 2
         out.append(np.array([nx, up, nfwd]))
         if (track or wb) and abs(x) > 0.05 and abs(fwd) > 0.05:    # (a wheel at the middle: not a real spot)
             a, b = struct.pack("<3f", x, up, fwd), struct.pack("<3f", nx, up, nfwd)
-            done += data.count(a, 0, head) + data.count(a, tail)
+            done += data.count(a, 0, head)
             data[:head] = data[:head].replace(a, b)
-            data[tail:] = data[tail:].replace(a, b)
     if track or wb:
         log("   wheels moved %+.2f m side to side, %+.2f m front to back (%d spots)" % (track, wb, done))
     return out
 
 
-EMPTY_BOX = (2.0 ** 126,) * 3 + (-2.0 ** 126,) * 3    # min > max: "nothing here" (the game's own wheel markers)
+BURIED_BOX = (-0.01, -20.0, -0.01, 0.01, -19.99, 0.01)  # (min x, up, fwd, max ...): a speck 20 m under the ground
 
 
 def _hide_lights(data, M, log):
-    """the body car's lights: their parts get the empty box - their meshes are hidden already, but the game still
-    drew their glows (brake / indicator flares) where the body car has its lights (user 2026-10-28, Bowler body).
-    In the part list only."""
+    """the body car's lights: their parts get a tiny box 20 m under the ground - their meshes are hidden already,
+    but the game still drew their glows (brake / indicator flares) where the body car has its lights (user
+    2026-10-28; an EMPTY box (min > max) did not stop them). In the part list only."""
     head = min(vs["start"] for vs in M["vertex_streams"])
-    new = struct.pack("<6f", *EMPTY_BOX)
+    new = struct.pack("<6f", *BURIED_BOX)
     done = 0
     for e in M["elements"]:
         if not isinstance(e, dict) or car_model._kind(e["name"]) != "light":
@@ -302,7 +281,7 @@ def _hide_lights(data, M, log):
         if old != new:
             done += data.count(old, 0, head)
             data[:head] = data[:head].replace(old, new)
-    log("   the body car's lights hidden (%d boxes emptied)" % done)
+    log("   the body car's lights hidden (%d boxes put under the ground)" % done)
 
 
 def _grow_boxes(data, M, pts, log):
@@ -321,31 +300,6 @@ def _grow_boxes(data, M, pts, log):
         done += data.count(a)
         data[:] = data.replace(a, b)
     log("   boxes grown to hold the body: %d" % done)
-
-
-def _nearest_lookup(points, values, cell=0.03):
-    """fn(new points) -> their values: the mean value of the .glb's points in the same 3 cm cell (or the
-    nearest filled cell around it) - the simplified mesh's points are not the .glb's own"""
-    key = np.floor(points / cell).astype(np.int64)
-    cells = {}
-    for k, c in zip(map(tuple, key), values):
-        a = cells.setdefault(k, [np.zeros(values.shape[1]), 0])
-        a[0] += c
-        a[1] += 1
-    mean = {k: a[0] / a[1] for k, a in cells.items()}
-
-    def fn(pts):
-        out = np.zeros((len(pts), values.shape[1]))
-        for i, k in enumerate(map(tuple, np.floor(pts / cell).astype(np.int64))):
-            for r in range(4):
-                near = [mean[(k[0] + dx, k[1] + dy, k[2] + dz)] for dx in range(-r, r + 1)
-                        for dy in range(-r, r + 1) for dz in range(-r, r + 1)
-                        if (k[0] + dx, k[1] + dy, k[2] + dz) in mean]
-                if near:
-                    out[i] = np.mean(near, axis=0)
-                    break
-        return out
-    return fn
 
 
 def _put_texture(data, img, log):
