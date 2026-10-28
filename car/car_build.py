@@ -213,11 +213,18 @@ def add_cars(files, wld, U, log=print):
         # ---- the car
         amax_d, _ = kslf_write.insert_uid(amax_d, dyn_uid, "RP_CarDynamics")
         amax_d, _ = kslf_write.insert_uid(amax_d, paint_uid, "VEH_PaintJob")
-        # our OWN copy of the wheel car's AmaxWheelModel (same wheel file): with the shared one the game set the
-        # wheels up once for both cars - the REAL car got our wheel spacing (user 2026-10-28, its files unchanged)
+        # our OWN copy of the wheel car's AmaxWheelModel, under our OWN file name (wheels\<our name>.model = an
+        # alias of the wheel car's file, model_aliases): the game loads a wheel set once per file name - with
+        # the shared one the REAL car got our wheel spacing (user 2026-10-28: its files + data unchanged, normal
+        # Blur fine; a copied record with the same name did not help)
         amax = Db(amax_d)
         wm = amax.obj_of_uid(amax.ref_uid(amax.cars().get(car.get("wheels") or car["base"], bi), "wheelModel"))
-        _, amax_d = kslf_write.clone_object_any(wm, None, wheel_uid, None, data_in=amax_d)
+        fn_off, _ = amax.field(amax.objs[wm]["blocks"][0]["type"], "fileName")
+
+        def wheel_patch(data, pool, blocks, name=name):
+            struct.pack_into("<I", data, blocks[0] + fn_off, len(pool))
+            pool += name.encode("latin1") + b"\0"
+        _, amax_d = kslf_write.clone_object_any(wm, None, wheel_uid, wheel_patch, data_in=amax_d)
         amax = Db(amax_d)
         bi = amax.cars()[car["base"]]
         wi = amax.cars().get(car.get("wheels") or car["base"], bi)
