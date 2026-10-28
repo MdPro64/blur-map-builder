@@ -100,6 +100,8 @@ def world_cars(wld):
     """world["cars"] as the build uses them: a car with an imported .glb body is always built on its class's body
     car (car_glb.GLB_BODY - the tab does the same; a world saved before that may still name another one)"""
     import car_glb
+    if os.environ.get("BMB_NO_CARS"):              # (test: build as if there were no custom cars)
+        return []
     return [dict(c, base=car_glb.GLB_BODY[c["class"]]) if c.get("body_glb") else c for c in wld.get("cars") or []]
 
 
@@ -369,13 +371,20 @@ def icon_files(wld, log=print):
 
 def model_files(wld, log=print):
     """root.pak {path: bytes}: the own model of each car with an imported body (car_glb.py: the .glb as the body
-    of the body car's model)"""
+    of the body car's model) + every car's OWN copy of its wheels file (wheels\\<name>.model was only an alias =
+    the same stored data as the real car's: the game kept one wheel set for both, the real car got our wheel
+    spacing - user 2026-10-28; without our cars it was right)"""
     import car_glb
+    import game_preview
     import paths
     cars = world_cars(wld)
     out = {}
+    amax = None
     for car, name in zip(cars, internal_names(cars)):
         if car.get("body_glb"):
             out["\\models\\vehicles\\" + name.lower() + ".model"] = car_glb.glb_model(
                 car, os.path.join(paths.TRACKS, "cars", car["body_glb"]), log)
+        amax = amax or Db(open(os.path.join(paths.UNPACKED, "xt", "amax.bin"), "rb").read())
+        src = "models\\vehicles\\wheels\\%s.model" % wheel_file(amax, car.get("wheels") or car["base"]).lower()
+        out["\\models\\vehicles\\wheels\\" + name.lower() + ".model"] = game_preview._model_bytes(src)
     return out
