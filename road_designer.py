@@ -172,7 +172,12 @@ VIEW
      points: click one, drag its arrows (blue = height: a ramp / bridge), or type x / y / height / width.  Keys: G move, R turn (Ctrl = 15 degree steps), S scale (ships, cranes,
      panels...), X or Delete hide.  While moving: X / Y = only along one ground axis, Z = up/down.
      Click / Enter = OK, right-click / Esc = cancel.  Alt+G / Alt+R / Alt+S = back to how it was placed,
-     Alt+H = show hidden objects again.  Ctrl+Z undoes.  Save + Build puts the changes in the game."""
+     Alt+H = show hidden objects again.  Ctrl+D = copy the selected placed object (a bit to the side).
+     Several: Shift / Ctrl+click in OBJECTS IN THIS MAP (Shift+click in the view) - Delete deletes them all,
+     Ctrl+G groups them (Ctrl+Shift+G ungroups), click a group's line = all of it.  Path scatter makes one group.
+     Ctrl+Z undoes.  Save + Build puts the changes in the game.
+     PATH SCATTER (button in the object library): draw a path on the ground, pick a few library objects, set the
+     spacing / sides / random turn, size and spread - a preview shows where they go - then Add them all at once."""
 
 
 class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_share.ShareTools):
@@ -277,6 +282,7 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
             self._clamp_cur()
             self.refresh_tree()
             self.changed()
+            self.update_3d(now=True)                       # (the 3D view kept showing the old map: undo "did nothing")
             self.say("Undo (%d more)" % len(self.undo))
 
     def do_redo(self, e=None):
@@ -286,6 +292,7 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
             self._clamp_cur()
             self.refresh_tree()
             self.changed()
+            self.update_3d(now=True)
             self.say("Redo (%d more)" % len(self.redo))
 
     def _clamp_cur(self):
@@ -535,7 +542,12 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
         k("<F5>", lambda e: self.play_dialog(), True)
         k("<Control-n>", lambda e: self.new_map(), True)
         k("<Control-l>", lambda e: self.new_location(), True)
-        k("<Control-d>", lambda e: self.dup_map(), True)
+        # Ctrl+D: in the 3D tab = copy the selected object (also when the object list has the keys), else the map
+        k("<Control-d>", lambda e: self.v3d.duplicate() if self.view_mode.get() == "3d" else self.dup_map(), True)
+        k("<Control-D>", lambda e: self.v3d.duplicate() if self.view_mode.get() == "3d" else self.dup_map(), True)
+        # 3D tab: Ctrl+G = group the selected placed objects, Ctrl+Shift+G = ungroup
+        k("<Control-g>", lambda e: self.v3d.group_selection() if self.view_mode.get() == "3d" else None, True)
+        k("<Control-G>", lambda e: self.v3d.ungroup_selection() if self.view_mode.get() == "3d" else None, True)
 
     # ================================================================================================ 2D / 3D
     def toggle_view(self):

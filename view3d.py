@@ -22,6 +22,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [os.path.join(HERE, "flat_earth"), os.path.join(HERE, "library")]
 import road_layout  # noqa: E402
 from road_layout import actor_axes  # noqa: E402  (model axes of a turned / tilted object, as the build writes them)
+import view3d_scatter  # noqa: E402  (Path scatter: objects along a drawn path)
 
 try:
     from OpenGL import GL as gl
@@ -208,6 +209,7 @@ def build_scene(m):
     corridor = road_layout.ai_corridor(fe, road, info, m)
     _, info = gen_aid.build_path(road, fe.GROUND_Y, corridor=corridor, lines=lines)
     tiles, tile_keys = road_layout.tile_spots(fe, road, info, m, keys=True)
+    tile_free = road_layout.TILE_ROOM["free"]
     lamps, lamp_keys = road_layout.lamp_spots(fe, road, info, m, keys=True)
     pickups, pickup_owner = road_layout.pickup_spots(fe, road, info, m, owners=True)
     pickup_list = [dict(it) for it in road_layout.pickup_items(fe, road, info, m)]
@@ -588,6 +590,7 @@ def build_scene(m):
     arrays["textured"] = textured
     arrays["picks"] = picks
     arrays["ground"] = g
+    arrays["tile_free"] = tile_free          # places left for placed objects (each piece of an imported model = 1)
     arrays["pickups"] = pickup_list          # the list the power-ups came from (edits send a changed copy back)
     arrays["auto_pickups"] = m.get("pickups") is None
     return arrays, path, road.bounds(0.0), stats
@@ -686,7 +689,7 @@ class GLView(OpenGLFrame):
         self.owner.draw(self.width, self.height)
 
 
-class View3D(tk.Frame):
+class View3D(view3d_scatter.ScatterTools, tk.Frame):
     def __init__(self, master, bg="#16191e", fg="#d8dee6", panel="#20242b"):
         super().__init__(master, bg=bg)
         self.scene = None
@@ -699,6 +702,7 @@ class View3D(tk.Frame):
         self.mode = "3d"
         self.m = None              # the map shown (its "edits" = the user's object changes)
         self.sel = None            # key of the selected object ("tanker:2")
+        self.multi = []            # several selected (Shift / Ctrl+click in the list, Shift+click in the view): keys
         self.op = None             # G / R / S in progress: {kind, axis, start mouse, ...}
         self.on_edit = None        # fn(new edits dict): the designer stores it (undo, save) and rebuilds
         self.on_point = None       # fn(point index, {x, z, h, w}): the designer moves a track point
@@ -783,7 +787,8 @@ class View3D(tk.Frame):
         g.bind("<ButtonRelease-1>", self._left_release)
         g.bind("<ButtonPress-1>", self._left_press)
         g.bind("<B1-Motion>", self._hover_motion)          # dragging a handle
-        g.bind("<ButtonPress-3>", lambda e: (self._stop_placing() if self.placing else self._cancel_op()) or "break")
+        g.bind("<ButtonPress-3>", lambda e: (self._sc_draw_toggle(False) if self._sc_drawing() else
+                                             self._stop_placing() if self.placing else self._cancel_op()) or "break")
         g.bind("<Motion>", self._hover_motion)
         # objects (Blender keys): G move, R turn, S scale; during one: X / Y = only along world x / z, Z = up-down,
         # click / Enter = OK, right-click / Esc = cancel. X / Delete = hide, Alt+G / R / S = undo that change,
@@ -792,12 +797,15 @@ class View3D(tk.Frame):
                         ("<s>", lambda e: self._key_op("scale")),
                         ("<x>", lambda e: self._axis_or_hide("x")), ("<y>", lambda e: self._axis("y")),
                         ("<z>", lambda e: self._axis("z")),
-                        ("<Delete>", lambda e: self._hide()), ("<Return>", lambda e: self._confirm_op()),
+                        ("<Delete>", lambda e: self.delete_selection()), ("<Return>", lambda e: self._confirm_op()),
                         ("<KP_Enter>", lambda e: self._confirm_op()), ("<Escape>", lambda e: self._escape()),
                         ("<Alt-g>", lambda e: self._clear("move")), ("<Alt-r>", lambda e: self._clear("turn")),
                         ("<Alt-s>", lambda e: self._clear("scale")), ("<Alt-h>", lambda e: self._unhide_all()),
-                        ("<slash>", lambda e: self.toggle_solo()), ("<KP_Divide>", lambda e: self.toggle_solo())):
-            g.bind(key, lambda e, fn=fn: (fn(e), "break")[1])
+                        ("<slash>", lambda e: self.toggle_solo()), ("<KP_Divide>", lambda e: self.toggle_solo()),
+                        ("<Control-d>", lambda e: self.duplicate()), ("<Control-D>", lambda e: self.duplicate()),
+                        ("<BackSpace>", lambda e: self._sc_pop() if self._sc_drawing() else None)):
+            # (Windows: the plain "z" binding also caught Ctrl+Z - undo never arrived; Ctrl keys go on to the designer)
+            g.bind(key, lambda e, fn=fn, key=key: None if e.state & 0x4 and "Control" not in key else (fn(e), "break")[1])
         g.bind("<MouseWheel>", self._wheel)
         g.bind("<Enter>", lambda e: g.focus_set())
         for key, fn in (("<KP_7>", lambda e: self.view_axis("top")), ("<KP_Home>", lambda e: self.view_axis("top")),
@@ -853,6 +861,7 @@ class View3D(tk.Frame):
                 self.cam_bar.pack(side="top", fill="x", after=self.top_bar)
             else:
                 self._stop_placing()
+                self.scatter_close()
                 self.lib.pack_forget()
                 self.outl.pack_forget()
                 self.cam_bar.pack_forget()
@@ -872,14 +881,16 @@ class View3D(tk.Frame):
             return str(ex)
         self.info.config(text=stats + "   (%d triangles)" % ((len(self.scene["v"]) + len(self.scene["tv"])) // 3),
                          fg="#9aa8b8")
+        nobj = len(m.get("objects") or [])
+        self.multi = [k for k in self.multi if (k.startswith("obj:") and int(k[4:]) < nobj) or self._pick(k)]
         self._fill_outliner()
         if not getattr(self, "_placed", False):
             self.reset()
             self._placed = True
         if self._pick(self.sel) is None:
-            self.select(None)
+            self.select(None, keep_multi=True)
         else:
-            self.select(self.sel)
+            self.select(self.sel, keep_multi=True)
         self.refresh()
         return None
 
@@ -893,7 +904,9 @@ class View3D(tk.Frame):
     def edits(self):
         return dict((self.m or {}).get("edits") or {})
 
-    def select(self, key):
+    def select(self, key, keep_multi=False):
+        if not keep_multi:
+            self.multi = []
         self.sel = key
         p = self._pick(key)
         if p is None:
@@ -941,11 +954,12 @@ class View3D(tk.Frame):
         tk.Entry(f, textvariable=self.outl_search, bg="#1a1e24", fg=fg, insertbackground=fg,
                  relief="flat").pack(fill="x", padx=6, pady=(0, 4))
         self.outl_search.trace_add("write", lambda *a: self._fill_outliner())
-        tk.Label(f, text="Click = select   Double-click = go to it   / = Solo", bg=bg, fg="#6f7c8a",
-                 font=("Segoe UI", 8)).pack(side="bottom", anchor="w", padx=6, pady=(2, 6))
+        tk.Label(f, text="Click = select   Shift / Ctrl+click = more   Double-click = go to it\n"
+                         "Delete = delete   Ctrl+G = group   Ctrl+Shift+G = ungroup   / = Solo", bg=bg, fg="#6f7c8a",
+                 font=("Segoe UI", 8), justify="left").pack(side="bottom", anchor="w", padx=6, pady=(2, 6))
         box = tk.Frame(f, bg=bg)
         box.pack(fill="both", expand=True, padx=(6, 0))
-        self.outl_tree = ttk.Treeview(box, show="tree", selectmode="browse", style="Lib.Treeview")
+        self.outl_tree = ttk.Treeview(box, show="tree", selectmode="extended", style="Lib.Treeview")
         sb = ttk.Scrollbar(box, command=self.outl_tree.yview)
         self.outl_tree.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
@@ -953,6 +967,9 @@ class View3D(tk.Frame):
         self.outl_tree.tag_configure("group", foreground="#8fb6e0")
         self.outl_tree.bind("<<TreeviewSelect>>", lambda e: self._outliner_pick())
         self.outl_tree.bind("<Double-1>", lambda e: self._outliner_go())
+        # Delete with the mouse over the list: the same as in the view (the list has the keys then, not the view)
+        self.outl_tree.bind("<Delete>", lambda e: (self.delete_selection(), "break")[1])
+        self.outl_tree.bind("<ButtonPress-3>", self._outliner_menu)
         self._outl_open = {"grp:obj"}
         self._outl_sync = False
         return f
@@ -970,11 +987,13 @@ class View3D(tk.Frame):
         t = getattr(self, "outl_tree", None)
         if t is None:
             return
-        for g in t.get_children():
-            if t.item(g, "open"):
+        nested = t.get_children("grp:obj") if t.exists("grp:obj") else ()
+        for g in list(t.get_children()) + [g for g in nested if g.startswith("group:")]:
+            if t.item(g, "open"):           # (the user's groups inside "Placed objects" too)
                 self._outl_open.add(g)
             else:
                 self._outl_open.discard(g)
+        for g in t.get_children():
             t.delete(g)
         find = self.outl_search.get().strip().lower()
         rows, n = {}, 0
@@ -987,6 +1006,14 @@ class View3D(tk.Frame):
             if find and find not in text.lower():
                 continue
             rows[self._outliner_group(p)][iid] = text
+        objs = (self.m or {}).get("objects") or []
+        cat = road_layout.catalog()
+        for i, o in enumerate(objs):                    # placed objects the game has no room for: listed too
+            iid = "obj:%d" % i                           # (so they can be found and deleted)
+            if iid not in rows.setdefault("obj", {}):
+                text = "%s   [%s]   - does not fit, not shown" % ((cat.get(o.get("id")) or {}).get("name", "?"), iid)
+                if not find or find in text.lower():
+                    rows["obj"][iid] = text
         for g, title in self.OUTLINER_GROUPS:
             items = rows.get(g) or {}
             if not items:
@@ -994,6 +1021,20 @@ class View3D(tk.Frame):
             gid = "grp:" + g
             t.insert("", "end", iid=gid, text="%s  (%d)" % (title, len(items)), tags=("group",),
                      open=bool(find) or gid in self._outl_open)
+            if g == "obj":                              # the user's groups first (Ctrl+G, Path scatter), then the rest
+                groups = {}
+                for iid in items:
+                    i = int(iid[4:])
+                    name = objs[i].get("group") if i < len(objs) else None
+                    if name:
+                        groups.setdefault(name, []).append(iid)
+                for name, members in groups.items():
+                    nid = "group:" + name
+                    t.insert(gid, "end", iid=nid, text="\u25A3 %s  (%d)" % (name, len(members)), tags=("group",),
+                             open=bool(find) or nid in self._outl_open)
+                    for iid in members:
+                        t.insert(nid, "end", iid=iid, text=items.pop(iid))
+                        n += 1
             for iid, text in items.items():
                 t.insert(gid, "end", iid=iid, text=text)
                 n += 1
@@ -1005,13 +1046,20 @@ class View3D(tk.Frame):
         t = getattr(self, "outl_tree", None)
         if t is None:
             return
-        iid = self._solo_key(p) if p is not None else None
+        if self.multi:
+            iids = [k for k in self.multi if t.exists(k)]
+        else:
+            iids = [self._solo_key(p)] if p is not None and t.exists(self._solo_key(p)) else []
         self._outl_sync = True
         try:
-            if iid and t.exists(iid):
-                t.item(t.parent(iid), open=True)
-                t.selection_set(iid)
-                t.see(iid)
+            if iids:
+                for iid in iids:                        # (a group's object: its group line and the list open)
+                    up = t.parent(iid)
+                    while up:
+                        t.item(up, open=True)
+                        up = t.parent(up)
+                t.selection_set(iids)
+                t.see(iids[0])
             elif t.selection():
                 t.selection_remove(*t.selection())
         finally:
@@ -1020,12 +1068,68 @@ class View3D(tk.Frame):
     def _outliner_pick(self):
         if self._outl_sync:
             return
-        s = self.outl_tree.selection()
-        if not s or s[0].startswith("grp:"):
-            return
-        key = next((p["key"] for p in self.picks() if self._solo_key(p) == s[0]), None)
-        if key and key != self.sel:
-            self.select(key)
+        keys = []
+        objs = (self.m or {}).get("objects") or []
+        sel = self.outl_tree.selection()
+        for iid in sel:
+            if iid.startswith("grp:"):
+                continue
+            if iid.startswith("group:"):                # a group line: all its objects
+                keys += ["obj:%d" % i for i, o in enumerate(objs) if o.get("group") == iid[6:]]
+            elif iid.startswith("obj:"):
+                keys.append(iid)
+            else:
+                keys += [p["key"] for p in self.picks() if self._solo_key(p) == iid][:1]
+        keys = list(dict.fromkeys(keys))
+        if len(keys) == 1 and self._pick(keys[0]) is not None and not any(i.startswith("group:") for i in sel):
+            if keys[0] != self.sel or self.multi:
+                self.select(keys[0])
+        elif keys:
+            self._set_multi(keys, sync=False)
+
+    def _outliner_menu(self, e):
+        """right-click in the list: Duplicate / Group / Ungroup / Delete for the selection (the line under the mouse
+        joins it first when it is not selected yet)"""
+        t = self.outl_tree
+        iid = t.identify_row(e.y)
+        if not iid or iid.startswith("grp:"):
+            return "break"
+        if iid not in t.selection():
+            t.selection_set(iid)
+            self.update_idletasks()
+            self._outliner_pick()
+        idx = self._sel_objects()
+        grouped = any(((self.m or {}).get("objects") or [])[i].get("group") for i in idx)
+        menu = tk.Menu(self, tearoff=0, bg="#20242b", fg="#d8dee6", activebackground="#1e9bff",
+                       activeforeground="white")
+        menu.add_command(label="Duplicate   (Ctrl+D)", command=self.duplicate,
+                         state="normal" if idx else "disabled")
+        menu.add_command(label="Group   (Ctrl+G)", command=self.group_selection,
+                         state="normal" if len(idx) >= 2 else "disabled")
+        menu.add_command(label="Ungroup   (Ctrl+Shift+G)", command=self.ungroup_selection,
+                         state="normal" if grouped else "disabled")
+        menu.add_separator()
+        menu.add_command(label="Delete   (Delete)", command=self.delete_selection)
+        try:
+            menu.tk_popup(e.x_root, e.y_root)
+        finally:
+            menu.grab_release()
+        return "break"
+
+    def _set_multi(self, keys, sync=True):
+        """several objects selected: yellow boxes; Delete / Ctrl+G / Ctrl+D work on all of them (no handles)"""
+        self.op = None
+        if self.solo is not None:
+            self._solo_off()
+        self.multi = list(keys)
+        self.sel = None
+        self.sel_frame.pack_forget()
+        self._panel_show(None)
+        if sync:
+            self._outliner_show(None)
+        self.info.config(text="%d selected - Delete = delete them, Ctrl+G = group, Ctrl+D = copy, Esc = none"
+                              % len(keys), fg="#f0e080")
+        self.refresh()
 
     def _outliner_go(self):
         """double-click: the view flies to the object (keeps its angle; closer if far away)"""
@@ -1417,6 +1521,9 @@ class View3D(tk.Frame):
 
     def _left_press(self, e):
         self.gl.focus_set()
+        if self._sc_drawing() and self.mode == "3d":    # Path scatter: one more path point
+            self._sc_click(e.x, e.y)
+            return "break"
         if self.placing and self.mode == "3d" and not self.op:
             self._place_at(e.x, e.y)
             return "break"
@@ -1447,6 +1554,16 @@ class View3D(tk.Frame):
             t = ray_hit(p, r[0], r[1])
             if t is not None and (best is None or t < best[0]):
                 best = (t, p["key"])
+        if e.state & 0x0001 and best:                   # Shift+click: add to / take out of the selection
+            cur = list(self.multi) or ([self.sel] if self.sel else [])
+            cur = [k for k in cur if k != best[1]] if best[1] in cur else cur + [best[1]]
+            if len(cur) == 1:
+                self.select(cur[0])
+            elif cur:
+                self._set_multi(cur)
+            else:
+                self.select(None)
+            return "break"
         self.select(best[1] if best else None)
         return "break"
 
@@ -1605,7 +1722,9 @@ class View3D(tk.Frame):
             self.select(self.sel)
 
     def _escape(self):
-        if self.placing:
+        if self._sc_drawing():
+            self._sc_draw_toggle(False)
+        elif self.placing:
             self._stop_placing()
         elif self.op:
             self._cancel_op()
@@ -1634,6 +1753,9 @@ class View3D(tk.Frame):
             self.set_map(self.m)
 
     def _confirm_op(self):
+        if self._sc_drawing() and not self.op:          # Enter: the path is done
+            self._sc_draw_toggle(False)
+            return
         op, key = self.op, self.sel
         if not op or key is None:
             return
@@ -1743,7 +1865,9 @@ class View3D(tk.Frame):
         tk.Label(f, text="OBJECT LIBRARY", bg=bg, fg="#8fb6e0", font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=6,
                                                                                                 pady=(6, 0))
         tk.Button(f, text="⬆ Import 3D model (.glb)...", command=self._import_model, bg="#1e9bff", fg="white",
-                  font=("Segoe UI Symbol", 9, "bold")).pack(fill="x", padx=6, pady=(4, 6))
+                  font=("Segoe UI Symbol", 9, "bold")).pack(fill="x", padx=6, pady=(4, 2))
+        tk.Button(f, text="〰 Path scatter (objects along a path)...", command=self.scatter_open, bg="#7a3a8a",
+                  fg="white", font=("Segoe UI Symbol", 9, "bold")).pack(fill="x", padx=6, pady=(0, 6))
         tk.Label(f, text="Search:", bg=bg, fg=fg).pack(anchor="w", padx=6)
         self.lib_search = tk.StringVar()
         tk.Entry(f, textvariable=self.lib_search, bg="#1a1e24", fg=fg, insertbackground=fg,
@@ -2049,6 +2173,10 @@ class View3D(tk.Frame):
             if sel:
                 self.lib_tree.item(sel[0], open=not self.lib_tree.item(sel[0], "open"))
             return
+        if self.sc is not None:                        # Path scatter open: the object joins its list
+            self._sc_lib_add(e)
+            self.lib_tree.selection_remove(*sel)
+            return
         self.placing = e
         self.select(None)
         if self.gl is not None:
@@ -2082,20 +2210,142 @@ class View3D(tk.Frame):
 
     def delete_object(self, i):
         """remove placed object i (and its edits; the later objects' keys move down by one)"""
+        self.sel = None
+        self._set_objects(*self._without({i}, self.edits()))
+
+    def _without(self, gone, edits):
+        """(objects, edits) with the placed objects of index set `gone` removed (the later keys renumbered)"""
+        old = self.m.get("objects") or []
+        keep = [i for i in range(len(old)) if i not in gone]
+        moved = {j: n for n, j in enumerate(keep)}
+        new = {}
+        for key, e in edits.items():
+            if key.startswith("obj:"):
+                j = int(key[4:])
+                if j not in moved:
+                    continue
+                key = "obj:%d" % moved[j]
+            new[key] = e
+        return [dict(old[i]) for i in keep], new
+
+    def delete_selection(self):
+        """Delete: the selected object(s) - placed ones are removed, the road's own ones hidden; one Ctrl+Z undoes"""
+        if not self.multi:
+            self._hide()
+            return
+        if self.mode != "3d" or self.op:
+            return
+        edits = self.edits()
+        gone, hidden = set(), 0
+        for k in self.multi:
+            if k.startswith("obj:"):
+                gone.add(int(k[4:]))
+                continue
+            p = self._pick(k)
+            if p is not None and p["editable"] and "point" not in p and "pickup" not in p:
+                e = dict(edits.get(k, {}))
+                e["hidden"] = True
+                edits[k] = e
+                hidden += 1
+        if not gone and not hidden:
+            return
+        self.multi, self.sel = [], None
+        self._set_objects(*self._without(gone, edits))
+        self.info.config(text="Deleted %d object(s)%s - Ctrl+Z undoes" % (
+            len(gone), ", hid %d of the road's own" % hidden if hidden else ""), fg="#f0e080")
+
+    def _sel_objects(self):
+        """indexes of the selected placed objects (several, or the one)"""
+        keys = self.multi or ([self.sel] if self.sel else [])
+        return sorted({int(k[4:]) for k in keys if k.startswith("obj:")})
+
+    def _new_group_name(self, prefix):
+        used = {o.get("group") for o in (self.m or {}).get("objects") or []}
+        n = 1
+        while "%s %d" % (prefix, n) in used:
+            n += 1
+        return "%s %d" % (prefix, n)
+
+    def group_selection(self):
+        """Ctrl+G: the selected placed objects become one group (a line in the list; click it = all of them)"""
+        idx = self._sel_objects()
+        if self.m is None or self.mode != "3d" or len(idx) < 2:
+            self.info.config(text="Ctrl+G: select 2 or more of YOUR placed objects first (Shift / Ctrl+click in the "
+                                  "list, Shift+click in the view)", fg="#f0e080")
+            return
+        name = self._new_group_name("Group")
+        objs = [dict(o) for o in self.m.get("objects") or []]
+        for i in idx:
+            objs[i]["group"] = name
+        self._outl_open.add("group:" + name)
+        self._set_objects(objs, self.edits())
+        self.info.config(text="%s: %d objects - click its line in the list to select them all" % (name, len(idx)),
+                         fg="#f0e080")
+
+    def ungroup_selection(self):
+        """Ctrl+Shift+G: the selected objects leave their group"""
+        idx = self._sel_objects()
+        objs = [dict(o) for o in (self.m or {}).get("objects") or []]
+        if self.mode != "3d" or not any(objs[i].get("group") for i in idx):
+            return
+        for i in idx:
+            objs[i].pop("group", None)
+        self._set_objects(objs, self.edits())
+        self.info.config(text="Ungrouped %d object(s)" % len(idx), fg="#f0e080")
+
+    def duplicate(self):
+        """Ctrl+D: a copy of the selected placed object, a bit to the side (its turn / size / tilt / Solid too)"""
+        if self.multi:
+            self._duplicate_many()
+            return
+        p = self._pick(self.sel)
+        if p is None or self.mode != "3d" or self.op or not p["key"].startswith("obj:"):
+            self.info.config(text="Ctrl+D: select one of YOUR placed objects first (the road's own objects can't be "
+                                  "copied)", fg="#f0e080")
+            return
+        i = int(p["key"][4:])
         objs = [dict(o) for o in self.m.get("objects") or []]
         if not 0 <= i < len(objs):
             return
-        objs.pop(i)
-        new = {}
-        for key, e in self.edits().items():
-            if key.startswith("obj:"):
-                j = int(key[4:])
-                if j == i:
-                    continue
-                key = "obj:%d" % (j - 1 if j > i else j)
-            new[key] = e
-        self.sel = None
-        self._set_objects(objs, new)
+        cs = np.array(box_corners(p), np.float64)
+        o = dict(objs[i])
+        o["x"] = round(float(o["x"]) + max(2.0, float(cs[:, 0].max() - cs[:, 0].min()) * 0.25), 2)
+        objs.append(o)
+        edits = self.edits()
+        if p["key"] in edits:
+            edits["obj:%d" % (len(objs) - 1)] = dict(edits[p["key"]])
+        self.sel = "obj:%d" % (len(objs) - 1)
+        self._set_objects(objs, edits)
+
+    def _duplicate_many(self):
+        """Ctrl+D with several selected: copies of all the placed ones, side by side as a set (their group -> a new
+        group of the copies); the copies are selected"""
+        idx = self._sel_objects()
+        if self.m is None or self.mode != "3d" or self.op or not idx:
+            return
+        cs = [c for i in idx if self._pick("obj:%d" % i) for c in box_corners(self._pick("obj:%d" % i))]
+        width = float(np.ptp(np.array(cs)[:, 0])) if cs else 0.0
+        objs = [dict(o) for o in self.m.get("objects") or []]
+        edits = self.edits()
+        renamed, new = {}, []
+        for i in idx:
+            o = dict(objs[i])
+            o["x"] = round(float(o["x"]) + max(2.0, width * 0.25), 2)
+            if o.get("group"):
+                if o["group"] not in renamed:
+                    base = o["group"].rsplit(" ", 1)
+                    name = self._new_group_name(base[0] if len(base) == 2 and base[1].isdigit() else o["group"])
+                    while name in renamed.values():
+                        name += "+"
+                    renamed[o["group"]] = name
+                    self._outl_open.add("group:" + name)
+                o["group"] = renamed[o["group"]]
+            objs.append(o)
+            if "obj:%d" % i in edits:
+                edits["obj:%d" % (len(objs) - 1)] = dict(edits["obj:%d" % i])
+            new.append("obj:%d" % (len(objs) - 1))
+        self.multi, self.sel = new, None
+        self._set_objects(objs, edits)
 
     def _set_objects(self, objs, edits):
         if self.on_objects:
@@ -2513,6 +2763,11 @@ class View3D(tk.Frame):
             gl.glEnd()
             gl.glPointSize(1.0)
             gl.glEnable(gl.GL_DEPTH_TEST)
+        self._sc_draw_gl()
+        for k in self.multi:                                # several selected: a yellow box each
+            q = self._pick(k)
+            if q is not None and "point" not in q:
+                self._box_lines(box_corners(q), (1, .9, .1, 1))
         if p is not None:                                   # the selection: a yellow box (seen through everything)
             group = [q for q in self.picks() if "pickup" in q and q["pickup"] == p["pickup"]] if "pickup" in p \
                 else ([] if "point" in p else [p])         # a power-up row: all its lanes light up

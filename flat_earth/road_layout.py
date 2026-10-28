@@ -105,6 +105,9 @@ def block_spots(fe, road, info, m):
     return out
 
 
+TILE_ROOM = {"free": 144}           # places left in the tile list for more placed objects (set by tile_spots)
+
+
 def tile_spots(fe, road, info, m, keys=False):
     if getattr(fe, "ROAD_MESH", False):          # the seamless road: a few long models that follow the road
         import road_mesh
@@ -137,10 +140,11 @@ def tile_spots(fe, road, info, m, keys=False):
     placed, groups = [], {}                        # the user's library objects: whole objects while there is room
     for sp, key in placed_spots(fe, m)[0]:
         groups.setdefault(key, []).append((sp, key))
-    for g in groups.values():                      # (an imported model is several pieces: all of it or none)
-        if len(spots) + len(placed) + len(g) > 144:
-            break
+    for g in groups.values():                      # (an imported model is several pieces: all of it or none;
+        if len(spots) + len(placed) + len(g) > 144:  # a big one that does not fit - the smaller ones after it can)
+            continue
         placed += g
+    TILE_ROOM["free"] = 144 - len(spots) - len(placed)   # (for the 3D view's Path scatter: what still fits)
     spots += [sp for sp, key in placed]
     kinds += [key for sp, key in placed]
     for s, lat in (chevron_panels(road, room=144 - len(spots) - BIG_MIN, m=m) if scenery_on(m, "chevrons") else []):
