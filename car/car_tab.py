@@ -104,6 +104,7 @@ class CarPanel(tk.Frame):
         tk.Button(self.fit_row, text="↻ Turn 90°", command=lambda: self._fit("turn", 90)).pack(side="left", padx=(14, 4))
         tk.Button(self.fit_row, text="Reset", command=lambda: self._fit(None, 0)).pack(side="left")
         self.fit_label = tk.Label(r, text="", bg=T.BG, fg=T.MUTED)
+        self.room_label = tk.Label(r, text="", bg=T.BG, fg=T.MUTED, justify="left", anchor="w", wraplength=900)
         # ---- stats: one slider per stat + the bar chart against the class
         tk.Label(r, text="STATS  (each one stays inside the class's range; all together inside its point budget)",
                  bg=T.BG, fg=T.HEAD, font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(16, 2))
@@ -242,6 +243,11 @@ class CarPanel(tk.Frame):
             c["base"] = cd.class_cars(c["class"])[0]["name"]
         if c.get("wheels") and c["wheels"] not in [x["name"] for x in cd.pickable()]:
             c["wheels"] = None
+        if c.get("body_glb"):                         # an imported body always goes into its class's body car
+            import car_glb
+            if c["base"] != car_glb.GLB_BODY[c["class"]]:
+                c["base"] = car_glb.GLB_BODY[c["class"]]
+                cd.fair(c)
         self.loading = True
         self.name.set(c["name"])
         self.cls.set(c["class"])
@@ -251,6 +257,7 @@ class CarPanel(tk.Frame):
         self.wheels.set(c.get("wheels") or c["base"])
         glb = bool(c.get("body_glb"))
         self.body_btn.configure(state="normal" if glb else "disabled")
+        self.base.configure(state="disabled" if glb else "readonly")   # (a .glb body: the class's body car)
         for w in self._all(self.paint_btns[0].master):          # an imported body keeps its own colours
             if isinstance(w, tk.Button) and str(w.cget("text")).startswith("colour"):
                 w.configure(state="disabled" if glb else "normal")
@@ -261,15 +268,38 @@ class CarPanel(tk.Frame):
                 f.get("wb", 0.0)))
             self.fit_row.pack(fill="x", pady=(8, 0), before=self.view)
             self.fit_label.pack(anchor="w", before=self.view)
+            self.room_label.configure(**self._room_text(c))
+            self.room_label.pack(anchor="w", before=self.view)
         else:
             self.fit_row.pack_forget()
             self.fit_label.pack_forget()
+            self.room_label.pack_forget()
         for i, b in enumerate(self.paint_btns):
             b.configure(bg=c["paint"][i])
         self._show_mini(c)
         self.loading = False
         self._show_stats()
         self._draw(True)
+
+    def _glb_path(self, c):
+        return os.path.join(paths.TRACKS, "cars", c["body_glb"])
+
+    def _room_text(self, c):
+        """does the imported body fit the body car's model? (each game car has its own room for it - car_glb.room)"""
+        import car_glb
+        try:
+            glb = self._glb_path(c)
+            p, t = car_glb.need(glb)
+            v, _ = car_glb.room(c["base"])
+            if car_glb.fits(c["base"], glb):
+                return {"text": "✔ The body fits %s (%d of its %d points of room used)." % (c["base"], p, v),
+                        "fg": "#58d06a"}
+            return {"text": "⚠ Class %s's body car (%s) has room for only %d%% of this body (%d of %d points): in "
+                            "game parts of it will be MISSING. Make the .glb smaller (Blender: Decimate) - to about %d "
+                            "triangles." % (cd.CLASSES[c["class"]], c["base"].replace("_", " "), 100 * v // max(p, 1),
+                                            v, p, int(t * v / max(p, 1) * 0.95)), "fg": "#ffb020"}
+        except Exception as e:                           # noqa: BLE001 - not important enough to stop the tab
+            return {"text": "(room check failed: %s)" % e, "fg": T.MUTED}
 
     MINI_AUTO = "Auto (side view of this car)"
 
@@ -297,6 +327,9 @@ class CarPanel(tk.Frame):
         if self.car() is None or cls == self.car()["class"]:
             return
         base = cd.class_cars(cls)[0]
+        if self.car().get("body_glb"):                  # an imported body: the class's own body car for it
+            import car_glb
+            base = next((x for x in cd.class_cars(cls) if x["name"] == car_glb.GLB_BODY[cls]), base)
 
         def fn(c):
             c["class"], c["base"] = cls, base["name"]
@@ -412,8 +445,11 @@ class CarPanel(tk.Frame):
         name = os.path.basename(path)
         shutil.copy2(path, os.path.join(folder, name))
         self._set("body_glb", name)
-        self.d.say("Body imported: %s (%d triangles%s)" % (
-            name, n, " - MORE than %d: it may have holes in game" % car_glb.MAX_TRIS if n > car_glb.MAX_TRIS else ""))
+        c = self.car()                                  # (_load put it on the class's body car, GLB_BODY)
+        msg = "Body imported: %s (%d triangles), on %s" % (name, n, c["base"].replace("_", " "))
+        if not car_glb.fits(c["base"], self._glb_path(c)):
+            msg += " - TOO BIG for it: see the warning under the fit buttons"
+        self.d.say(msg)
 
     def _fit(self, key, d):
         f = dict(self.car().get("glb_fit") or {}) if self.car() else {}

@@ -39,6 +39,12 @@ TRIM_FX = "veh_default_b_c_f"           # the trim shaders (they read the car's 
 TRIM_PICTURES = (b"_1", b"_2")          # the car's own pictures the .glb's texture goes into
 STILL = ("e_exterior", "e_interior")    # parts that never move; the body shell first
 MAX_TRIS = 10_000                       # an imported body above this: the tab warns (the Astra holds ~12k)
+# the body car an imported .glb goes into, per class (A B C D): the roomiest that also has the pictures <car>_1 / _2
+# for the texture (RatRod / Supervan have none) - measured 2026-10-28 (room = points; car.glb needs 8,941)
+GLB_BODY = ("Opel_AstraExtreme_Stock",  # 10,570 (tested in game)
+            "Bowler_Nemesis_Stock",     # 16,128
+            "Nissan_Navara_Rat",        #  7,375 (the roomiest of class C)
+            "Nissan_Navara_OffRoad")    #  9,703
 
 
 def _light_bytes(n):
@@ -134,11 +140,12 @@ def _weld_uv(tri, uv):
     return tri[first], f, uv[first]
 
 
-def glb_model(car, glb_path, log=print):
-    """bytes of the body car's model with the .glb as its body"""
-    import game_preview
-    data = bytearray(game_preview._model_bytes(car_model.model_path(car["base"])))
-    M = car_mesh._read(bytes(data))
+def _rooms(M):
+    """(meshes [(mesh, element name, vertex stream)], rooms [(mesh, stream)], points room, index room) of a car
+    model: the body parts drawn with the trim shaders (they show the car's own picture, no paint) of the still
+    parts only - doors / boot / mirrors / wiper / exhausts / steering wheel / gear stick move, come off or are
+    cut by their own small box (in game: holes at the side). Every body car has its own room (2026-10-28: the
+    Astra 10.5k points, the BMW M3 Drift 4.4k, some none)"""
     els = M["elements"]
     fx = [f.lower() for f in M["fx_files"]]
 
@@ -147,9 +154,6 @@ def glb_model(car, glb_path, log=print):
     sidx = {types(vs["definition"]): i for i, vs in enumerate(M["vertex_streams"])}
     meshes = [(m, els[m["object_index"]]["name"] if m["object_index"] < len(els) else "",
                sidx.get(types(M["vert_definitions"][m["definition"]]))) for m in M["meshes"]]
-    # room = the body parts drawn with the trim shaders (they show the car's own picture, no paint)
-    # ... of the still parts only: doors / boot / mirrors / wiper / exhausts / steering wheel / gear stick move,
-    # come off or are cut by their own small box (in game: holes at the side)
     rooms = []
     for m, el, s in meshes:
         if s is None or el.lower() not in STILL or not fx[m["material_index"]].startswith(TRIM_FX):
@@ -161,8 +165,68 @@ def glb_model(car, glb_path, log=print):
     rooms.sort(key=lambda r: (STILL.index(els[r[0]["object_index"]]["name"].lower()), -r[0]["data1"][0]["vert_count"]))
     vroom = sum(m["data1"][0]["vert_count"] for m, s in rooms)
     iroom = sum(_index_room(m) for m, s in rooms)
+    return meshes, rooms, vroom, iroom
 
-    # ---- the .glb: fitted; texture seams kept if it fits, else simplified
+
+_room_cache = {}
+
+
+def room(base):
+    """(points, indices) a body car has for an imported .glb (cached in WORK\\car_preview\\glb_rooms.json)"""
+    import json
+    import paths
+    path = os.path.join(paths.WORK, "car_preview", "glb_rooms.json")
+    if not _room_cache and os.path.exists(path):
+        try:
+            _room_cache.update(json.load(open(path)))
+        except (OSError, ValueError):
+            pass
+    if base not in _room_cache:
+        import game_preview
+        _, _, v, i = _rooms(car_mesh._read(game_preview._model_bytes(car_model.model_path(base))))
+        _room_cache[base] = [v, i]
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        json.dump(_room_cache, open(path, "w"))
+    return tuple(_room_cache[base])
+
+
+_need_cache = {}
+
+
+def need(glb_path):
+    """(points, triangles) of an imported .glb with its texture seams kept (what has to fit the body car's room)"""
+    key = (glb_path, os.path.getmtime(glb_path))
+    if key not in _need_cache:
+        raw = car_model.read_glb_body(glb_path)
+        pts, faces, _ = _weld_uv(raw["glb"].reshape(-1, 3).astype(np.float64),
+                                 raw["glb_uv"].reshape(-1, 2).astype(np.float64))
+        _need_cache[key] = (len(pts), len(faces))
+    return _need_cache[key]
+
+
+def fits(base, glb_path):
+    """the whole .glb fits this body car (points, and its strip: about 2.3 indices a triangle)"""
+    v, i = room(base)
+    p, t = need(glb_path)
+    return v >= p and i >= 2.3 * t
+
+
+def roomy_bodies(cls, glb_path):
+    """the class's pickable body cars the .glb fits, the roomiest first"""
+    import cars_data as cd
+    names = [c["name"] for c in cd.class_cars(cls)]
+    return sorted((n for n in names if fits(n, glb_path)), key=lambda n: -room(n)[0])
+
+
+def glb_model(car, glb_path, log=print):
+    """bytes of the body car's model with the .glb as its body"""
+    import game_preview
+    data = bytearray(game_preview._model_bytes(car_model.model_path(car["base"])))
+    M = car_mesh._read(bytes(data))
+    meshes, rooms, vroom, iroom = _rooms(M)
+
+    # ---- the .glb: fitted, texture seams kept; one point per position (seams blend) only if then ALL of it fits
+    # (a half-fitting merged body looked smeared - user 2026-10-28, BMW M3 Drift body: holes are better)
     raw = car_model.read_glb_body(glb_path)
     fitted = car_model.fit_glb(raw, car_model.read_game_car(car["base"]), car.get("glb_fit") or {})
     tri = fitted["glb"].reshape(-1, 3).astype(np.float64)
@@ -172,17 +236,21 @@ def glb_model(car, glb_path, log=print):
     n0 = len(faces)
     placed = _place(data, M, meshes, rooms, pts, faces, uvs)
     how = "texture seams kept"
-    if placed < len(faces):                      # one point per position (fewer points; seams blend)
+    if placed < len(faces):
+        kept = bytes(data), pts, faces, placed
         data[:] = src
         pts, faces = _weld(tri)
         placed = _place(data, M, meshes, rooms, pts, faces, _nearest_lookup(tri, uv)(pts))
         how = "points shared at texture seams"
+        if placed < len(faces):                  # not all of it either way: the texture right, the rest missing
+            data[:], pts, faces, placed = kept
+            how = "texture seams kept"
     log("   imported body: %d triangles (%s), %d placed in %d trim parts (room %d points, %d indices)" % (
         n0, how, placed, len(rooms), vroom, iroom))
     if placed < len(faces):
-        log("   WARNING: the body is too detailed for %s - %d of its %d triangles are missing (holes). Make it "
-            "smaller in your 3D program (Blender: Decimate) to about %d triangles and import it again." % (
-                car["base"], len(faces) - placed, len(faces), MAX_TRIS))
+        log("   WARNING: the body car %s has room for only part of this body - %d of its %d triangles are missing "
+            "(holes). Pick a body car with more room (the Custom car tab lists them) or make the .glb smaller "
+            "(Blender: Decimate)." % (car["base"], len(faces) - placed, len(faces)))
     wheels = _move_wheels(data, M, car.get("glb_fit") or {}, log)
     _grow_boxes(data, M, np.vstack([pts] + [w + d for w in wheels for d in ((-.2, -.4, -.4), (.2, .4, .4))]), log)
     _put_texture(data, raw.get("glb_image"), log)
@@ -197,14 +265,19 @@ def _move_wheels(data, M, fit, log):
              if isinstance(e, dict) and car_model._corner(e["name"]) and
              (car_model._kind(e["name"]) in ("tyre", "rim") or e["name"].lower().startswith("e_wheel_"))}
     track, wb = fit.get("track", 0.0), fit.get("wb", 0.0)
+    # the part list (before the vertex streams) + the 4 x 4 matrices near the file's end - NOT inside the points /
+    # triangles: a spot like (0, 0, 0) is everywhere there (2026-10-28: 35,567 places wrecked the RatRod model)
+    head = min(vs["start"] for vs in M["vertex_streams"])
+    tail = max(fs["start"] + 2 * fs["count"] for fs in M["face_streams"])
     out, done = [], 0
     for x, fwd, up in spots:
         nx, nfwd = x + np.sign(x) * track / 2, fwd + np.sign(fwd) * wb / 2
         out.append(np.array([nx, up, nfwd]))
-        if track or wb:
+        if (track or wb) and abs(x) > 0.05 and abs(fwd) > 0.05:    # (a wheel at the middle: not a real spot)
             a, b = struct.pack("<3f", x, up, fwd), struct.pack("<3f", nx, up, nfwd)
-            done += data.count(a)
-            data[:] = data.replace(a, b)
+            done += data.count(a, 0, head) + data.count(a, tail)
+            data[:head] = data[:head].replace(a, b)
+            data[tail:] = data[tail:].replace(a, b)
     if track or wb:
         log("   wheels moved %+.2f m side to side, %+.2f m front to back (%d spots)" % (track, wb, done))
     return out
