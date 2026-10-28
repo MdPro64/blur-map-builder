@@ -228,9 +228,9 @@ def glb_model(car, glb_path, log=print):
     log("   imported body: %d triangles, %d placed in %d trim parts (room %d points, %d indices)" % (
         len(faces), placed, len(rooms), vroom, iroom))
     if placed < len(faces):
-        log("   WARNING: the body car %s has room for only part of this body - %d of its %d triangles are missing "
-            "(holes). Pick a body car with more room (the Custom car tab lists them) or make the .glb smaller "
-            "(Blender: Decimate)." % (car["base"], len(faces) - placed, len(faces)))
+        log("   WARNING: the class's body car %s has room for only part of this body - %d of its %d triangles are "
+            "missing (holes). Make the .glb smaller (Blender: Decimate) - the Custom car tab says to about how many "
+            "triangles." % (car["base"], len(faces) - placed, len(faces)))
     wheels = _move_wheels(data, M, car.get("glb_fit") or {}, log)
     _hide_lights(data, M, log)
     _grow_boxes(data, M, np.vstack([pts] + [w + d for w in wheels for d in ((-.2, -.4, -.4), (.2, .4, .4))]), log)
