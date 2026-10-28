@@ -95,6 +95,13 @@ class Db:
         return {self.name(i): i for i in range(len(self.objs)) if self.tname(i) == "AmaxVehicle"}
 
 
+def world_cars(wld):
+    """world["cars"] as the build uses them: a car with an imported .glb body is always built on its class's body
+    car (car_glb.GLB_BODY - the tab does the same; a world saved before that may still name another one)"""
+    import car_glb
+    return [dict(c, base=car_glb.GLB_BODY[c["class"]]) if c.get("body_glb") else c for c in wld.get("cars") or []]
+
+
 def internal_names(cars):
     """the cars' Names in the game files (unique; the game finds the model by it)"""
     import car_tab
@@ -153,7 +160,7 @@ def _set(db_types_field, data, at, t, path, value):
 
 def add_cars(files, wld, U, log=print):
     """put world["cars"] into the database files ({pack path: bytes}; missing ones are read from U\\xt)"""
-    cars = wld.get("cars") or []
+    cars = world_cars(wld)
     if not cars:
         return
     rd = lambda n: files.get("gamedata/xt/" + n) or open(os.path.join(U, "xt", *n.split("/")), "rb").read()
@@ -316,7 +323,7 @@ def wheel_file(amax, car):
 
 def model_aliases(wld, U):
     """root.pak {new path: existing path}: each car's model + wheels by its Name"""
-    cars = wld.get("cars") or []
+    cars = world_cars(wld)
     if not cars:
         return {}
     amax = Db(open(os.path.join(U, "xt", "amax.bin"), "rb").read())
@@ -332,7 +339,7 @@ def model_aliases(wld, U):
 def menu_pictures(frontend, wld):
     """ui_frontend.bpr with each car's menu picture under its own icon name (= its Name): the chosen game icon's"""
     import bpr
-    cars = wld.get("cars") or []
+    cars = world_cars(wld)
     for car, name in zip(cars, internal_names(cars)):
         frontend = bpr.alias_picture(frontend, name, car["icon"])
     return frontend
@@ -341,7 +348,7 @@ def menu_pictures(frontend, wld):
 def icon_files(wld, log=print):
     """root.pak {path: bytes}: the car icon sheet with each car's mini icon (car_icon.py)"""
     import car_icon
-    return car_icon.files(wld, internal_names(wld.get("cars") or []), log)
+    return car_icon.files(dict(wld, cars=world_cars(wld)), internal_names(world_cars(wld)), log)
 
 
 def model_files(wld, log=print):
@@ -349,7 +356,7 @@ def model_files(wld, log=print):
     of the body car's model)"""
     import car_glb
     import paths
-    cars = wld.get("cars") or []
+    cars = world_cars(wld)
     out = {}
     for car, name in zip(cars, internal_names(cars)):
         if car.get("body_glb"):
