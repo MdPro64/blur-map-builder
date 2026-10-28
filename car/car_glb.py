@@ -232,7 +232,7 @@ def glb_model(car, glb_path, log=print):
             "missing (holes). Make the .glb smaller (Blender: Decimate) - the Custom car tab says to about how many "
             "triangles." % (car["base"], len(faces) - placed, len(faces)))
     wheels = _move_wheels(data, M, car.get("glb_fit") or {}, log)
-    _hide_lights(data, M, log)
+    _hide_lights(data, M, meshes, log)
     _grow_boxes(data, M, np.vstack([pts] + [w + d for w in wheels for d in ((-.2, -.4, -.4), (.2, .4, .4))]), log)
     _put_texture(data, raw.get("glb_image"), log)
     return bytes(data)
@@ -266,10 +266,29 @@ def _move_wheels(data, M, fit, log):
 BURIED_BOX = (-0.01, -20.0, -0.01, 0.01, -19.99, 0.01)  # (min x, up, fwd, max ...): a speck 20 m under the ground
 
 
-def _hide_lights(data, M, log):
-    """the body car's lights: their parts get a tiny box 20 m under the ground - their meshes are hidden already,
-    but the game still drew their glows (brake / indicator flares) where the body car has its lights (user
-    2026-10-28; an EMPTY box (min > max) did not stop them). In the part list only."""
+def _hide_lights(data, M, meshes, log):
+    """the body car's lights: their triangles are hidden already, but the game still drew their glows (brake /
+    indicator flares) where the body car has its lights (user 2026-10-28; an empty box, then a box under the
+    ground did not stop them) - so their POINTS go 20 m under the ground too, and their parts get a tiny box
+    there (in the part list only)"""
+    moved = 0
+    for m, el, s in meshes:
+        if s is None or car_model._kind(el) != "light":
+            continue
+        vs = M["vertex_streams"][s]
+        stride, kind = vs["bytes"], vs["definition"][0]["type"]
+        vbase = m["data2"][0]["vOffset"] // stride            # (as _place: level 0's base; the other levels'
+        for d1 in m["data1"]:                                  # data2 held nonsense on the Navara OffRoad)
+            for j in range(d1["vert_count"]):
+                k = vbase + d1["vert_offset"] + j
+                if not 0 <= k < vs["count"]:
+                    continue                                   # never outside the stream
+                at = vs["start"] + stride * k
+                if kind == 9:
+                    struct.pack_into("<4e", data, at, 0.0, -20.0, 0.0, 0.0)
+                elif kind == 6:
+                    struct.pack_into("<3f", data, at, 0.0, -20.0, 0.0)
+                moved += 1
     head = min(vs["start"] for vs in M["vertex_streams"])
     new = struct.pack("<6f", *BURIED_BOX)
     done = 0
@@ -281,7 +300,7 @@ def _hide_lights(data, M, log):
         if old != new:
             done += data.count(old, 0, head)
             data[:head] = data[:head].replace(old, new)
-    log("   the body car's lights hidden (%d boxes put under the ground)" % done)
+    log("   the body car's lights hidden (%d points + %d boxes put under the ground)" % (moved, done))
 
 
 def _grow_boxes(data, M, pts, log):

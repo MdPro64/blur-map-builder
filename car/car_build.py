@@ -1,5 +1,5 @@
 """BUILD the player's custom cars (world["cars"], Custom car tab) into the game's database.
-Per car (uids CA400000 + 4 * i: car, physics, paint):
+Per car (uids CA400000 + 4 * i: car, physics, paint, its own copy of the wheel car's AmaxWheelModel):
   racingphysics.bin  RP_CarDynamics = copy of the body car's, every stat moved along its class's trend (below);
                                       an imported body's wheel spacing (fit track / wb) added to its geometry
   vehicles.bin       VEH_PaintJob   = copy of the body car's first paint, our two colours
@@ -170,7 +170,7 @@ def add_cars(files, wld, U, log=print):
     names = internal_names(cars)
     added = []
     for i, (car, name) in enumerate(zip(cars, names)):
-        car_uid, dyn_uid, paint_uid = UID0 + 4 * i, UID0 + 4 * i + 1, UID0 + 4 * i + 2
+        car_uid, dyn_uid, paint_uid, wheel_uid = (UID0 + 4 * i + k for k in range(4))
         picks = [x["name"] for x in cd.class_cars(car["class"])]
         if car["base"] not in picks:                 # a boss / legend copy does not show in the car select
             car = dict(car, base=picks[0])
@@ -213,12 +213,18 @@ def add_cars(files, wld, U, log=print):
         # ---- the car
         amax_d, _ = kslf_write.insert_uid(amax_d, dyn_uid, "RP_CarDynamics")
         amax_d, _ = kslf_write.insert_uid(amax_d, paint_uid, "VEH_PaintJob")
+        # our OWN copy of the wheel car's AmaxWheelModel (same wheel file): with the shared one the game set the
+        # wheels up once for both cars - the REAL car got our wheel spacing (user 2026-10-28, its files unchanged)
+        amax = Db(amax_d)
+        wm = amax.obj_of_uid(amax.ref_uid(amax.cars().get(car.get("wheels") or car["base"], bi), "wheelModel"))
+        _, amax_d = kslf_write.clone_object_any(wm, None, wheel_uid, None, data_in=amax_d)
         amax = Db(amax_d)
         bi = amax.cars()[car["base"]]
         wi = amax.cars().get(car.get("wheels") or car["base"], bi)
         dyn_row, paint_row = amax.row_of_uid(dyn_uid), amax.row_of_uid(paint_uid)
-        wheel_vals = {f: amax.get(wi, f) for f in ("wheelModel", "wheelScaleFront", "wheelScaleRear",
-                                                   "wheelDepthFront", "wheelDepthRear")}
+        wheel_vals = {f: amax.get(wi, f) for f in ("wheelScaleFront", "wheelScaleRear", "wheelDepthFront",
+                                                   "wheelDepthRear")}
+        wheel_vals["wheelModel"] = amax.row_of_uid(wheel_uid)
         s = car["stats"]
         mph = cd.top_speed(car["class"], s["speed"])
         sets = dict(car_vals, LocString=LOC0 + i, dynamics=dyn_row, UiSpeed=s["speed"],
