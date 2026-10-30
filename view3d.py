@@ -16,6 +16,8 @@ import sys
 import time
 import tkinter as tk
 
+import ui_layout
+
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -774,6 +776,7 @@ class View3D(view3d_scatter.ScatterTools, tk.Frame):
             return
         self.lib = self._build_library(self, panel, fg)      # object library side bar (3D mode only)
         self.outl = self._build_outliner(self, panel, fg)    # every object of the map (right side bar)
+        self.lib_sash, self.outl_sash = ui_layout.sash(self), ui_layout.sash(self)
         self.gl = GLView(self, self, width=900, height=600)
         self.gl.pack(fill="both", expand=True)
         self.gl.animate = 0
@@ -858,13 +861,17 @@ class View3D(view3d_scatter.ScatterTools, tk.Frame):
         if self.gl is not None:
             if self.mode == "3d":
                 self.lib.pack(side="left", fill="y", before=self.gl)
+                self.lib_sash.pack(side="left", fill="y", before=self.gl)
                 self.outl.pack(side="right", fill="y", before=self.gl)
+                self.outl_sash.pack(side="right", fill="y", before=self.gl)
                 self.cam_bar.pack(side="top", fill="x", after=self.top_bar)
             else:
                 self._stop_placing()
                 self.scatter_close()
                 self.lib.pack_forget()
+                self.lib_sash.pack_forget()
                 self.outl.pack_forget()
+                self.outl_sash.pack_forget()
                 self.cam_bar.pack_forget()
         self._cam_info()
         try:
@@ -1001,7 +1008,7 @@ class View3D(view3d_scatter.ScatterTools, tk.Frame):
         box = tk.Frame(f, bg=bg)
         box.pack(fill="both", expand=True, padx=(6, 0))
         self.outl_tree = ttk.Treeview(box, show="tree", selectmode="extended", style="Lib.Treeview")
-        sb = ttk.Scrollbar(box, command=self.outl_tree.yview)
+        sb = ui_layout.ScrollBar(box, self.outl_tree.yview)
         self.outl_tree.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
         self.outl_tree.pack(side="left", fill="both", expand=True)
@@ -1984,7 +1991,7 @@ class View3D(view3d_scatter.ScatterTools, tk.Frame):
         box = tk.Frame(f, bg=bg)
         box.pack(fill="both", expand=True, padx=(6, 0))
         self.lib_tree = ttk.Treeview(box, show="tree", selectmode="browse", style="Lib.Treeview")
-        sb = ttk.Scrollbar(box, command=self.lib_tree.yview)
+        sb = ui_layout.ScrollBar(box, self.lib_tree.yview)
         self.lib_tree.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
         self.lib_tree.pack(side="left", fill="both", expand=True)

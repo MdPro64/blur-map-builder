@@ -35,6 +35,7 @@ import lighting as lighting_mod  # noqa: E402
 sys.path.insert(0, HERE)
 from tkinter import colorchooser  # noqa: E402
 import view3d  # noqa: E402
+import ui_layout  # noqa: E402
 import designer_net  # noqa: E402
 import designer_surface  # noqa: E402
 import designer_share  # noqa: E402
@@ -306,6 +307,58 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
             self.car_panel.refresh()
 
     # ================================================================================================ UI
+    def _layout_bar(self, parent):
+        """bottom right: the saved window layouts (ui_layout)"""
+        f = tk.Frame(parent, bg=PANEL)
+        f.pack(side="right", padx=4, pady=2)
+        tk.Label(f, text="Layout", bg=PANEL, fg=HEAD, font=UI_FONT).pack(side="left", padx=(0, 4))
+        self.layout_pick = ttk.Combobox(f, state="readonly", width=16, values=self.layout.names())
+        self.layout_pick.set(self.layout.current)
+        self.layout_pick.pack(side="left")
+        for txt, cmd in (("Load", self.layout_load), ("Save", self.layout_save), ("Delete", self.layout_delete),
+                         ("Reset current layout", self.layout_reset)):
+            tk.Button(f, text=txt, command=cmd, bg=BTN, fg=FG, relief="flat", activebackground=BTN_HI, font=UI_FONT,
+                      padx=6).pack(side="left", padx=(4, 0))
+
+    def _layout_list(self):
+        self.layout_pick.configure(values=self.layout.names())
+        self.layout_pick.set(self.layout.current)
+
+    def layout_load(self):
+        self.layout.load(self.layout_pick.get())
+        self._layout_list()
+        self.say("Layout '%s' loaded" % self.layout.current)
+
+    def layout_save(self):
+        now = self.layout_pick.get()
+        name = simpledialog.askstring("Save layout", "Name of this layout:", parent=self.root,
+                                      initialvalue="" if now == ui_layout.DEFAULT else now)
+        name = (name or "").strip()
+        if not name:
+            return
+        if name == ui_layout.DEFAULT:
+            self.say("'%s' is the program's own layout: pick another name" % name, "#ff6060")
+            return
+        self.layout.save_as(name)
+        self._layout_list()
+        self.say("Layout '%s' saved: panel sizes + window size" % name)
+
+    def layout_delete(self):
+        name = self.layout_pick.get()
+        if name == ui_layout.DEFAULT:
+            self.say("The Default layout can't be deleted", "#ff6060")
+            return
+        if messagebox.askyesno("Delete layout", "Delete the layout '%s'?" % name, parent=self.root):
+            self.layout.delete(name)
+            self._layout_list()
+            self.say("Layout '%s' deleted" % name)
+
+    def layout_reset(self):
+        self.layout.reset()
+        self._layout_list()
+        self.say("Layout '%s' reset: back to how it was saved%s" % (
+            self.layout.current, "" if self.layout.current != ui_layout.DEFAULT else " (the program's own sizes)"))
+
     def _ui(self):
         r = self.root
         bar = tk.Frame(r, bg=BAR)
@@ -407,9 +460,12 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
         body = tk.Frame(r, bg=BG)
         body.pack(fill="both", expand=True)
         # left: locations + maps
+        self.layout = ui_layout.Layouts(r)
         left = tk.Frame(body, bg=PANEL, width=210)
         left.pack(side="left", fill="y")
         left.pack_propagate(False)
+        left_sash = ui_layout.sash(body)
+        left_sash.pack(side="left", fill="y")
         tk.Label(left, text="LOCATIONS & MAPS", bg=PANEL, fg=HEAD, font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=6, pady=(6, 2))
         self.tree = tk.Listbox(left, bg=LIST_BG, fg=FG, selectbackground=SEL, activestyle="none",
                                font=("Segoe UI Symbol", 10), highlightthickness=0, borderwidth=0)
@@ -429,10 +485,18 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
         right = tk.Frame(body, bg=PANEL, width=320)
         right.pack(side="right", fill="y")
         right.pack_propagate(False)
-        self.props = tk.Frame(right, bg=PANEL)
-        self.props.pack(fill="x", padx=6, pady=6)
-        tk.Label(right, text="CHECKS", bg=PANEL, fg=HEAD, font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=6)
-        self.checks = tk.Text(right, height=12, bg=LIST_BG, fg=FG, font=("Consolas", 9), wrap="word",
+        right_sash = ui_layout.sash(body)
+        right_sash.pack(side="right", fill="y")
+        low = tk.Frame(right, bg=PANEL, height=230)
+        low.pack(side="bottom", fill="x")
+        low.pack_propagate(False)
+        low_sash = ui_layout.sash(right, "y")
+        low_sash.pack(side="bottom", fill="x")
+        props = ui_layout.Scroll(right, PANEL)
+        props.pack(fill="both", expand=True, padx=6, pady=6)
+        self.props = props.inner
+        tk.Label(low, text="CHECKS", bg=PANEL, fg=HEAD, font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=6)
+        self.checks = tk.Text(low, height=12, bg=LIST_BG, fg=FG, font=("Consolas", 9), wrap="word",
                               borderwidth=0, highlightthickness=0)
         self.checks.pack(fill="both", expand=True, padx=6, pady=(0, 6))
         self.checks.tag_config("ok", foreground="#58d06a")
@@ -468,7 +532,8 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
                            padx=7, pady=3, command=self.on_tool, font=UI_FONT).pack(side="left", padx=(8 if key == "branch" else 1, 1))
         self.ai_state = tk.Label(self.ai_bar, text="", bg=BAR2, fg="#9aa8b8")
         self.ai_state.pack(side="left", padx=10)
-        self.light_panel = tk.Frame(body, bg=BG)                           # LIGHTING tab (light_build)
+        self.light_scroll = ui_layout.Scroll(body, BG)                     # LIGHTING tab (light_build)
+        self.light_panel = self.light_scroll.inner
         import car_tab
         self.car_panel = car_tab.CarPanel(body, self)                      # CUSTOM CAR tab
         self.v3d = view3d.View3D(body, bg=BG, fg=FG, panel=PANEL)        # shown by the 3D button / F3
@@ -478,8 +543,22 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
         self.v3d.on_objects = self.on_3d_objects
         self.v3d.on_start_cams = self.on_3d_start_cams
         self._v3d_job = None
-        self.status = tk.Label(r, anchor="w", bg=PANEL, fg=FG)
-        self.status.pack(side="bottom", fill="x")
+        foot = tk.Frame(r, bg=PANEL)
+        foot.pack(side="bottom", fill="x", before=body)     # (before the body: a low window never cuts it off)
+        self._layout_bar(foot)
+        self.status = tk.Label(foot, anchor="w", bg=PANEL, fg=FG)
+        self.status.pack(side="left", fill="x", expand=True)
+        la = self.layout
+        la.add("left", left, left_sash, "x", 210)
+        la.add("right", right, right_sash, "x", 320, -1)
+        la.add("checks", low, low_sash, "y", 230, -1)
+        la.add("library", self.v3d.lib, self.v3d.lib_sash, "x", 300)
+        la.add("objects", self.v3d.outl, self.v3d.outl_sash, "x", 270, -1)
+        la.add("car_list", self.car_panel.left, self.car_panel.left_sash, "x", 240)
+        la.add("car_view", self.car_panel.view_box, self.car_panel.view_sash, "y", 300, -1)
+        for f in [bar] + list(self.bars.values()):
+            ui_layout.flow(f)
+        r.after(50, la.restore)
         c = self.c
         c.bind("<Configure>", self.on_canvas_size)
         c.bind("<MouseWheel>", self.on_wheel)
@@ -563,13 +642,13 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
 
     def on_view(self):
         self.show_toolbar()
-        self.light_panel.pack_forget()                  # (both first: Custom car -> Lighting showed the car tab too)
+        self.light_scroll.pack_forget()                 # (both first: Custom car -> Lighting showed the car tab too)
         self.car_panel.pack_forget()
         if self.view_mode.get() == "light":
             self.v3d.show(False)
             self.v3d.pack_forget()
             self.c.pack_forget()
-            self.light_panel.pack(fill="both", expand=True)
+            self.light_scroll.pack(fill="both", expand=True)
             self.light_build()
             self.say("LIGHTING of the location '%s': pick a game city as the start, change what you like, Build + "
                      "install, look in game" % self.loc["name"])
@@ -1560,11 +1639,13 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
                   font=("Segoe UI Symbol", 9, "bold"), command=lambda: self.light_set(many=self.LIGHT_UP)).pack(side="left", padx=6)
         tk.Button(bar, text="↺ Reset to the preset", bg=BTN, fg=FG, font=UI_FONT,
                   command=lambda: self.light_set(reset=True)).pack(side="left", padx=2)
-        tk.Label(f, text="Blur's own tracks have the Sun at 0 and get their light from light samples stored in the level "
+        note = tk.Label(f, text="Blur's own tracks have the Sun at 0 and get their light from light samples stored in the level "
                          "(Baked). Our level has none where the track is, so placed game models looked black: "
                          "'Light on placed objects' writes light into all of the level's samples (Sun / Sky don't "
                          "reach objects). Changes need Build + install; values you changed are marked *.",
-                 bg=BG, fg="#9aa8b8", wraplength=1000, justify="left").pack(anchor="w", padx=12, pady=(0, 6))
+                 bg=BG, fg="#9aa8b8", wraplength=1000, justify="left", anchor="w")
+        note.pack(fill="x", padx=12, pady=(0, 6))
+        note.bind("<Configure>", lambda e: note.configure(wraplength=max(200, e.width - 8)))
         body = tk.Frame(f, bg=BG)
         body.pack(fill="both", expand=True, padx=12)
         rows = tk.Frame(body, bg=BG)
@@ -1619,6 +1700,8 @@ class Designer(designer_net.NetTools, designer_surface.SurfaceTools, designer_sh
                           command=lambda _v, k=key, i=idx, var=var: self.light_preview(k, i, var.get()))
             sc.pack(side="left")
             sc.bind("<ButtonRelease-1>", lambda e, k=key, i=idx, var=var: self._light_commit(k, i, var.get()))
+        ui_layout.flow(bar)
+        ui_layout.flow(body)
         self.light_preview()
 
     def _light_commit(self, key, i, value):

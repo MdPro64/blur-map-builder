@@ -23,6 +23,7 @@ import paths
 
 CORNERS = ("frontleft", "frontright", "backleft", "backright")
 SKIP = ("dam", "debris", "broken", "collision", "shadow", "smash")
+GLOSS = {"paint": 0.4, "glb": 0.35, "glass": 0.6, "rim": 0.4, "light": 0.3, "tyre": 0.03}     # how much each kind reflects
 COLOURS = {"dark": (38, 40, 46), "glass": (70, 95, 120), "light": (225, 225, 210), "tyre": (24, 24, 26),
            "rim": (175, 180, 190)}
 
@@ -131,7 +132,49 @@ def read_game_car(name):
     return out
 
 
+ATLAS = 1024                            # the picture an imported body's materials are put together on (px)
+SWATCH = 32                             # one plain colour on it (still a whole block at the game's 512 x 512)
+EDGE = 4                                # kept free around a tile, so a neighbour never bleeds in
 _glb = {}
+
+
+def _srgb(c):
+    """a .glb's material colour (linear) as it looks on screen"""
+    return [12.92 * v if v <= 0.0031308 else 1.055 * v ** (1 / 2.4) - 0.055 for v in np.clip(c, 0, 1)]
+
+
+def _one_texture(uvs, looks):
+    """the game car shows ONE picture, a .glb has one material per part: every texture gets a tile of a new picture,
+    every plain colour a small square; the texture spots move there. (Only the biggest part's texture used to go in:
+    the whole body wore the grille's mesh - user 2026-10-31, SIDALI_BSv3.) A .glb with one texture stays as it is"""
+    from PIL import Image
+    if len({id(i) for i, _ in looks}) == 1 and looks[0][0] is not None:
+        return uvs, looks[0][0]
+    tiles = list({(id(i), c): (i, c) for i, c in looks if i is not None}.values())
+    plain = sorted({c for i, c in looks if i is None})
+    per_row = ATLAS // SWATCH
+    strip = -(-len(plain) // per_row) * SWATCH
+    k = int(np.ceil(np.sqrt(len(tiles)))) if tiles else 1
+    w, h = ATLAS // k, (ATLAS - strip) // k
+    atlas = Image.new("RGB", (ATLAS, ATLAS))
+    for n, (img, c) in enumerate(tiles):
+        tile = np.asarray(img.resize((w, h), Image.LANCZOS), np.float32) * np.clip(c, 0, 1)
+        atlas.paste(Image.fromarray(tile.astype(np.uint8)), (n % k * w, n // k * h))
+    for n, c in enumerate(plain):
+        x, y = n % per_row * SWATCH, ATLAS - strip + n // per_row * SWATCH
+        atlas.paste(tuple(int(255 * v) for v in _srgb(c)), (x, y, x + SWATCH, y + SWATCH))
+    out = []
+    for uv, (img, c) in zip(uvs, looks):
+        if img is None:
+            n = plain.index(c)
+            spot = (n % per_row + 0.5) * SWATCH, ATLAS - strip + (n // per_row + 0.5) * SWATCH
+            out.append(np.full(uv.shape, spot, np.float64) / ATLAS)
+            continue
+        n = next(i for i, t in enumerate(tiles) if t[0] is img and t[1] == c)
+        tri = uv - np.floor(uv.min(1, keepdims=True))                   # each triangle keeps its own repeat
+        px = np.clip(tri, 0, 1) * ([w - 2 * EDGE, h - 2 * EDGE]) + ([n % k * w + EDGE, n // k * h + EDGE])
+        out.append(px / ATLAS)
+    return out, atlas
 
 
 def read_glb_body(path):
@@ -145,7 +188,7 @@ def read_glb_body(path):
     import model_import
     g = model_import.read_glb(path)
     parts, lo, hi = model_import.game_space(g)
-    tris, rgb, uvs, image, most = [], [], [], None, 0
+    tris, rgb, uvs, looks, rgb_of = [], [], [], [], {}
     for p in parts:
         t = p["pos"][p["tri"]]
         uvs.append(p["uv"][p["tri"]] if p.get("uv") is not None and len(p["uv"]) else np.zeros((len(t), 3, 2)))
@@ -156,12 +199,14 @@ def read_glb_body(path):
             uv = p["uv"][p["tri"]].mean(1) % 1.0                      # each triangle: the texture at its middle
             px = img[(uv[:, 1] * (img.shape[0] - 1)).astype(int), (uv[:, 0] * (img.shape[1] - 1)).astype(int)]
             c = px.astype(np.float32) * (col / 255.0)
-            if len(t) > most:
-                image, most = mat["image"].convert("RGB"), len(t)
+            looks.append((rgb_of.setdefault(id(mat["image"]), mat["image"].convert("RGB")), tuple(mat["colour"][:3])))
         else:
-            c = np.repeat(col[None].astype(np.float32), len(t), 0)
+            plain = tuple(mat["colour"][:3]) if mat else (0.7, 0.7, 0.7)
+            c = np.repeat(np.array([_srgb(plain)], np.float32) * 255, len(t), 0)
+            looks.append((None, plain))
         tris.append(t)
         rgb.append(c)
+    uvs, image = _one_texture(uvs, looks)
     out = {"glb": np.concatenate(tris).astype(np.float32), "glb_rgb": np.concatenate(rgb).astype(np.float32),
            "glb_uv": np.concatenate(uvs).astype(np.float32), "glb_image": image}
     _glb.clear()
@@ -237,6 +282,57 @@ def mats(parts, paint):
     return out
 
 
+_ENV = None
+_smooth = (None, None)
+
+
+def env_map():
+    """the 3D view's sky, what the car reflects: blue above, a bright horizon, a dark ground and two big soft lights
+    (made here: a small panorama, rows = up .. down)"""
+    global _ENV
+    if _ENV is None:
+        h, w = 128, 256
+        el = np.linspace(1, -1, h)[:, None]                         # sine of the height above the horizon
+        az = np.linspace(-np.pi, np.pi, w, endpoint=False)[None, :]
+        sky = np.array([38.0, 86, 150])[None, None] + (np.clip(1 - el, 0, 1) ** 3)[..., None] * [120, 105, 80]
+        ground = np.array([34.0, 32, 30])[None, None] + (np.clip(el + 1, 0, 1) ** 8)[..., None] * [60, 56, 50]
+        env = np.where((el >= 0)[..., None], sky, ground) * np.ones((h, w, 1))
+        for mid, width, gain in ((0.9, 0.7, 330.0), (-2.2, 0.45, 240.0)):
+            d = (az - mid + np.pi) % (2 * np.pi) - np.pi
+            glow = np.exp(-(d / width) ** 4) * np.exp(-((el - 0.62) / 0.2) ** 4)
+            env += glow[..., None] * gain
+        _ENV = np.clip(env, 0, 255)
+    return _ENV
+
+
+def smooth_normals(parts, tris):
+    """one normal per triangle, the mean of its corners' smooth normals (the body's curves, not its facets)"""
+    global _smooth
+    if _smooth[0] is parts and len(_smooth[1]) == len(tris):
+        return _smooth[1]
+    n = np.cross(tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0])
+    _, spot = np.unique(np.round(tris.reshape(-1, 3) * 500).astype(np.int64), axis=0, return_inverse=True)
+    spot = spot.reshape(-1)
+    total = np.zeros((spot.max() + 1, 3))
+    np.add.at(total, spot, np.repeat(n, 3, 0))
+    total /= np.linalg.norm(total, axis=1, keepdims=True) + 1e-12
+    out = total[spot].reshape(-1, 3, 3).mean(1)
+    out /= np.linalg.norm(out, axis=1, keepdims=True) + 1e-12
+    _smooth = (parts, out)
+    return out
+
+
+def reflect(nrm, gloss):
+    """(colour of the sky seen in each triangle, how much of it): nrm = turned to the camera (+z = at the viewer)"""
+    nz = np.clip(nrm[:, 2], 0, 1)
+    ry, rx, rz = 2 * nz * nrm[:, 1], 2 * nz * nrm[:, 0], 2 * nz * nz - 1
+    env = env_map()
+    h, w = env.shape[:2]
+    row = np.clip(((1 - ry) / 2 * (h - 1)).astype(int), 0, h - 1)
+    col = ((np.arctan2(rx, rz) + np.pi) / (2 * np.pi) * (w - 1)).astype(int)
+    return env[row, col], gloss + (1 - gloss) * (1 - nz) ** 5
+
+
 def picture(parts, paint, size, yaw, pitch=-0.35, smooth=True):
     """PIL picture of the car turned by yaw (radians): flat shaded triangles, far ones first (painter's
     algorithm, numpy + PIL - fast enough to turn the car with the mouse); smooth = drawn 2x and shrunk"""
@@ -261,9 +357,14 @@ def picture(parts, paint, size, yaw, pitch=-0.35, smooth=True):
     arr = np.stack([ax1, arr[:, 1] * cp + az1 * sp], -1)
     n = np.cross(pts[:, 1] - pts[:, 0], pts[:, 2] - pts[:, 0])
     n /= np.linalg.norm(n, axis=1, keepdims=True) + 1e-9
-    light = np.abs(n @ (np.array([0.35, 0.75, -0.55]) / np.linalg.norm([0.35, 0.75, -0.55])))
+    gloss = np.concatenate([np.full(len(parts[kind]), GLOSS.get(kind, 0.1)) for kind in kinds])
+    sn = smooth_normals(parts, tris)
+    nx, nz = sn[:, 0] * cy - sn[:, 2] * sy, sn[:, 0] * sy + sn[:, 2] * cy
+    sn = np.stack([nx, sn[:, 1] * cp + nz * sp, nz * cp - sn[:, 1] * sp], -1)
+    light = np.abs(sn @ (np.array([0.35, 0.75, -0.55]) / np.linalg.norm([0.35, 0.75, -0.55])))
     shade = (0.35 + 0.65 * light)[:, None]
-    rgb = np.clip(cols * shade, 0, 255).astype(np.uint8)
+    sky, gleam = reflect(sn * np.where(np.sum(sn * n, 1, keepdims=True) < 0, -1.0, 1.0), gloss)
+    rgb = np.clip(cols * shade * (1 - gleam[:, None]) + sky * gleam[:, None], 0, 255).astype(np.uint8)
     allp = np.concatenate([pts[..., :2].reshape(-1, 2), arr])
     lo, hi = allp.min(0), allp.max(0)
     scale = 0.9 * S / max(hi - lo)

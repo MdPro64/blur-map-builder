@@ -9,6 +9,7 @@ import tkinter as tk
 from tkinter import colorchooser, filedialog, messagebox, ttk
 
 import paths
+import ui_layout
 
 import blur_theme as T
 import cars_data as cd
@@ -28,9 +29,11 @@ class CarPanel(tk.Frame):
         self.sel = 0
         self.loading = False
         # ---- left: the list of custom cars
-        left = tk.Frame(self, bg=T.PANEL, width=240)
+        left = self.left = tk.Frame(self, bg=T.PANEL, width=240)
         left.pack(side="left", fill="y")
         left.pack_propagate(False)
+        self.left_sash = ui_layout.sash(self)
+        self.left_sash.pack(side="left", fill="y")
         tk.Label(left, text="MY CARS", bg=T.PANEL, fg=T.HEAD, font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=10, pady=(10, 4))
         row = tk.Frame(left, bg=T.PANEL)
         row.pack(fill="x", padx=10, pady=(0, 8))
@@ -43,8 +46,15 @@ class CarPanel(tk.Frame):
         self.listbox.bind("<<ListboxSelect>>", lambda e: self._pick())
         # ---- right: the selected car
         self.right = tk.Frame(self, bg=T.BG)
-        self.right.pack(side="left", fill="both", expand=True, padx=16, pady=10)
-        r = self.right
+        self.right.pack(side="left", fill="both", expand=True, padx=(12, 8), pady=10)
+        self.view_box = tk.Frame(self.right, bg=T.BG, height=300)      # the car in 3D, under the controls
+        self.view_box.pack(side="bottom", fill="x")
+        self.view_box.pack_propagate(False)
+        self.view_sash = ui_layout.sash(self.right, "y")
+        self.view_sash.pack(side="bottom", fill="x", pady=(6, 0))
+        controls = ui_layout.Scroll(self.right, T.BG)
+        controls.pack(fill="both", expand=True)
+        r = controls.inner
         top = tk.Frame(r, bg=T.BG)
         top.pack(fill="x")
         tk.Label(top, text="Name", bg=T.BG, fg=T.MUTED).grid(row=0, column=0, sticky="w")
@@ -132,8 +142,11 @@ class CarPanel(tk.Frame):
         tk.Label(r, text="Build + install puts your cars in the game (car select: their class).  The game finds a "
                          "car's 3D model by its body car.", bg=T.BG, fg=T.MUTED).pack(anchor="w", pady=(14, 0))
         # ---- the car in 3D (drag = turn it)
-        self.view = tk.Canvas(r, bg=T.BG, highlightthickness=0, cursor="fleur")
-        self.view.pack(fill="both", expand=True, pady=(8, 0))
+        self.view = tk.Canvas(self.view_box, bg=T.BG, highlightthickness=0, cursor="fleur")
+        self.view.pack(fill="both", expand=True)
+        ui_layout.wrap_grid(top)
+        ui_layout.flow(paint)
+        ui_layout.flow(self.fit_row)
         self.view.bind("<Configure>", lambda e: self._draw(True))
         self.view.bind("<B1-Motion>", self._turn)
         self.view.bind("<ButtonPress-1>", lambda e: setattr(self, "_drag_x", e.x))
@@ -266,10 +279,10 @@ class CarPanel(tk.Frame):
             self.fit_label.configure(text="size x%.2f, forward %+.2f m, up %+.2f m, turned %d°, wheels %+.2f / %+.2f m" % (
                 f.get("size", 1.0), f.get("fwd", 0.0), f.get("up", 0.0), f.get("turn", 0), f.get("track", 0.0),
                 f.get("wb", 0.0)))
-            self.fit_row.pack(fill="x", pady=(8, 0), before=self.view)
-            self.fit_label.pack(anchor="w", before=self.view)
+            self.fit_row.pack(fill="x", pady=(8, 0))
+            self.fit_label.pack(anchor="w")
             self.room_label.configure(**self._room_text(c))
-            self.room_label.pack(anchor="w", before=self.view)
+            self.room_label.pack(anchor="w")
         else:
             self.fit_row.pack_forget()
             self.fit_label.pack_forget()
