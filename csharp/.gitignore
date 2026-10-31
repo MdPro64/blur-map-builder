@@ -1,0 +1,7 @@
+.dotnet/
+.tools/
+scratch/
+publish/
+bin/
+obj/
+release_test/

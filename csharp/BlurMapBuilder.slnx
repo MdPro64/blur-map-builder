@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="src/Bmb.Core/Bmb.Core.csproj" />
+  <Project Path="src/Bmb.Cli/Bmb.Cli.csproj" />
+  <Project Path="src/Bmb.App/Bmb.App.csproj" />
+</Solution>

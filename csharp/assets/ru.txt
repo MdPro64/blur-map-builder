@@ -1,0 +1,794 @@
+# Russian texts of the window: English ||| Russian. {} = a part that changes. Lines without ||| are ignored.
+2D map ||| 2D карта
+3D ||| 3D
+3D view ||| 3D вид
+Collision ||| Столкновения
+AI path ||| Путь ИИ
+Lighting ||| Освещение
+Surface ||| Покрытие
+Custom car ||| Своя машина
+Save ||| Сохранить
+Play ||| Играть
+Build + install ||| Собрать и установить
+Help ||| Справка
+Fit ||| Вписать
+Undo ||| Отменить
+Redo ||| Повторить
+Check for updates ||| Проверить обновления
+Checking... ||| Проверка...
+No connection - check again ||| Нет связи - проверить снова
+Up to date ||| Новейшая версия
+Update ||| Обновить
+Update {} ||| Обновление {}
+Layout ||| Раскладка
+Load ||| Загрузить
+Delete ||| Удалить
+Reset current layout ||| Сбросить раскладку
+Default ||| Стандартная
+LOCATIONS & MAPS ||| ЛОКАЦИИ И КАРТЫ
+New map ||| Новая карта
+New location ||| Новая локация
+Duplicate map ||| Копия карты
+Rename ||| Переименовать
+Delete map ||| Удалить карту
+Delete location ||| Удалить локацию
+Import map ||| Импорт карты
+Import map (.blurmap) ||| Импорт карты (.blurmap)
+Export this map ||| Экспорт этой карты
+CHECKS ||| ПРОВЕРКИ
+ROAD ||| ДОРОГА
+BRANCHES & LANES ||| ОТВЕТВЛЕНИЯ И ПОЛОСЫ
+MEASURE ||| ИЗМЕРЕНИЕ
+POWER-UPS ||| БОНУСЫ
+type ||| тип
+Type ||| Тип
+Snap ||| Сетка
+Select ||| Выбор
+Move ||| Двигать
+Add point ||| Добавить точку
+Insert ||| Вставить
+Erase ||| Стереть
+Branch ||| Ответвление
+Lane split ||| Разделение полос
+Measure ||| Измерить
+Power-up row ||| Ряд бонусов
+Single power-up ||| Один бонус
+Shunt ||| Таран
+Barge ||| Толчок
+Shock ||| Шок
+Mine ||| Мина
+Bolt ||| Болт
+Nitro ||| Нитро
+Shield ||| Щит
+Repair ||| Ремонт
+mixed ||| смесь
+3D VIEW ||| 3D ВИД
+COLLISION  -  green = drive here, red = solid, yellow = bridges and tilted road ||| СТОЛКНОВЕНИЯ  -  зелёный = можно ехать, красный = стена, жёлтый = мосты и наклонная дорога
+LIGHTING of the whole location ||| ОСВЕЩЕНИЕ всей локации
+Your own cars - fair: never better than the best car of their class ||| Ваши машины - честно: не лучше лучшей машины своего класса
+AI PATH ||| ПУТЬ ИИ
+Auto AI path ||| Авто-путь ИИ
+Racing line ||| Гоночная линия
+Pen (draw) ||| Перо (рисовать)
+AI lane width (m): ||| Ширина полосы ИИ (м):
+LEFT click = add\nRIGHT click = delete ||| ЛЕВЫЙ клик = добавить\nПРАВЫЙ клик = удалить
+BRUSH ||| КИСТЬ
+Rough ||| Грубая
+Sand ||| Песок
+Water ||| Вода
+Deep water ||| Глубокая вода
+Asphalt ||| Асфальт
+Dirt ||| Грунт
+Rough dirt ||| Грубый грунт
+Grass ||| Трава
+Gravel ||| Гравий
+Wet sand ||| Мокрый песок
+Water (shallow) ||| Вода (мелко)
+size (m) ||| размер (м)
+WHOLE ROAD ||| ВСЯ ДОРОГА
+sides ||| края
+off ||| выкл
+Varied asphalt ||| Разный асфальт
+Clear paint ||| Убрать покраску
+GRIP (this location) ||| СЦЕПЛЕНИЕ (эта локация)
+Strong ||| Сильное
+Like the game ||| Как в игре
+Grip ||| Сцепление
+Drift ||| Дрифт
+Extreme ||| Экстрим
+Short help for this tab (F1) ||| Краткая справка по этой вкладке (F1)
+Show the whole map ||| Показать всю карту
+Saved {} ||| Сохранено {}
+Could not save: {} ||| Не удалось сохранить: {}
+Nothing to undo ||| Нечего отменять
+Nothing to redo ||| Нечего повторять
+Undo ({} more) ||| Отмена (ещё {})
+Redo ({} more) ||| Повтор (ещё {})
+Layout '{}' loaded ||| Раскладка '{}' загружена
+Layout '{}' deleted ||| Раскладка '{}' удалена
+Layout '{}' saved: panel sizes + window size ||| Раскладка '{}' сохранена: размеры панелей и окна
+Layout '{}' reset: back to how it was saved{} ||| Раскладка '{}' сброшена к сохранённой{}
+ (the program's own sizes) |||  (размеры программы)
+'{}' is the program's own layout: pick another name ||| '{}' - раскладка программы: выберите другое имя
+The Default layout can't be deleted ||| Стандартную раскладку нельзя удалить
+Delete layout ||| Удалить раскладку
+Delete the layout '{}'? ||| Удалить раскладку '{}'?
+Save layout ||| Сохранить раскладку
+Name of this layout: ||| Имя раскладки:
+Name of the new map: ||| Имя новой карты:
+Name of the new location (a new world): ||| Имя новой локации (новый мир):
+New name: ||| Новое имя:
+1 = this map ({})\n2 = this location ({}) ||| 1 = эта карта ({})\n2 = эта локация ({})
+Too many maps ||| Слишком много карт
+At most {} maps in total. ||| Всего не больше {} карт.
+At most {} maps in total - delete one first. ||| Всего не больше {} карт - сначала удалите одну.
+A location needs at least one map (delete the location instead). ||| В локации должна быть хотя бы одна карта (удалите локацию).
+The first map of the first location can't be deleted (it holds the original Flat Earth ids) - change its road instead. ||| Первую карту первой локации нельзя удалить (в ней исходные номера Flat Earth) - измените её дорогу.
+Delete the map '{}'? ||| Удалить карту '{}'?
+Map deleted here - press 'Build + install' to remove it from the game too ||| Карта удалена здесь - нажмите «Собрать и установить», чтобы убрать её и из игры
+This is the only location - make another one first. ||| Это единственная локация - сначала создайте другую.
+Delete the location '{}' and its {} map(s)?{} ||| Удалить локацию '{}' и её карты ({})?{}
+\n\nIt is the first location: '{}' becomes the first one and takes over its place in the game. ||| \n\nЭто первая локация: '{}' станет первой и займёт её место в игре.
+Location deleted here - press 'Build + install' to remove it from the game too ||| Локация удалена здесь - нажмите «Собрать и установить», чтобы убрать её и из игры
+Export the map for another player ||| Экспорт карты для другого игрока
+Import a map from another player ||| Импорт карты другого игрока
+Exported '{}' with its lighting + grip -> {} ({} KB{}). Send this file; the other player uses Import map. ||| Экспортирована '{}' с освещением и сцеплением -> {} ({} КБ{}). Отправьте файл; другой игрок использует Импорт карты.
+, {} picture(s) ||| , картинок: {}
+Could not write the file:\n{} ||| Не удалось записать файл:\n{}
+Could not import this file:\n{} ||| Не удалось импортировать файл:\n{}
+Import '{}' as its OWN location, with the maker's lighting and grip?\n\nYes = exactly as it was made (recommended)\nNo = into '{}' (it then uses that location's lighting and grip) ||| Импортировать '{}' как ОТДЕЛЬНУЮ локацию, с освещением и сцеплением автора?\n\nДа = точно как у автора (рекомендуется)\nНет = в '{}' (будут освещение и сцепление этой локации)
+Imported '{}' into {} - press Build + install to race it ||| '{}' импортирована в {} - нажмите «Собрать и установить», чтобы гонять
+There are unsaved changes from last time (auto-save). Open them? ||| Есть несохранённые изменения с прошлого раза (автосохранение). Открыть их?
+Auto-save ||| Автосохранение
+Save your changes to the maps? ||| Сохранить изменения карт?
+Blur Map Builder by MDPRO {} - Track Designer ||| Blur Map Builder от MDPRO {} - Редактор трасс
+click a point or power-up to edit it on the right ||| кликните точку или бонус, чтобы изменить их справа
+drag points and power-ups ||| перетаскивайте точки и бонусы
+click to add a point at the end of the road ||| кликните, чтобы добавить точку в конец дороги
+click near the road to insert a point there (near a branch: into the branch) ||| кликните у дороги, чтобы вставить точку (у ответвления: в ответвление)
+click on the road (or a branch) to place a row of power-ups ||| кликните по дороге (или ответвлению), чтобы поставить ряд бонусов
+click to place one {} power-up (1-8 = type) ||| кликните, чтобы поставить бонус {} (1-8 = тип)
+click a point or power-up to delete it ||| кликните точку или бонус, чтобы удалить
+click ON the road where the branch leaves, then its points beside the road, then ON the road where it joins again ||| кликните ПО дороге, где ответвление начинается, затем его точки рядом с дорогой, затем ПО дороге, где оно возвращается
+click ON the road where the lane split starts, then where it ends ||| кликните ПО дороге, где начинается разделение полос, затем где заканчивается
+click A, then B: the straight distance and, on the same road, the driving distance ||| кликните A, затем B: расстояние по прямой и, на одной дороге, по маршруту
+LIGHTING of the location '{}': pick a game city as the start, change what you like, Build + install, look in game ||| ОСВЕЩЕНИЕ локации '{}': выберите город из игры за основу, измените что нужно, соберите и смотрите в игре
+CUSTOM CAR: + New, pick a class and a body car, then spend the class's stat points ||| СВОЯ МАШИНА: + Новая, выберите класс и кузов, затем распределите очки класса
+SURFACE: left drag = paint {}, right drag = remove, middle drag = move the map, wheel = zoom.  Whole road: type / sides / varied asphalt on the bar ||| ПОКРЫТИЕ: левая кнопка = красить {}, правая = убрать, средняя = двигать карту, колесо = зум.  Вся дорога: тип / края / разный асфальт на панели
+AI PATH: the yellow line is where the AI cars drive (the band = their lane). Auto = made for you; Pen = draw it yourself (drag on the road; drawing over a part replaces that part) ||| ПУТЬ ИИ: жёлтая линия - где едут машины ИИ (полоса вокруг - их ряд). Авто = готовый путь; Перо = нарисовать самому (ведите по дороге; поверх рисунка - заменяет эту часть)
+3D view: middle-drag turn, Shift+middle move, wheel zoom, numpad 7/1/3 views, 5 flat, Home all  (F3 = next view) ||| 3D вид: средняя кнопка = поворот, Shift+средняя = сдвиг, колесо = зум, цифры 7/1/3 = виды, 5 = плоско, Home = всё  (F3 = след. вид)
+COLLISION view: middle-drag turn, Shift+middle move, wheel zoom, numpad 7/1/3 views, 5 flat, Home all  (F3 = next view) ||| Вид СТОЛКНОВЕНИЙ: средняя кнопка = поворот, Shift+средняя = сдвиг, колесо = зум, цифры 7/1/3 = виды, 5 = плоско, Home = всё  (F3 = след. вид)
+Loading {}... ||| Загрузка: {}...
+Loading... ||| Загрузка...
+Brush: {} - left drag paints, right drag removes ||| Кисть: {} - левая кнопка красит, правая убирает
+Pen: drag along the road to draw where the AI should drive ||| Перо: ведите по дороге, где должен ехать ИИ
+Pen off: drag = move the map ||| Перо выкл: перетаскивание двигает карту
+Snap on ||| Сетка вкл
+Snap off ||| Сетка выкл
+POINT {} of {} ||| ТОЧКА {} из {}
+Width (Q/W) ||| Ширина (Q/W)
+Height (PgUp/Dn) ||| Высота (PgUp/Dn)
+Corner radius ||| Радиус угла
+smooth ||| плавно
+Tilt ( , . ) ||| Наклон ( , . )
+flat ||| ровно
+{}° left ||| {}° влево
+{}° right ||| {}° вправо
+left side up {}° ||| левый край выше на {}°
+right side up {}° ||| правый край выше на {}°
+LEFT ||| ЛЕВО
+RIGHT ||| ПРАВО
+Auto tilt for this bend ||| Авто-наклон для поворота
+Flat ||| Ровно
+Stays flatter here: it is close to the start, the finish, a bridge, a branch or a lane split. ||| Здесь наклон меньше: рядом старт, финиш, мост, ответвление или разделение полос.
+Stays flat here: it is close to the start, the finish, a bridge, a branch or a lane split. ||| Здесь дорога ровная: рядом старт, финиш, мост, ответвление или разделение полос.
+only {} m fits here (the points next to it are too close) ||| здесь помещается только {} м (соседние точки слишком близко)
+90° left ||| 90° влево
+90° right ||| 90° вправо
+Corner ||| Угол
+POWER-UP ||| БОНУС
+POWER-UP ROW ||| РЯД БОНУСОВ
+type: {} (keys 1-8 or the Type menu) ||| тип: {} (клавиши 1-8 или меню Тип)
+Power-ups in this row ||| Бонусов в ряду
+Mixed types ||| Разные типы
+MAP: {} ||| КАРТА: {}
+Default width ||| Ширина
+Start at ||| Старт на
+Finish at ||| Финиш на
+(or drag the squares on the lines) ||| (или тяните квадраты на линиях)
+Reset ||| Сбросить
+Lap track (the end joins the start) ||| Круговая (конец соединён со стартом)
+Laps ||| Круги
+Auto bridges where the road crosses ||| Авто-мосты на пересечениях
+Obstacles (containers, barrels) ||| Препятствия (контейнеры, бочки)
+Power-ups: {} items ||| Бонусов: {}
+Power-ups: automatic ||| Бонусы: автоматически
+Rows every ||| Ряды каждые
+Power-ups per row ||| Бонусов в ряду
+Auto rows ||| Авто-ряды
+Clear all ||| Убрать все
+Reverse ||| Обратно
+Mirror ||| Зеркало
+AUTO SCENERY (made at every build) ||| АВТО-ОКРУЖЕНИЕ (при каждой сборке)
+Ships (horizon) ||| Корабли (горизонт)
+Cranes ||| Краны
+Ferris wheel + radio mast ||| Колесо обозрения и мачта
+Street lamps ||| Фонари
+Billboards ||| Рекламные щиты
+Arrow boards on bends ||| Стрелки на поворотах
+Start / finish lights ||| Огни старта и финиша
+Tall buildings ||| Высокие здания
+Start / finish arch ||| Арка старта и финиша
+MINIMAP ||| МИНИКАРТА
+Auto minimap from the road ||| Авто-миникарта по дороге
+own picture: {} ||| своя картинка: {}
+(no picture picked) ||| (картинка не выбрана)
+Export road picture ||| Экспорт картинки дороги
+Pick own ||| Своя
+Preview ||| Просмотр
+BRANCH {} ({} points) ||| ОТВЕТВЛЕНИЕ {} (точек: {})
+BRANCH {} ||| ОТВЕТВЛЕНИЕ {}
+Width ||| Ширина
+Length {} m  vs  main road {} m  ({} %) ||| Длина {} м  против  главной {} м  ({} %)
+Leaves at ||| Начало на
+Joins at ||| Конец на
+Point {} height ||| Высота точки {}
+Move tool: drag its points / the round handles ||| Инструмент Двигать: тяните точки и круглые ручки
+Delete branch ||| Удалить ответвление
+LANE SPLIT {} ||| РАЗДЕЛЕНИЕ {}
+Lanes ||| Полосы
+2 lanes ||| 2 полосы
+3 lanes ||| 3 полосы
+Starts at ||| Начало на
+Ends at ||| Конец на
+Delete split ||| Удалить разделение
+{} laps ||| Кругов: {}
+Lap track: the end now joins the start, {} laps (change with Laps - / +) ||| Круговая: конец соединён со стартом, кругов: {} (меняется кнопками Круги - / +)
+Sprint again: start and finish lines ||| Снова спринт: линии старта и финиша
+Start / finish back to the standard spots ||| Старт и финиш на обычных местах
+Automatic power-up rows ||| Автоматические ряды бонусов
+All power-ups removed (add rows with R, single ones with P) ||| Все бонусы убраны (ряды: R, одиночные: P)
+{} ON - Build + install to see it in game ||| {} ВКЛ - соберите, чтобы увидеть в игре
+{} OFF - Build + install to see it in game ||| {} ВЫКЛ - соберите, чтобы увидеть в игре
+Pick a picture for the minimap (tip: Export road picture, paint on it, then Pick own) ||| Выберите картинку миникарты (совет: Экспорт картинки дороги, дорисуйте, затем Своя)
+Save the road picture ||| Сохранить картинку дороги
+Saved {}: WHITE = shown on the minimap. Paint on it (Paint is fine), then 'Pick own'. ||| Сохранено {}: БЕЛОЕ видно на миникарте. Дорисуйте (подойдёт Paint), затем «Своя».
+Pick the minimap picture ||| Выберите картинку миникарты
+This picture was not exported here: it is stretched over the whole location area (16:9) ||| Картинка экспортирована не отсюда: она растянется на всю локацию (16:9)
+Minimap preview - {} ||| Миникарта - {}
+White = this map's route, green = start line. The cars move on it in the race. ||| Белое = маршрут этой карты, зелёное = старт. По нему движутся машины в гонке.
+length {} m (900..5300) ||| длина {} м (900..5300)
+tightest turn radius {} m (min 35) ||| самый крутой поворот: радиус {} м (мин 35)
+crossings: {}, all bridged ||| пересечений: {}, все с мостами
+{} crossing(s) without a bridge (turn Auto bridges on / raise a point) ||| пересечений без моста: {} (включите Авто-мосты или поднимите точку)
+steepest ramp {} % (max 12 %) ||| самый крутой подъём {} % (макс 12 %)
+power-ups {} (max {}) ||| бонусов {} (макс {})
+no overlap with other maps here ||| нет наложения на другие карты
+overlaps the map '{}' (same location: their walls block each other) ||| накладывается на карту '{}' (одна локация: их стены мешают друг другу)
+maps in total: {} (max {}) ||| всего карт: {} (макс {})
+branch {} balanced: {} m vs main {} m ({} %) ||| ответвление {} сбалансировано: {} м против главной {} м ({} %)
+branch {} is much SHORTER than the main road it skips: {} m vs {} m ({} %) - a big shortcut, everyone will take it ||| ответвление {} намного КОРОЧЕ главной дороги: {} м против {} м ({} %) - срез, поедут все
+branch {} is much LONGER than the main road it skips: {} m vs {} m (+{} %) - nobody will take it ||| ответвление {} намного ДЛИННЕЕ главной дороги: {} м против {} м (+{} %) - никто не поедет
+branch {}: heights eased to max 10 % slope (up to {} m lower/higher than set) - its ends stay level with the road ||| ответвление {}: высоты сглажены до уклона 10 % (до {} м от заданных) - концы вровень с дорогой
+{} branch(es), {} lane split(s): the AI takes them too ||| ответвлений: {}, разделений полос: {}: ИИ тоже их использует
+The {} line is at a branch / lane split: move one of them ||| Линия {} на ответвлении или разделении: передвиньте что-то одно
+surface: {} ||| покрытие: {}
+{} m {} sides ||| края {} м: {}
+{} m2 painted ||| покрашено {} м2
+road {} ||| дорога {}
+varied asphalt ||| разный асфальт
+road tilt: up to {}° on {} point(s), the road rises up to {} m so its low side stays above the ground ||| наклон дороги: до {}° на точках: {}, дорога поднята до {} м, чтобы низкий край был над землёй
+road tilt: up to {}° on {} point(s) ||| наклон дороги: до {}° на точках: {}
+{} point(s) have a tilt, but all of them are too close to the start, the finish, a bridge, a branch or a lane split: the road stays flat ||| у точек ({}) задан наклон, но все слишком близко к старту, финишу, мосту, ответвлению или разделению: дорога ровная
+Length {} km, ~{}:{} at 150 km/h ||| Длина {} км, ~{}:{} при 150 км/ч
+Width {}..{} m, highest {} m, {} bridge(s) ||| Ширина {}..{} м, высота до {} м, мостов: {}
+Corners: {}, points: {} ||| Углов: {}, точек: {}
+the road can't be made ||| дорогу нельзя построить
+The road can't be made (needs at least 2 points) ||| Дорогу нельзя построить (нужно минимум 2 точки)
+Start from the lighting of: ||| Основа освещения:
+Light up placed objects ||| Осветить объекты
+Reset to the preset ||| Сброс к основе
+Changes need Build + install. Values you changed are marked *. ||| Изменения видны после сборки. Изменённые значения отмечены *.
+LIGHTING  -  location: {}  (all its maps) ||| ОСВЕЩЕНИЕ  -  локация: {}  (все её карты)
+SKY PICTURE  -  {} ||| КАРТИНКА НЕБА  -  {}
+yours: {} ||| ваша: {}
+the preset's ({}) ||| из основы ({})
+Custom sky (HDRI)... ||| Своё небо (HDRI)...
+Use the preset's sky ||| Небо из основы
+Custom sky ||| Своё небо
+A 360 panorama (2:1, .hdr / .png / .jpg): its top half becomes the sky, from straight up down to the horizon. 'Sky picture rotation' turns it, 'Sky picture brightness' sets how bright. Needs Build + install. ||| Панорама 360 (2:1, .hdr / .png / .jpg): верхняя половина станет небом, от зенита до горизонта. Поворот и яркость настраиваются ниже. Нужна сборка.
+Light on placed objects (colour + strength) ||| Свет на объектах (цвет и сила)
+   ... coming from above (0 = all round) |||    ... сверху (0 = со всех сторон)
+Sun colour + strength ||| Солнце (цвет и сила)
+Sky (ambient) colour + strength ||| Небо (цвет и сила)
+Baked light colour + strength ||| Запечённый свет (цвет и сила)
+Emissive (glow) colour + strength ||| Свечение (цвет и сила)
+Fog colour ||| Цвет тумана
+Distance fog density ||| Плотность тумана
+Height fog density ||| Высотный туман
+Height fog top ||| Верх высотного тумана
+Sky picture rotation ||| Поворот неба
+Sky picture brightness ||| Яркость неба
+Exposure ||| Экспозиция
+Bloom ||| Свечение
+Contrast ||| Контраст
+Saturation ||| Насыщенность
+top half = the sky ||| верхняя половина = небо
+rough preview of a placed object (light on placed objects) ||| примерный вид объекта (свет на объектах)
+Road type ||| Тип дороги
+now: AUTOMATIC (the whole road; made at every build) ||| сейчас: АВТО (вся дорога; при каждой сборке)
+now: YOUR OWN line (drawn / racing line) ||| сейчас: ВАША линия (рисунок или гоночная)
+AI path: automatic again (the AI uses the whole road) - Ctrl+Z undoes ||| Путь ИИ снова автоматический (вся дорога) - Ctrl+Z отменяет
+The AI path is already automatic ||| Путь ИИ уже автоматический
+Racing line made: the AI cuts the inside of the bends. Use the Pen to change any part of it. ||| Гоночная линия готова: ИИ срезает повороты. Пером можно изменить любую часть.
+All paint removed from this map ||| Вся покраска убрана с карты
+Grip of the surfaces: {} (all maps of {}) - Build + install to feel it ||| Сцепление: {} (все карты {}) - соберите, чтобы почувствовать
+{}: {} (Build + install to drive on it) ||| {}: {} (соберите, чтобы проехать)
+{}: {} (the automatic power-up rows follow) ||| {}: {} (автоматические ряды обновятся)
+Select a point first ||| Сначала выберите точку
+Select a point first (S, then click a point) ||| Сначала выберите точку (S, затем клик по точке)
+Point {}: {} ||| Точка {}: {}
+Point {}: the road is nearly straight here, so it stays flat ||| Точка {}: здесь почти прямая, дорога остаётся ровной
+Point {}: bend of radius {} m, {} ||| Точка {}: поворот радиуса {} м, {}
+Select a point (not the first one) for a 90-degree turn ||| Выберите точку (не первую) для поворота на 90°
+This point sits on the one before it - move it first ||| Точка совпадает с предыдущей - сначала сдвиньте её
+90-degree LEFT turn at point {} ||| Поворот на 90° ВЛЕВО в точке {}
+90-degree RIGHT turn at point {} ||| Поворот на 90° ВПРАВО в точке {}
+Direction reversed (start <-> finish) ||| Направление изменено (старт <-> финиш)
+Mirrored ||| Отражено
+Power-up type: {} ||| Тип бонуса: {}
+New power-ups: {} ||| Новые бонусы: {}
+A road needs at least 2 points ||| Дороге нужно минимум 2 точки
+Cancelled ||| Отменено
+Click = lap track (the road closes back to its start) ||| Клик = круговая (дорога замыкается на старт)
+Click ON the road (or a branch) to place a row ||| Кликните ПО дороге (или ответвлению), чтобы поставить ряд
+Click at least one point BESIDE the road first (where the branch goes) ||| Сначала кликните точку РЯДОМ с дорогой (куда идёт ответвление)
+Branch deleted ||| Ответвление удалено
+Branch point deleted ||| Точка ответвления удалена
+Branch {} made: {} m to {} m along the road. Drag its points (Move tool), change its width on the right ||| Ответвление {} готово: от {} м до {} м по дороге. Тяните точки (Двигать), ширина справа
+Branch: first click ON the road where the branch should leave it ||| Ответвление: сначала кликните ПО дороге, где оно начнётся
+Branch: now click its points BESIDE the road, then click ON the road where it joins again (Esc = cancel) ||| Ответвление: кликайте точки РЯДОМ с дорогой, затем ПО дороге, где оно вернётся (Esc = отмена)
+Branch: {} point(s) - more points, or click ON the road where it joins (Esc = cancel) ||| Ответвление: точек {} - ещё точки или клик ПО дороге, где оно вернётся (Esc = отмена)
+The branch must join at least {} m after it leaves ||| Ответвление должно вернуться минимум через {} м
+Point added to branch {} - drag it with the Move tool, Delete removes it ||| Точка добавлена в ответвление {} - тяните инструментом Двигать, Delete удаляет
+Drag the END point (white) onto this start point = lap track (the end joins the start) ||| Тяните КОНЕЧНУЮ точку (белую) на старт = круговая
+Drag the {} line along the road ||| Тяните линию {} вдоль дороги
+A lane split must be at least {} m long ||| Разделение полос должно быть не короче {} м
+Lane split deleted ||| Разделение удалено
+Lane split {}: 2 lanes from {} m to {} m (3 lanes: on the right) ||| Разделение {}: 2 полосы от {} м до {} м (3 полосы: справа)
+Lane split: click ON the road ||| Разделение: кликните ПО дороге
+Lane split: now click ON the road where it ends (Esc = cancel) ||| Разделение: кликните ПО дороге, где оно заканчивается (Esc = отмена)
+Measure cleared ||| Измерение сброшено
+Measure cleared (right click) ||| Измерение сброшено (правый клик)
+Measure: click the first point ||| Измерение: кликните первую точку
+Measure: click more points (up to {})  -  Enter = finish, Backspace = undo a point, Esc = clear ||| Измерение: кликайте ещё точки (до {})  -  Enter = готово, Backspace = убрать точку, Esc = сброс
+Measure: {} points is the most - Enter = finish, Backspace = take one away ||| Измерение: {} точек - максимум. Enter = готово, Backspace = убрать
+Measure {} points: {} ||| Измерение, точек {}: {}
+path {} m ||| путь {} м
+AI path drawn (this part replaced) - Ctrl+Z undoes, Auto AI path = back to automatic ||| Путь ИИ нарисован (эта часть заменена) - Ctrl+Z отменяет, Авто-путь ИИ возвращает автоматический
+Painted {} cells of {} m ({} m2) - Build + install to drive on it ||| Покрашено ячеек {} по {} м ({} м2) - соберите, чтобы проехать
+START ||| СТАРТ
+FINISH ||| ФИНИШ
+split 1 ||| отсечка 1
+split 2 ||| отсечка 2
+START / FINISH ({} laps) ||| СТАРТ / ФИНИШ (кругов: {})
+START / FINISH at {} m of the {} m loop ||| СТАРТ / ФИНИШ на {} м из {} м круга
+START at {} m, FINISH at {} m (race {} m); the automatic power-ups follow ||| СТАРТ на {} м, ФИНИШ на {} м (гонка {} м); авто-бонусы обновятся
+BRIDGE {} m ||| МОСТ {} м
+CROSSING! ||| ПЕРЕСЕЧЕНИЕ!
+{} LANES ||| ПОЛОС: {}
+click = LAP TRACK ||| клик = КРУГОВАЯ
+drag the end point here = LAP TRACK ||| тяните конечную точку сюда = КРУГОВАЯ
+let go = LAP TRACK ||| отпустите = КРУГОВАЯ
+{}      F1 = all keys      grid = {} m ||| {}      F1 = справка      сетка = {} м
+{} m along the road, {} m from its middle, height {} m ||| {} м по дороге, {} м от середины, высота {} м
+x {}  z {}   |   {} m along the road, {} m from its middle, height {} m   |   {} ||| x {}  z {}   |   {} м по дороге, {} м от середины, высота {} м   |   {}
+{}  tilt {}° ||| {}  наклон {}°
+  tilt {}° |||   наклон {}°
+Top view ||| Сверху
+Reset view ||| Сброс вида
+Drive ||| Проезд
+Stop ||| Стоп
+Sun + shadows ||| Солнце и тени
+A low sun with hard shadows on the ground: tilted road shows up lighter or darker ||| Низкое солнце и чёткие тени на земле: наклонная дорога светлее или темнее
+START CAMERA ||| СТАРТОВАЯ КАМЕРА
+Fly-in ||| Пролёт
+Grid shot ||| Стартовая решётка
+Add view ||| Добавить вид
+Remove last ||| Убрать последний
+Auto ||| Авто
+Fly-in: {}   Grid shot: {} ||| Пролёт: {}   Решётка: {}
+Fly-in: {}   Grid shot: {}{} ||| Пролёт: {}   Решётка: {}{}
+auto ||| авто
+Start camera: automatic - Build + install to see it in game ||| Стартовая камера: авто - соберите, чтобы увидеть в игре
+Start camera: {} ||| Стартовая камера: {}
+   - at most {} views per shot |||    - не больше {} видов на кадр
+Rotate ||| Вращать
+Scale ||| Масштаб
+Solo ||| Соло
+Show all ||| Показать всё
+Hide ||| Скрыть
+Reset object ||| Сбросить объект
+Solo: select ONE object first (a track point has no shape) ||| Соло: сначала выберите ОДИН объект (у точки трассы нет формы)
+SOLO: only {}   ( / or Esc = show everything ) ||| СОЛО: только {}   ( / или Esc = показать всё )
+Solo: this row has nothing to show ||| Соло: в этой строке нечего показать
+Hidden in this view: {} object(s). The game is not changed ||| Скрыто в этом виде: {}. Игра не меняется
+Shown again in this view: {} object(s). The game is not changed ||| Снова показано в этом виде: {}. Игра не меняется
+Hide / show in this view only ||| Скрыть / показать только в этом виде
+Show only this (click again = show everything) ||| Показать только это (повторный клик = всё)
+Location (m) ||| Положение (м)
+Road width (m) ||| Ширина дороги (м)
+Road tilt (°) ||| Наклон дороги (°)
+Rotation (°) ||| Поворот (°)
+Solid - stops the car like a wall (off = just a shape) ||| Твёрдый - останавливает машину как стена (выкл = только вид)
+type a value + Enter ||| введите значение и Enter
+type + Enter. Tilt: + = left side up, or R and drag the ring ||| введите и Enter. Наклон: + = левый край выше, или R и тяните кольцо
+fixed: moves with the road ||| закреплено: двигается с дорогой
+Please type numbers only (e.g. 12.5) ||| Вводите только числа (например 12.5)
+OBJECT LIBRARY ||| БИБЛИОТЕКА ОБЪЕКТОВ
+Import 3D model (.glb)... ||| Импорт 3D-модели (.glb)...
+Path scatter (objects along a path)... ||| Расстановка по пути...
+Search: ||| Поиск:
+Bake 3D pictures ||| Создать 3D-картинки
+Bake 3D pictures (stopped - click to go on) ||| Создать 3D-картинки (остановлено - клик продолжит)
+Bake 3D pictures (stopping...) ||| Создать 3D-картинки (остановка...)
+Baking 3D pictures... {} / {}  (click = stop) ||| Создание 3D-картинок... {} / {}  (клик = стоп)
+3D pictures baked ||| 3D-картинки готовы
+3D pictures baked{} ||| 3D-картинки готовы{}
+ ({} without a picture) |||  (без картинки: {})
+REAL SHAPES in the 3D view ||| НАСТОЯЩИЕ ФОРМЫ в 3D виде
+Makes a picture of every object (once). Then hover an object in the list to see it. ||| Делает картинку каждого объекта (один раз). Затем наведите на объект в списке.
+On: placed game objects show as their own models. Off: boxes. ||| Вкл: объекты показаны своими моделями. Выкл: коробки.
+Your models (imported .glb) ||| Ваши модели (импорт .glb)
+Scenery - look only (tick Solid = wall) ||| Декорации - только вид (Твёрдый = стена)
+Breakable - smash / knock over ||| Разрушаемые - сбить / разбить
+Moves when hit (physics) ||| Двигаются от удара (физика)
+Animated ||| Анимированные
+Shared (all cities) ||| Общие (все города)
+No library yet ||| Библиотеки пока нет
+No picture ||| Нет картинки
+No picture (this model can't be read) ||| Нет картинки (модель не читается)
+No picture (too big to draw quickly) ||| Нет картинки (слишком большая)
+{}\nclick in the view (Esc = stop) ||| {}\nкликните в виде (Esc = стоп)
+PLACING: {}: click where it should stand ||| СТАВИМ: {}: кликните, где поставить
+Placing {} ||| Ставим {}
+OBJECTS IN THIS MAP ||| ОБЪЕКТЫ НА КАРТЕ
+OBJECTS IN THIS MAP  ({}) ||| ОБЪЕКТЫ НА КАРТЕ  ({})
+Eye = hide in this view only (not in the game)   Target = solo\nClick = select   Shift / Ctrl+click = more   Double-click = go to it\nDelete = delete   Ctrl+G = group   Ctrl+Shift+G = ungroup ||| Глаз = скрыть только в этом виде (не в игре)   Мишень = соло\nКлик = выбор   Shift / Ctrl+клик = ещё   Двойной клик = перейти\nDelete = удалить   Ctrl+G = группа   Ctrl+Shift+G = разгруппировать
+Placed objects ||| Поставленные объекты
+Roadside & scenery ||| Обочина и декорации
+Road layout (fixed) ||| Разметка дороги (закреплена)
+Power-ups ||| Бонусы
+Track points ||| Точки трассы
+Duplicate   (Ctrl+D) ||| Копия   (Ctrl+D)
+Group   (Ctrl+G) ||| Группа   (Ctrl+G)
+Ungroup   (Ctrl+Shift+G) ||| Разгруппировать   (Ctrl+Shift+G)
+Delete   (Delete) ||| Удалить   (Delete)
+Chevron panel (bend arrows) ||| Панель со стрелками
+Chevron panel (bend arrows) - look only ||| Панель со стрелками - только вид
+Lamp post ||| Фонарь
+Lamp post - can be knocked down ||| Фонарь - можно сбить
+Billboard ||| Рекламный щит
+Billboard - can be knocked down ||| Рекламный щит - можно сбить
+Flashing sign - can be knocked down ||| Мигающий знак - можно сбить
+Flashing sign ||| Мигающий знак
+Standing light - can be knocked down ||| Прожектор - можно сбить
+Standing light ||| Прожектор
+Concrete barrier - can be knocked down ||| Бетонный блок - можно сбить
+Concrete barrier ||| Бетонный блок
+Barrel - can be knocked down ||| Бочка - можно сбить
+Barrel ||| Бочка
+Cone - can be knocked down ||| Конус - можно сбить
+Cone ||| Конус
+Road-works barrier - can be knocked down ||| Дорожный барьер - можно сбить
+Road-works barrier ||| Дорожный барьер
+Ferris wheel - look only ||| Колесо обозрения - только вид
+Ferris wheel ||| Колесо обозрения
+Radio mast - look only ||| Радиомачта - только вид
+Radio mast ||| Радиомачта
+Cruise ship (263 m) - look only ||| Круизный лайнер (263 м) - только вид
+Cruise ship (263 m) ||| Круизный лайнер (263 м)
+Tanker ship (LA docks, 333 m) - look only ||| Танкер (333 м) - только вид
+Tanker ship (LA docks, 333 m) ||| Танкер (333 м)
+Gantry crane (132 m) - look only ||| Портовый кран (132 м) - только вид
+Gantry crane (132 m) ||| Портовый кран (132 м)
+Container at the line (fixed) ||| Контейнер у линии (закреплён)
+Road-block container (fixed: obstacles) ||| Контейнер-препятствие (закреплён)
+Start / finish strip (fixed: part of the road) ||| Полоса старта/финиша (закреплена: часть дороги)
+Track point {} of {} ||| Точка трассы {} из {}
+Track point {}: x {}  z {}  height {} m  width {} m  {} - Ctrl+Z undoes ||| Точка трассы {}: x {}  z {}  высота {} м  ширина {} м  {} - Ctrl+Z отменяет
+Track point: G moves it, R tilts the road here. Width: the panel below. ||| Точка трассы: G двигает, R наклоняет дорогу здесь. Ширина: панель ниже.
+Power-up: move only (G, or drag the arrows). Type: the panel below. ||| Бонус: только двигать (G или стрелки). Тип: панель ниже.
+Power-up row: {} ||| Ряд бонусов: {}
+Power-up single: {} ||| Бонус: {}
+TILT THE ROAD HERE  {}   (Ctrl = 15° steps, most {}°) ||| НАКЛОН ДОРОГИ ЗДЕСЬ  {}   (Ctrl = шаг 15°, максимум {}°)
+MOVE  x {}  z {}  up {} m ||| ДВИЖЕНИЕ  x {}  z {}  вверх {} м
+SCALE  x{} ||| МАСШТАБ  x{}
+SCALE  x{}  y{}  z{} ||| МАСШТАБ  x{}  y{}  z{}
+ROTATE X (red)  {}° ||| ПОВОРОТ X (красный)  {}°
+ROTATE Y (green)  {}° ||| ПОВОРОТ Y (зелёный)  {}°
+ROTATE Z (blue, up)  {}° ||| ПОВОРОТ Z (синий, вверх)  {}°
+let go = OK   (Esc = cancel) ||| отпустите = ОК   (Esc = отмена)
+click / Enter = OK   right-click / Esc = cancel ||| клик / Enter = ОК   правый клик / Esc = отмена
+as placed ||| как поставлено
+drag a handle, or G / R / S / X keys   Esc = deselect ||| тяните ручку или клавиши G / R / S / X   Esc = снять выбор
+drag a handle, or G / R / X keys   Esc = deselect ||| тяните ручку или клавиши G / R / X   Esc = снять выбор
+part of the road layout - it moves with the road ||| часть дороги - двигается вместе с ней
+moved {} m ||| сдвинуто {} м
+turned {}° ||| повёрнуто {}°
+scale x{} ||| масштаб x{}
+scale x{} / y{} / z{} ||| масштаб x{} / y{} / z{}
+{} objects ||| объектов: {}
+{} objects selected ||| выбрано объектов: {}
+{} selected   |   drag a handle, or G move / R turn / S size (all of them together)   Delete, Ctrl+G group, Ctrl+D copy   Esc = none ||| {} выбрано   |   тяните ручку или G двигать / R вращать / S размер (все вместе)   Delete, Ctrl+G группа, Ctrl+D копия   Esc = снять
+{} selected - Delete = delete them, Ctrl+G = group, Ctrl+D = copy, Esc = none ||| выбрано {} - Delete = удалить, Ctrl+G = группа, Ctrl+D = копия, Esc = снять
+{}: {} objects - click its line in the list to select them all ||| {}: объектов {} - кликните строку в списке, чтобы выбрать все
+{} placed object(s) in this map - Ctrl+Z undoes, Build + install puts them in the game ||| объектов на карте: {} - Ctrl+Z отменяет, сборка добавит их в игру
+{} object change(s) in this map - Ctrl+Z undoes, Save + Build puts them in the game ||| изменений объектов: {} - Ctrl+Z отменяет, сборка добавит их в игру
+Deleted {} object(s) - Ctrl+Z undoes ||| Удалено объектов: {} - Ctrl+Z отменяет
+Ungrouped {} object(s) ||| Разгруппировано объектов: {}
+Ctrl+D: select one of YOUR placed objects first (the road's own objects can't be copied) ||| Ctrl+D: сначала выберите ВАШ объект (объекты дороги не копируются)
+Ctrl+G: select 2 or more of YOUR placed objects first (Shift / Ctrl+click in the list, Shift+click in the view) ||| Ctrl+G: сначала выберите 2 или больше ВАШИХ объектов (Shift / Ctrl+клик в списке, Shift+клик в виде)
+Reading the game's models... (once - then they are fast) ||| Чтение моделей игры... (один раз - потом быстро)
+{}   ({} triangles) ||| {}   (треугольников: {})
+{}: {} m, {} power-ups, {} bridge(s), no problems ||| {}: {} м, бонусов {}, мостов {}, проблем нет
+{}: {} m, {} power-ups, {} bridge(s), no problems, {} placed object(s) ||| {}: {} м, бонусов {}, мостов {}, проблем нет, поставленных объектов: {}
+{}: {} m, {} power-ups, {} bridge(s), {} PROBLEM SPOT(S) = red beacons ||| {}: {} м, бонусов {}, мостов {}, ПРОБЛЕМНЫХ МЕСТ: {} = красные маяки
+{}: {} m, {} power-ups, {} bridge(s), {} PROBLEM SPOT(S) = red beacons, {} placed object(s) ||| {}: {} м, бонусов {}, мостов {}, ПРОБЛЕМНЫХ МЕСТ: {} = красные маяки, поставленных объектов: {}
+COLLISION of {}: green = drivable ground, red = solid ({} wall pieces, {} boxes; white ticks = the side that pushes cars away), yellow = bridge decks ({}) ||| СТОЛКНОВЕНИЯ {}: зелёный = можно ехать, красный = твёрдое (стен {}, коробок {}; белые метки = сторона, отталкивающая машины), жёлтый = настилы мостов ({})
+IMPORT 3D MODEL ||| ИМПОРТ 3D-МОДЕЛИ
+Import 3D model ||| Импорт 3D-модели
+Import a 3D model ||| Импорт 3D-модели
+Import + place ||| Импортировать и поставить
+Cancel ||| Отмена
+Close ||| Закрыть
+It joins the object library under "Your models" (kept with your maps). Then click in the view to place it; G / R / S move, turn, scale it. ||| Модель появится в библиотеке в разделе «Ваши модели». Затем кликните в виде, чтобы поставить; G / R / S двигают, вращают, масштабируют.
+{} triangles   ·   {} x {} x {} m (wide x long x high)   ·   {} material(s)   ·   texture {} ||| треугольников {}   ·   {} x {} x {} м (ширина x длина x высота)   ·   материалов {}   ·   текстура {}
+Could not read this file:\n{} ||| Не удалось прочитать файл:\n{}
+Path scatter ||| Расстановка по пути
+1  PATH ||| 1  ПУТЬ
+2  OBJECTS ||| 2  ОБЪЕКТЫ
+3  LAYOUT ||| 3  РАССТАНОВКА
+4  RANDOM ||| 4  СЛУЧАЙНОСТЬ
+Draw path ||| Рисовать путь
+Done drawing ||| Готово
+Last point ||| Последняя точка
+Clear ||| Очистить
+Remove ||| Убрать
+Click objects in the OBJECT LIBRARY (left) to add them here ||| Кликайте объекты в БИБЛИОТЕКЕ (слева), чтобы добавить их сюда
+Every (m) ||| Шаг (м)
+Fill (%) ||| Заполнение (%)
+Side ||| Сторона
+Distance from path (m) ||| Расстояние от пути (м)
+Face along the path ||| Вдоль пути
+Random turn ± (°) ||| Случайный поворот ± (°)
++ turn (°) ||| + поворот (°)
+Size from ||| Размер от
+Spread ± (m) ||| Разброс ± (м)
+New random ||| Новая случайность
+Add ||| Добавить
+Add {} object ||| Добавить объект: {}
+Add {} objects ||| Добавить объектов: {}
+Draw a path: at least 2 points. ||| Нарисуйте путь: минимум 2 точки.
+Now pick objects in the library on the left. ||| Теперь выберите объекты в библиотеке слева.
+Pink = where they go. Change the numbers, then Add. ||| Розовое = куда встанут. Измените числа и нажмите Добавить.
+Pink = where they go. RED = {} that do NOT fit: a map has 144 places for big objects (road pieces use some; each of your own models needs one place per piece). Only the pink ones are added - fewer copies (bigger Every / lower Fill) or smaller models help. ||| Розовое = куда встанут. КРАСНОЕ = {} НЕ помещаются: на карте 144 места для больших объектов. Добавятся только розовые - уменьшите число копий или модели.
+Added {} objects (Ctrl+Z takes them all away). Draw the next path, or Close. ||| Добавлено объектов: {} (Ctrl+Z уберёт все). Рисуйте следующий путь или Закрыть.
+{} point(s), {} m ||| точек {}, {} м
+(breakable objects keep their size) ||| (разрушаемые объекты сохраняют размер)
+MY CARS ||| МОИ МАШИНЫ
++ New ||| + Новая
+Copy ||| Копия
+Name ||| Имя
+Class ||| Класс
+Body (a game car of this class) ||| Кузов (машина этого класса)
+Menu icon ||| Значок меню
+Mini icon (car list) ||| Мини-значок (список)
+Auto (side view of this car) ||| Авто (вид сбоку)
+Paint ||| Краска
+colour {} ||| цвет {}
+Wheels ||| Колёса
+Import body (.glb) ||| Импорт кузова (.glb)
+Use the game body ||| Кузов из игры
+Fit the body on the wheels: ||| Подгонка кузова к колёсам:
+Size ||| Размер
+Forward ||| Вперёд
+Up ||| Вверх
+Wheels side to side ||| Колёса вбок
+Turn 90° ||| Поворот 90°
+Points used: {} / {}   ({} left) ||| Очков использовано: {} / {}   (осталось {})
+STATS  (each one stays inside the class's range; all together inside its point budget) ||| ХАРАКТЕРИСТИКИ  (в пределах класса и его бюджета очков)
+Top speed ||| Макс. скорость
+Acceleration ||| Ускорение
+Strength ||| Прочность
+Top speed about {} mph  (class {}: {} - {} mph) ||| Макс. скорость около {} миль/ч  (класс {}: {} - {} миль/ч)
+grey ticks = the class's cars,  blue line = class average,  box = class range,  orange = yours  (click or drag on a bar) ||| серые метки = машины класса,  синяя линия = среднее,  рамка = диапазон,  оранжевое = ваше  (кликните или тяните)
+drag = turn the car ||| тяните = вращать машину
+My car ||| Моя машина
+No custom car yet: press + New ||| Своих машин пока нет: нажмите + Новая
+Build + install puts your cars in the game (car select: their class).  The game finds a car's 3D model by its body car. ||| Сборка добавит ваши машины в игру (выбор машины: их класс).  Игра находит 3D-модель по машине-кузову.
+No points left: lower another stat first (the class's budget is {}) ||| Очков нет: сначала снизьте другую характеристику (бюджет класса {})
+That is the least any class {} car has ||| Это минимум для класса {}
+That is the most any class {} car has ||| Это максимум для класса {}
+Car body ||| Кузов
+Car body (.glb) ||| Кузов (.glb)
+This .glb can't be used: {} ||| Этот .glb нельзя использовать: {}
+This car can't be shown: {} ||| Эту машину нельзя показать: {}
+Reset ||| Сброс
+This body has {} triangles - more than {}.\n\nA car body this detailed may not fit: the game car's model only has room for about {}, the rest would be missing (holes).\n\nMake it smaller in your 3D program first (Blender: Decimate modifier), or import it anyway? ||| В кузове {} треугольников - больше {}.\n\nТакой кузов может не поместиться: в модели машины места примерно на {}, остальное пропадёт (дыры).\n\nУпростите его в 3D-программе (Blender: Decimate) или импортировать всё равно?
+Help - {} ||| Справка - {}
+Got it ||| Понятно
+All keys ||| Все клавиши
+Keys / About ||| Клавиши / О программе
+First start ||| Первый запуск
+Type a value ||| Введите значение
+Minimap preview ||| Просмотр миникарты
+Building ||| Сборка
+New version ||| Новая версия
+Draw your road from above. ||| Рисуйте дорогу сверху.
+A adds a point at the end. I inserts one in the road. E erases. ||| A добавляет точку в конец. I вставляет в дорогу. E стирает.
+S selects a point: change its width, height, corner and tilt on the right. ||| S выбирает точку: ширина, высота, угол и наклон меняются справа.
+Tilt: select a point in a bend, press Auto tilt, or use the , and . keys. ||| Наклон: выберите точку в повороте, нажмите Авто-наклон или клавиши , и .
+Orange edge = the side that goes up. Blue edge = the side that goes down. ||| Оранжевый край идёт вверх. Синий край идёт вниз.
+B makes a branch, L a lane split, R a row of power-ups. ||| B - ответвление, L - разделение полос, R - ряд бонусов.
+Wheel zooms. Middle mouse moves the map. ||| Колесо - зум. Средняя кнопка двигает карту.
+See what the build will place. Middle mouse turns the view, wheel zooms. ||| Здесь видно, что поставит сборка. Средняя кнопка вращает вид, колесо - зум.
+Object list: the eye hides a row in this view only, the target shows only that row. ||| Список объектов: глаз скрывает строку только в этом виде, мишень показывает только её.
+Click an object, then G moves, R turns, S scales, X hides it. ||| Кликните объект: G двигает, R вращает, S масштабирует, X скрывает.
+Click an orange road point: G moves it, R tilts the road there (drag the ring). ||| Кликните оранжевую точку дороги: G двигает, R наклоняет дорогу (тяните кольцо).
+Pick an object in the library, then click in the view to place it. Esc stops. ||| Выберите объект в библиотеке и кликните в виде, чтобы поставить. Esc - стоп.
+Sun + shadows makes a tilted road easier to see. ||| Солнце и тени помогают увидеть наклон дороги.
+What the cars really touch. ||| То, чего реально касаются машины.
+Green = the ground you drive on. ||| Зелёный = земля, по которой едете.
+Red = solid walls. White ticks show the side that pushes cars away. ||| Красный = твёрдые стены. Белые метки - сторона, отталкивающая машины.
+Yellow = bridge decks and tilted road. ||| Жёлтый = настилы мостов и наклонная дорога.
+You look here. You change things in the 2D and 3D tabs. ||| Здесь только смотрите. Меняйте на вкладках 2D и 3D.
+Where the AI cars drive. ||| Где едут машины ИИ.
+Auto AI path = made for you. You can skip this tab. ||| Авто-путь ИИ делается сам. Вкладку можно пропустить.
+Racing line = cuts the inside of the bends. ||| Гоночная линия срезает повороты.
+Pen = drag on the road to draw it yourself. ||| Перо = рисуйте путь по дороге сами.
+AI lane width = how wide their lane is. ||| Ширина полосы ИИ = насколько широк их ряд.
+The light of the whole location. ||| Свет всей локации.
+Pick a city to start from, then change what you like. ||| Выберите город за основу и меняйте что нужно.
+Values you changed are marked with *. ||| Изменённые значения отмечены *.
+Placed game models look black? Press Light up placed objects. ||| Модели чёрные? Нажмите Осветить объекты.
+Custom sky = your own 360 picture (2:1). ||| Своё небо = ваша картинка 360 (2:1).
+Changes show in game after Build + install. ||| Изменения видны в игре после сборки.
+Paint dirt, gravel, grass, sand or water on the road. ||| Красьте дорогу грунтом, гравием, травой, песком или водой.
+Left drag paints, right drag removes. ||| Левая кнопка красит, правая убирает.
+Whole road: one type for all of it, and the side strips. ||| Вся дорога: один тип на всю дорогу и края.
+Grip sets how the cars hold the road in this location. ||| Сцепление: как машины держат дорогу в этой локации.
+Make your own car. ||| Создайте свою машину.
++ New, then pick a class and a body car. ||| + Новая, затем выберите класс и кузов.
+Spend the class's stat points: it can never beat the best car of its class. ||| Распределите очки: машина не обгонит лучшую в своём классе.
+Wheels: hover a name to see the wheel. ||| Колёса: наведите на имя, чтобы увидеть колесо.
+Your own body: load a .glb and fit it on the wheels. ||| Свой кузов: загрузите .glb и подгоните к колёсам.
+This puts your maps into the game. ||| Добавляет ваши карты в игру.
+Blur must be closed. ||| Blur должен быть закрыт.
+When it ends you can start the game. ||| После окончания можно запускать игру.
+If it fails, the red lines say why. ||| При ошибке красные строки объяснят причину.
+Custom LAN race: starts Blur and sets the lobby to this map. ||| Своя LAN-гонка: запускает Blur и ставит в лобби эту карту.
+In game: Multiplayer > LAN > Host game (Y). ||| В игре: Мультиплеер > LAN > Создать игру (Y).
+Start normally: just starts the game. ||| Обычный запуск: просто запускает игру.
+Build + install first: the game plays the last build. ||| Сначала соберите: игра использует последнюю сборку.
+The notes show what is new. ||| В заметках написано, что нового.
+Type your answer, then press OK. ||| Введите ответ и нажмите OK.
+Close the window to cancel. ||| Закройте окно для отмены.
+This is how the map looks in the game's minimap. ||| Так карта выглядит на миникарте игры.
+Bright = your road. Press Esc to close. ||| Яркое = ваша дорога. Esc закрывает.
+Checks your .glb before it joins the library. ||| Проверяет .glb перед добавлением в библиотеку.
+Green is fine, yellow is a warning, red stops the import. ||| Зелёное = хорошо, жёлтое = внимание, красное останавливает импорт.
+After the import, click in the view to place it. ||| После импорта кликните в виде, чтобы поставить.
+Places many objects along a path in one go. ||| Ставит сразу много объектов вдоль пути.
+1  Draw a path on the ground. ||| 1  Нарисуйте путь на земле.
+2  Click objects in the library to add them. ||| 2  Кликайте объекты в библиотеке, чтобы добавить.
+3  Set the spacing and the sides. The preview shows where they go. ||| 3  Задайте шаг и стороны. Просмотр покажет, куда они встанут.
+4  Press Add. It becomes one group. ||| 4  Нажмите Добавить. Получится одна группа.
+The program reads your own game files once. ||| Программа один раз читает файлы вашей игры.
+It does not change Blur.exe or the game's files. ||| Blur.exe и файлы игры не меняются.
+Wait until the bar is full. ||| Дождитесь заполнения полосы.
+Start the game? ||| Запустить игру?
+Custom LAN race on  {}  >  {} ||| Своя LAN-гонка:  {}  >  {}
+Start the game normally ||| Запустить игру обычно
+Not now ||| Не сейчас
+   in game: Multiplayer > LAN > Host game (Y): the lobby is already on this map |||    в игре: Мультиплеер > LAN > Создать игру (Y): лобби уже на этой карте
+Blur is running ||| Blur запущен
+Blur is already running - close it first, then press Play again. ||| Blur уже запущен - закройте его и снова нажмите Играть.
+Blur is already running - close it first. ||| Blur уже запущен - сначала закройте его.
+Blur REBORN.exe is not there yet - start the map builder again (its first-start setup makes it). ||| Blur REBORN.exe ещё нет - запустите редактор снова (он создаётся при первом запуске).
+Build first ||| Сначала соберите
+Press Build + install once first: Blur REBORN plays the built maps. ||| Сначала выполните сборку: Blur REBORN играет собранные карты.
+Starting Blur: Multiplayer > LAN > Host game (Y) - the race is set to {} / {} ||| Запуск Blur: Мультиплеер > LAN > Создать игру (Y) - гонка на {} / {}
+A build is already running ||| Сборка уже идёт
+Building... ||| Сборка...
+Starting the build... ||| Начало сборки...
+Preparing the race lines ||| Подготовка линий гонки
+Placing objects ||| Расстановка объектов
+Building the game database ||| Сборка базы игры
+Game database done ||| База игры готова
+Writing gamedata.pak ||| Запись gamedata.pak
+gamedata.pak written ||| gamedata.pak записан
+Making the road models ||| Создание моделей дороги
+root.pak written (models, pictures, minimaps) ||| root.pak записан (модели, картинки, миникарты)
+Installing into the game ||| Установка в игру
+Level files: map {} of {} ||| Файлы уровня: карта {} из {}
+Lighting: light points along the roads ||| Освещение: точки света вдоль дорог
+Collision floor (walls, bridges) ||| Столкновения (стены, мосты)
+Built and installed ||| Собрано и установлено
+Built and installed in {} s. ||| Собрано и установлено за {} с.
+The build failed (see below) ||| Сборка не удалась (см. ниже)
+FAILED ||| ОШИБКА
+Build failed ||| Ошибка сборки
+{}\n\nThe full log is in the Building window and in {} ||| {}\n\nПолный журнал в окне сборки и в {}
+Problems ||| Проблемы
+{}\n\nBuild anyway? ||| {}\n\nВсё равно собрать?
+{}: crossing without a bridge ||| {}: пересечение без моста
+{}: length {} m ||| {}: длина {} м
+could not write the QuickStart target: {} ||| не удалось записать цель QuickStart: {}
+Could not reach GitHub - check your internet connection and try again ||| Нет связи с GitHub - проверьте интернет и повторите
+You have the newest version ({}) ||| У вас новейшая версия ({})
+Open the release page ||| Открыть страницу выпуска
+(no notes) ||| (нет заметок)
+Update source ||| Источник обновлений
+The GitHub page updates come from (owner/name or a link).\nEmpty = back to MDPRO's. ||| Страница GitHub для обновлений (owner/name или ссылка).\nПусто = страница MDPRO.
+That is not a GitHub page (owner/name) ||| Это не страница GitHub (owner/name)
+Updates now come from github.com/{} ||| Обновления теперь с github.com/{}
+Blur Map Builder - first start ||| Blur Map Builder - первый запуск
+Setting up the map builder from YOUR game files (only the first time) ||| Настройка редактора из ВАШИХ файлов игры (только в первый раз)
+Blur.exe and the game's own files are not changed. Takes a few minutes. ||| Blur.exe и файлы игры не меняются. Займёт несколько минут.
+Blur Map Builder - something went wrong ||| Blur Map Builder - что-то пошло не так
+Sorry, the map builder hit an error.\n\nA report was saved:\n{}\n\nPlease send that file to {} on Discord. Your maps are safe (auto-save). ||| Извините, в редакторе произошла ошибка.\n\nОтчёт сохранён:\n{}\n\nОтправьте файл {} в Discord. Ваши карты целы (автосохранение).
+Put this program into your Blur folder (next to Blur.exe), or start it with --game "<Blur folder>". ||| Положите программу в папку Blur (рядом с Blur.exe) или запустите с --game "<папка Blur>".
+BLUR MAP BUILDER  by MDPRO   -   version {}   (bugs / crash reports: {} on Discord)\nBlur (c) 2010 Bizarre Creations / Activision - this is a free fan tool, it needs your own copy of the game.\nAmax by the Amax team.   Model layout: BlurImportExport by TimberStalker (github.com/TimberStalker).\nMade with C# and .NET. ||| BLUR MAP BUILDER  от MDPRO   -   версия {}   (ошибки: {} в Discord)\nBlur (c) 2010 Bizarre Creations / Activision - бесплатный фанатский инструмент, нужна ваша копия игры.\nAmax от команды Amax.   Формат моделей: BlurImportExport от TimberStalker (github.com/TimberStalker).\nСделано на C# и .NET.
+Language ||| Язык
+The program restarts to change the language. Restart now? ||| Для смены языка программа перезапустится. Перезапустить сейчас?
+... coming from above (0 = all round) ||| ... сверху (0 = со всех сторон)
+Bloom strength (0 = no glow) ||| Сила сияния (0 = нет)
+Bloom threshold (higher = less glow) ||| Порог сияния (выше = меньше)
+Exposure max ||| Экспозиция макс
+Exposure min ||| Экспозиция мин
+↻ Turn 90° ||| ↻ Поворот 90°
+The body fits {} ({} of its {} points of room used). ||| Кузов помещается в {} (использовано {} из {} точек).
+along the road {} m (main road, driving direction) ||| по дороге {} м (главная, по ходу движения)
+Body imported: {} ({} triangles), on {} ||| Кузов загружен: {} (треугольников {}), на {}
+front to back ||| спереди назад
+in turn ||| по очереди
+middle ||| середина
+random ||| случайно
+your own model (.glb) - look only, tick Solid to make it a box wall ||| ваша модель (.glb) - только вид, Твёрдый = стена-коробка
+breaks / falls when hit ||| ломается / падает от удара
+look only - tick Solid to make it a wall ||| только вид - Твёрдый = стена
+moves when hit ||| двигается от удара
+animated ||| анимирован
+{}  ({}, {} / {}) ||| {}  ({}, {} / {})
+Your models ||| Ваши модели
+Imported ||| Импорт
+1 view ||| 1 вид
+2 views ||| 2 вида
+3 views ||| 3 вида
+4 views ||| 4 вида
+5 views ||| 5 видов
+6 views ||| 6 видов
+Top view ||| Сверху
+Add view ||| Добавить вид
+Path scatter (objects along a path) ||| Расстановка объектов по пути
+REAL SHAPES in the 3D view ||| НАСТОЯЩИЕ ФОРМЫ в 3D виде
+The body fits {} ({} of its {} points of room used) ||| Кузов помещается в {} (использовано {} из {} точек)
+size x{}, forward {} m, up {} m, turned {}°, wheels {} / {} m ||| размер x{}, вперёд {} м, вверх {} м, поворот {}°, колёса {} / {} м
+FRONT ||| ПЕРЕД
+Hide this panel ||| Скрыть панель
+Show this panel ||| Показать панель
+Blur Map Builder {} is out (you have {}).\nYour maps are kept. The map builder restarts by itself when the update is done. ||| Вышел Blur Map Builder {} (у вас {}).\nВаши карты сохранятся. Редактор сам перезапустится после обновления.
+Update now ||| Обновить сейчас
+Later ||| Позже
+Connecting to GitHub... ||| Подключение к GitHub...
+{}: {} MB of {} MB ||| {}: {} МБ из {} МБ
+{}: {} MB ||| {}: {} МБ
+Update installed - restarting the map builder... ||| Обновление установлено - перезапуск редактора...
+Update now downloads it and restarts the map builder. ||| «Обновить сейчас» скачает её и перезапустит редактор.
+Your maps are kept. ||| Ваши карты сохранятся.
+The release has no program files. ||| В выпуске нет файлов программы.
+Updates install into the finished program only (this is a build folder). ||| Обновления ставятся только в готовую программу (это папка сборки).
+Download failed - check your internet connection and try again. Nothing was changed.\n({}) ||| Загрузка не удалась - проверьте интернет и повторите. Ничего не изменено.\n({})
+The downloaded {} is not a program - update stopped, nothing changed. ||| Загруженный {} - не программа. Обновление остановлено, ничего не изменено.
+Could not replace {}: {} ||| Не удалось заменить {}: {}

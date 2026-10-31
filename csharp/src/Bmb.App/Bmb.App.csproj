@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>Blur Map Builder</AssemblyName>
+    <RootNamespace>Bmb.App</RootNamespace>
+    <ApplicationIcon>..\..\assets\icon.ico</ApplicationIcon>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <TieredPGO>true</TieredPGO>
+    <NoWarn>$(NoWarn);CA1416;CS8602;CS8604;CS8600;CS8601;CS8603;CS8605;CS8618;CS8622;WFO1000;WFO5001</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\assets\splash.png" LogicalName="splash.png" />
+    <EmbeddedResource Include="..\..\assets\icon.ico" LogicalName="icon.ico" />
+    <EmbeddedResource Include="..\..\assets\ru.txt" LogicalName="ru.txt" />
+    <EmbeddedResource Include="..\..\assets\ru_keys.txt" LogicalName="ru_keys.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Bmb.Core\Bmb.Core.csproj" />
+  </ItemGroup>
+</Project>
