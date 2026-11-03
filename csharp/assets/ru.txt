@@ -792,3 +792,62 @@ Updates install into the finished program only (this is a build folder). ||| О�
 Download failed - check your internet connection and try again. Nothing was changed.\n({}) ||| Загрузка не удалась - проверьте интернет и повторите. Ничего не изменено.\n({})
 The downloaded {} is not a program - update stopped, nothing changed. ||| Загруженный {} - не программа. Обновление остановлено, ничего не изменено.
 Could not replace {}: {} ||| Не удалось заменить {}: {}
+Car skins ||| Скины машин
+Skins for the game's own cars - written into Blur REBORN only (Blur.exe stays as it is) ||| Скины для машин игры - только в Blur REBORN (Blur.exe не меняется)
+Build skins ||| Собрать скины
+Uninstall all skins ||| Удалить все скины
+GAME CARS WITH A BODY PICTURE ||| МАШИНЫ ИГРЫ С КАРТИНКОЙ КУЗОВА
+Picture ||| Картинка
+Show the UV lines ||| Показать UV-линии
+Export picture... ||| Экспорт картинки...
+Export UV map... ||| Экспорт UV-карты...
+Load my skin... ||| Загрузить мой скин...
+Use the game's picture ||| Картинка игры
+Skin on ||| Скин вкл
+● on ||| ● вкл
+○ off ||| ○ выкл
+Loading the picture... ||| Загрузка картинки...
+YOUR SKIN - {}, game picture {} x {} ||| ВАШ СКИН - {}, картинка игры {} x {}
+the game's own picture - {}, game picture {} x {} ||| картинка игры - {}, размер {} x {}
+This picture can't be shown: {} ||| Эту картинку нельзя показать: {}
+CAR SKINS: looking for the game's cars with a body picture (once)... ||| СКИНЫ: поиск машин игры с картинкой кузова (один раз)...
+CAR SKINS: {} game cars can get a skin. Pick one, export its picture, paint it, load it, then Build skins ||| СКИНЫ: машин, которым можно сделать скин: {}. Выберите, экспортируйте картинку, перекрасьте, загрузите и соберите скины
+Car skins: the game's cars can't be read: {} ||| Скины: машины игры не читаются: {}
+Export the game's picture ||| Экспорт картинки игры
+Export the UV map ||| Экспорт UV-карты
+Saved the game's picture: {} ||| Картинка игры сохранена: {}
+Saved the UV map (lines on a clear picture - put it as the top layer): {} ||| UV-карта сохранена (линии на прозрачной картинке - положите верхним слоем): {}
+Your skin ||| Ваш скин
+This picture can't be used: {} ||| Эту картинку нельзя использовать: {}
+Skin loaded for {}. Build skins puts it in the game ||| Скин загружен для {}. «Собрать скины» добавит его в игру
+Forget your skin for {} ({})? ||| Забыть ваш скин для {} ({})?
+Back to the game's picture. Build skins again to take it out of the game ||| Снова картинка игры. Соберите скины, чтобы убрать скин из игры
+Skin on. Build skins again for the game ||| Скин вкл. Соберите скины для игры
+Skin off. Build skins again for the game ||| Скин выкл. Соберите скины для игры
+Blur is running: close it first, then Build skins ||| Blur запущен: закройте его, затем соберите скины
+Building skins into Blur REBORN... ||| Сборка скинов в Blur REBORN...
+No skin is on: nothing to change ||| Ни один скин не включён: менять нечего
+Skins built: {} car(s) with your skin, {} back to the game's picture. Start Blur REBORN to see them ||| Скины собраны: машин с вашим скином {}, возвращено к картинке игры {}. Запустите Blur REBORN
+Build skins failed: {} ||| Сборка скинов не удалась: {}
+Turn every skin off and put the game's own pictures back into Blur REBORN?\n\nYour skin pictures are kept: tick 'Skin on' to use one again. ||| Выключить все скины и вернуть картинки игры в Blur REBORN?\n\nВаши картинки сохранятся: отметьте «Скин вкл», чтобы снова использовать.
+Blur REBORN's root.pak is not there yet: press Build + install once first. ||| root.pak для Blur REBORN ещё нет: сначала выполните сборку.
+New body pictures for the game's Boss, Legend, livery and Rat cars. ||| Новые картинки кузова для машин Boss, Legend, с ливреей и Rat.
+Plain-paint cars (Supra, S3, Shelby...) have no body picture to change. ||| У машин с простой краской (Supra, S3, Shelby...) нет картинки кузова.
+Export picture and Export UV map, paint over them (UV map = top layer), save as PNG. ||| Экспортируйте картинку и UV-карту, рисуйте поверх (UV-карта сверху), сохраните PNG.
+Load my skin, then Build skins. Start Blur REBORN to see it. ||| Загрузите скин и соберите скины. Запустите Blur REBORN.
+Untick Skin on, or Uninstall all skins, then Build skins: the game's pictures come back. ||| Снимите «Скин вкл» или «Удалить все скины», затем соберите: картинки игры вернутся.
+Only Blur REBORN changes. Blur.exe stays as it is. Build + install keeps your skins too. ||| Меняется только Blur REBORN. Blur.exe не меняется. Сборка карт тоже сохраняет скины.
+Export picture ||| Экспорт картинки
+Export UV map ||| Экспорт UV-карты
+Load my skin ||| Загрузить мой скин
+Also in normal Blur ||| Также в обычном Blur
+Off: only Blur REBORN gets the skins. On: Build skins also writes them into normal Blur's cache\root.pak (your original stays in Blur Map Builder\base, and comes back when you turn this off) ||| Выкл: скины только в Blur REBORN. Вкл: «Собрать скины» также пишет их в cache\root.pak обычного Blur (оригинал хранится в Blur Map Builder\base и вернётся при выключении)
+Car skins in normal Blur ||| Скины в обычном Blur
+Normal Blur gets the skins too at the next Build skins ||| Обычный Blur тоже получит скины при следующей сборке скинов
+Only Blur REBORN gets the skins. Build skins puts normal Blur's own pack back ||| Скины только в Blur REBORN. «Собрать скины» вернёт оригинальный пакет обычного Blur
+Class A ||| Класс A
+Class B ||| Класс B
+Class C ||| Класс C
+Class D ||| Класс D
+Other ||| Другие
+{} on ||| вкл: {}

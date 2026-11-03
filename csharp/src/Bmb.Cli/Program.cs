@@ -121,6 +121,57 @@ switch (cmd)
         Console.WriteLine($"{n} pairs, {less} use a less detailed tyre, {bad} not complete");
         break;
     }
+    case "skins":           // skins GAME OUTDIR [CAR PIC SKIN.png]: the skinnable cars; with a car: its picture, UV map, and the skin written + read back
+    {
+        Paths.Init(args[1]);
+        var cars = Skins.Cars(Console.WriteLine);
+        Console.WriteLine($"{cars.Count} skinnable cars ({sw.Elapsed.TotalSeconds:0.0} s)");
+        foreach (var c in cars) Console.WriteLine($"{c.Car}	{c.Body}	{string.Join(",", c.Pictures.Take(6))}");
+        if (args.Length > 4)
+        {
+            string car = args[3], pic = args[4], dir = args[2];
+            Directory.CreateDirectory(dir);
+            var t = System.Diagnostics.Stopwatch.StartNew();
+            Skins.Picture(car, pic).Save(Path.Combine(dir, car + "_" + pic + ".png"));
+            Skins.UvMap(car, pic).Save(Path.Combine(dir, car + "_" + pic + "_uv.png"));
+            Console.WriteLine($"picture + UV map {t.ElapsedMilliseconds} ms");
+            var skin = Rgba.Load(args[5]);
+            var model = Skins.ModelBytes(car);
+            var lv = Skins.Levels(model, pic);
+            t.Restart();
+            foreach (var l in lv)
+            {
+                var enc = Skins.Encode(skin.Resize(l.W, l.H), l.Fmt, l.Mips, l.Size);
+                Console.WriteLine($"  {l.W} x {l.H} {l.Fmt} mips {l.Mips}: {enc.Length} bytes, stored {l.Size} {(enc.Length == l.Size ? "OK" : "DIFFERENT")}");
+            }
+            Console.WriteLine($"encoded in {t.ElapsedMilliseconds} ms");
+            Skins.Set(car, pic, args[5]);
+            var put = Skins.Apply(model, car, new[] { pic }, Console.WriteLine);
+            File.WriteAllBytes(Path.Combine(dir, car + ".skinned.model"), put);
+            int changed = 0; for (int i = 0; i < put.Length; i++) if (put[i] != model[i]) changed++;
+            Console.WriteLine($"same length {put.Length == model.Length}, {changed} bytes changed, only inside the picture: {lv.Sum(l => l.Size)} bytes of picture data");
+            var back = Skins.Levels(put, pic).OrderByDescending(q => q.W).First();
+            var dec = Previews.Dxt5Decode(put.AsSpan(back.At, back.W * back.H), back.W, back.H);
+            var want = skin.Resize(back.W, back.H).Px; double err = 0; for (int i = 0; i < dec.Length; i++) err += Math.Abs(dec[i] - want[i]);
+            Console.WriteLine($"read back 1024: mean error {err / dec.Length:0.00} of 255");
+            CpModel.Read(put); Console.WriteLine("the skinned model still reads as a model");
+        }
+        break;
+    }
+    case "skininstall":     // skininstall GAME: Build skins (every skin that is on) into the game's rebrn root.pak, as the tab's button does
+    {
+        Paths.Init(args[1]);
+        if (Play.GameRunning()) { Console.WriteLine("Blur is running: close it first"); break; }
+        var (on, back) = Skins.Install(Console.WriteLine);
+        Console.WriteLine($"done: {on} car(s) with a skin, {back} back to the game's picture, {sw.Elapsed.TotalSeconds:0.0} s");
+        break;
+    }
+    case "skincheck":       // skincheck PACK ORIGINAL CAR...: is each car's model in PACK changed from ORIGINAL (same length)?
+    {
+        using var P = new Pak(args[1]); using var O = new Pak(args[2]);
+        foreach (var car in args.Skip(3)) { var a = P.Read(Skins.ModelPath(car))!; var o = O.Read(Skins.ModelPath(car))!; Console.WriteLine($"{car}: {(a.AsSpan().SequenceEqual(o) ? "the game's own" : a.Length == o.Length ? "SKINNED (same length)" : "CHANGED LENGTH")}"); }
+        break;
+    }
     case "bake":            // bake GAME: Bake 3D pictures (BMB_PREVIEW = where they go)
     {
         Paths.Init(args[1]);

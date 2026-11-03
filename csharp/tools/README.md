@@ -45,6 +45,7 @@ powershell -ExecutionPolicy Bypass -File tools/make_scratch.ps1
 - `bash tools/run_ui_test.sh`: the window with a robot mouse (every tab); `scratch\ui\ui_timing.txt` + screenshots. It needs `scratch\sample.glb` (any .glb) and uses `BMB_PREVIEW` so hover pictures stay in `scratch`: `base` is a link into the game.
 - `python tools/audit_ui.py`: every text of the Python window that the C# source does not hold (finds forgotten tools).
 - `python tools/compare_setup.py scratch/setup_game "J:/blur - user 1"`: the C# first start against Python's. The exe's `--setup` runs it; `scratch\setup_game` needs REAL copies of Blur.exe, cache\gamedata.pak + root.pak, levels\showroom and amax\plugins\plugins.lua.
+- `bmbcli skins GAME OUTDIR [CAR PIC SKIN.png]`: the skinnable cars; with a car, its picture + UV map and a test skin written and read back. `bmbcli skincheck PACK ORIGINAL CAR...`: which car models in a pack carry a skin.
 - `bmbcli bake GAME`: Bake 3D pictures, with `BMB_PREVIEW` set.
 - `python tools/py_ui_bench.py`: the Python window's speed.
 

@@ -26,7 +26,7 @@ public sealed partial class MainForm : Form
     public readonly Panel Centre = new() { Dock = DockStyle.Fill, BackColor = Theme.Bg };
     readonly bool _test;
     readonly Button _build, _update;
-    Panel _lightPanel = null!; CarPanel _car = null!;
+    Panel _lightPanel = null!; CarPanel _car = null!; SkinPanel _skins = null!;
 
     public MainForm(bool test = false)
     {
@@ -83,7 +83,7 @@ public sealed partial class MainForm : Form
         _build.Font = Theme.Bold;
         right.Controls.Add(_build);
         var tabs = _topTabs;
-        foreach (var (val, txt) in new[] { ("2d", "▦ 2D map"), ("3d", "▲ 3D"), ("collision", "⚠ Collision"), ("ai", "➿ AI path"), ("light", "☀ Lighting"), ("surface", "▩ Surface"), ("car", "⛟ Custom car") })
+        foreach (var (val, txt) in new[] { ("2d", "▦ 2D map"), ("3d", "▲ 3D"), ("collision", "⚠ Collision"), ("ai", "➿ AI path"), ("light", "☀ Lighting"), ("surface", "▩ Surface"), ("car", "⛟ Custom car"), ("skins", "🎨 Car skins") })
         {
             var t = Theme.Toggle(txt, on => { if (on) SetMode(val); });
             t.Font = Theme.Bold;
@@ -134,8 +134,9 @@ public sealed partial class MainForm : Form
         Centre.BringToFront();
         _lightPanel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Theme.Bg, Visible = false };
         _car = new CarPanel(this) { Dock = DockStyle.Fill, Visible = false };
+        _skins = new SkinPanel(this) { Dock = DockStyle.Fill, Visible = false };
         Centre.Controls.Add(G);
-        Centre.Controls.Add(_lightPanel); Centre.Controls.Add(_car);
+        Centre.Controls.Add(_lightPanel); Centre.Controls.Add(_car); Centre.Controls.Add(_skins);
         V3.MakePanels(Centre);
         Foldable("left", _leftP, true); Foldable("right", _rightP, false);
         G.BringToFront();
@@ -230,6 +231,14 @@ public sealed partial class MainForm : Form
         car.Controls.Add(new Label { Text = "Your own cars - fair: never better than the best car of their class", AutoSize = true, ForeColor = Theme.Head, Font = Theme.Ui, Margin = new Padding(8, 6, 8, 6) });
         car.Controls.Add(Theme.Btn("❔ Help", Help));
         _bars["car"] = car;
+        var sk = Bar();
+        var bs = Theme.Btn("⚙ Build skins", async () => await _skins.BuildSkins(), Theme.Orange); bs.Font = Theme.Bold; sk.Controls.Add(bs);
+        sk.Controls.Add(Theme.Btn("✖ Uninstall all skins", async () => await _skins.UninstallAll()));
+        _skinNormal = Theme.Check("Also in normal Blur", false, v => { if (!_fillingSkins) _skins.SetNormal(v); });
+        _skinNormal.Margin = new Padding(10, 7, 4, 0);
+        sk.Controls.Add(Look.Tip(_skinNormal, "Off: only Blur REBORN gets the skins. On: Build skins also writes them into normal Blur's cache\\root.pak (your original stays in Blur Map Builder\\base, and comes back when you turn this off)"));
+        sk.Controls.Add(Theme.Btn("❔ Help", Help));
+        _bars["skins"] = sk;
         var ai = Bar();
         ai.Controls.Add(new Label { Text = "AI PATH", AutoSize = true, ForeColor = ColorTranslator.FromHtml("#ffe27a"), Font = Theme.Bold, Margin = new Padding(4, 7, 8, 0) });
         ai.Controls.Add(Theme.Btn("⟳ Auto AI path", AiAuto)); ai.Controls.Add(Theme.Btn("🏁 Racing line", AiRacing));
@@ -325,6 +334,8 @@ public sealed partial class MainForm : Form
         }
     }
     readonly ComboBox _langBox = Theme.Combo(92);
+    CheckBox _skinNormal = null!; bool _fillingSkins;
+    public void SkinNormalShow(bool on) { _fillingSkins = true; _skinNormal.Checked = on; _fillingSkins = false; }
     bool _restart;
 
     void LanguageChanged()
@@ -355,7 +366,9 @@ public sealed partial class MainForm : Form
         _update.Visible = W >= (Lang.Ru ? 1400 : 1180);
         int tabs = _topTabs.Controls.Cast<Control>().Sum(c => c.PreferredSize.Width + c.Margin.Horizontal) + 10, right = _topRight.PreferredSize.Width;
         bool two = tabs + right + 8 > W;
-        _topPanel.Height = two ? 76 : 40;
+        _topTabs.WrapContents = tabs > W;                         // a very narrow window: the tabs take two rows too
+        int tabRows = _topTabs.WrapContents ? _topTabs.GetPreferredSize(new Size(W, 0)).Height : 36;
+        _topPanel.Height = Math.Max(40, tabRows + 4) + (two ? 36 : 0);
         _topRight.Dock = two ? DockStyle.Bottom : DockStyle.Right; _topRight.Height = 36;
         _layoutBar.Visible = W >= 1120;
     }
@@ -382,6 +395,7 @@ public sealed partial class MainForm : Form
         {
             case "light": Say($"LIGHTING of the location '{D.Loc.Str("name")}': pick a game city as the start, change what you like, Build + install, look in game"); break;
             case "car": Say("CUSTOM CAR: + New, pick a class and a body car, then spend the class's stat points"); break;
+            case "skins": break;
             case "surface": Say($"SURFACE: left drag = paint {Surface.Surfaces[Map2.BrushKey].Label}, right drag = remove, middle drag = move the map, wheel = zoom.  Whole road: type / sides / varied asphalt on the bar"); break;
             case "ai": Say("AI PATH: the yellow line is where the AI cars drive (the band = their lane). Auto = made for you; Pen = draw it yourself (drag on the road; drawing over a part replaces that part)"); break;
             case "3d": case "collision": Say($"{(m == "collision" ? "COLLISION view" : "3D view")}: middle-drag turn, Shift+middle move, wheel zoom, numpad 7/1/3 views, 5 flat, Home all  (F3 = next view)"); break;
@@ -402,7 +416,7 @@ public sealed partial class MainForm : Form
     void LoadBegin(string m)
     {
         _tabTime.Restart();
-        _loadName = m switch { "2d" => "2D map", "3d" => "3D view", "collision" => "Collision", "ai" => "AI path", "light" => "Lighting", "surface" => "Surface", _ => "Custom car" };
+        _loadName = m switch { "2d" => "2D map", "3d" => "3D view", "collision" => "Collision", "ai" => "AI path", "light" => "Lighting", "surface" => "Surface", "skins" => "Car skins", _ => "Custom car" };
         if (!IsHandleCreated) return;
         SendMessage(Handle, 0x000B, IntPtr.Zero, IntPtr.Zero);                 // WM_SETREDRAW off
         if (_tabMs.GetValueOrDefault(m, long.MaxValue) > ShowAfterMs) LoadShow(5);
@@ -443,15 +457,16 @@ public sealed partial class MainForm : Form
         LoadStep(20);
         V3.SetMode(m);
         LoadStep(60);
-        bool canvas = m is not ("light" or "car");
-        _rightP.Visible = _rightSash.Visible = canvas; _leftP.Visible = _leftSash.Visible = m != "car";
-        G.Visible = canvas; _lightPanel.Visible = m == "light"; _car.Visible = m == "car";
+        bool canvas = m is not ("light" or "car" or "skins");
+        _rightP.Visible = _rightSash.Visible = canvas; _leftP.Visible = _leftSash.Visible = m is not ("car" or "skins");
+        G.Visible = canvas; _lightPanel.Visible = m == "light"; _car.Visible = m == "car"; _skins.Visible = m == "skins"; _build.Visible = m != "skins";        // the skins have their own Build skins
         if (canvas) { G.BringToFront(); ActiveControl = G; G.Focus(); }
         else if (m == "light") { _lightPanel.BringToFront(); LightBuild(); }
+        else if (m == "skins") { _skins.BringToFront(); _skins.Refresh2(); SkinNormalShow(Skins.Normal); }
         else { _car.BringToFront(); _car.Refresh2(); }
         ResumeLayout(true);
         LoadStep(80);
-        FitBar();
+        FitTop(); FitBar();
         FitPanels();
         if (m == "surface") SurfRefresh();
         else if (m == "ai") AiRefresh();
@@ -642,6 +657,7 @@ public sealed partial class MainForm : Form
         return d.ShowDialog(this) == DialogResult.OK ? d.FileName : null;
     }
     public string? PickFile(string title, string filter) => OpenFile(title, filter);
+    public string? SaveAs(string title, string filter, string name) => SaveFile(title, filter, name);
 
     void ExportMap()
     {
@@ -743,7 +759,7 @@ public sealed partial class MainForm : Form
         if (key == Keys.Escape && !Is3D) { Map2.Escape(); return true; }
         if (typing) return base.ProcessCmdKey(ref msg, k);
         if (Is3D) return V3.Key(key, ctrl, shift, alt) || base.ProcessCmdKey(ref msg, k);
-        if (Mode is "light" or "car") return base.ProcessCmdKey(ref msg, k);
+        if (Mode is "light" or "car" or "skins") return base.ProcessCmdKey(ref msg, k);
         if (alt) return base.ProcessCmdKey(ref msg, k);
         var tool = key switch { Keys.S => "select", Keys.M => "move", Keys.A => "add", Keys.I => "insert", Keys.E => "erase", Keys.R => "row", Keys.P => "single", Keys.B => "branch", Keys.L => "split", Keys.D => "measure", _ => null };
         if (tool != null) { SetTool(tool); return true; }
@@ -784,7 +800,7 @@ public sealed partial class MainForm : Form
 
     void ToggleView()
     {
-        var order = new[] { "2d", "3d", "collision", "ai", "light", "surface", "car" };
+        var order = new[] { "2d", "3d", "collision", "ai", "light", "surface", "car", "skins" };
         SetMode(order[(Array.IndexOf(order, Mode) + 1) % order.Length]);
     }
 
@@ -835,7 +851,7 @@ public sealed partial class MainForm : Form
         if (W < 50) return;
         // the 3D tab on a narrow window: the object list goes first, the middle stays usable
         V3.Narrow(W < 1240);
-        bool canvas = Mode is not ("light" or "car");
+        bool canvas = Mode is not ("light" or "car" or "skins");
         _rightP.Visible = _rightSash.Visible = canvas && !(Mode == "3d" && W < 1240);
         var shown = _panels.Where(p => !p.Height && p.C.Visible && (p.C.Parent?.Visible ?? false)).ToList();
         int total = shown.Where(p => !Folded(p.Name)).Sum(p => Sz(p.Name, p.Default));

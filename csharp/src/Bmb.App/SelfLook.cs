@@ -120,14 +120,62 @@ public sealed partial class MainForm
         V3.Dirty(); V3.Reset(); await pump(60);
     }
 
+    /// the Car skins tab, on the scratch copy only: the list, a picture, a skin loaded, Build skins into the scratch Blur REBORN pack and back
+    async Task SkinTests(Action<string, bool> ok, Func<int, Task> pump, Action<string> shot)
+    {
+        SetMode("skins");
+        for (int i = 0; i < 600 && (_skins.Cars == null || _skins.Busy); i++) await pump(100);
+        ok("Car skins: the game's cars are listed", _skins.Cars is { Count: > 0 });
+        ok($"Car skins: grouped by class ({_skins.Groups} groups)", _skins.Groups >= 4);
+        int open0 = _skins.OpenGroups; _skins.ToggleGroup(0); ok("Car skins: a group opens and closes", _skins.OpenGroups != open0); _skins.ToggleGroup(0);
+        ok("Car skins: no Build + install on this tab", !_build.Visible);
+        var astra = _skins.Cars?.FindIndex(c => c.Car == "opel_astra_extreme_legend_viii") ?? -1;
+        if (astra < 0) return;
+        bool shown = false; _skins.Shown = () => shown = true;
+        _skins.Pick(astra); for (int i = 0; i < 80 && !shown; i++) await pump(100);
+        ok("Car skins: a car's picture with its UV lines shows", shown);
+        shot("skins_tab");
+        string dir = Path.Combine(Path.GetDirectoryName(Bmb.Core.Paths.Data)!, "skin_test"); Directory.CreateDirectory(dir);
+        TestFile = Path.Combine(dir, "pic.png"); _skins.Run("export"); ok("Car skins: Export picture", File.Exists(Path.Combine(dir, "pic.png")));
+        TestFile = Path.Combine(dir, "uv.png"); _skins.Run("uv"); ok("Car skins: Export UV map", File.Exists(Path.Combine(dir, "uv.png")));
+        string skin = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Bmb.Core.Paths.Data)!)!, "test_skin.png");
+        if (!File.Exists(skin)) skin = Path.Combine(dir, "pic.png");
+        string pack = Path.Combine(Bmb.Core.Paths.PackDir, "root.pak");
+        if (!pack.Contains("scratch", StringComparison.OrdinalIgnoreCase)) { ok("Car skins: the pack test only runs on the scratch copy", false); return; }
+        if (!File.Exists(pack)) { Directory.CreateDirectory(Path.GetDirectoryName(pack)!); File.Copy(Bmb.Core.Paths.RootOriginal, pack); }
+        TestFile = skin; shown = false; _skins.Run("load"); for (int i = 0; i < 80 && !shown; i++) await pump(100);
+        ok("Car skins: Load my skin turns it on", Bmb.Core.Skins.OnNow().ContainsKey("opel_astra_extreme_legend_viii"));
+        shot("skins_loaded");
+        string msg = await Task.Run(() => Bmb.Core.Skins.Install(_ => { })).ContinueWith(t => $"{t.Result.On} on");      // the core: the button refuses while a real Blur runs
+        using (var p = new Bmb.Core.Pak(pack))
+        {
+            var m = p.Read(Bmb.Core.Skins.ModelPath("opel_astra_extreme_legend_viii"))!;
+            ok($"Build skins: the skin is in Blur REBORN's root.pak ({msg})", !m.AsSpan().SequenceEqual(Bmb.Core.Skins.ModelBytes("opel_astra_extreme_legend_viii")) && m.Length == Bmb.Core.Skins.ModelBytes("opel_astra_extreme_legend_viii").Length);
+        }
+        // normal Blur, on the scratch copy: the skin goes into its cache root.pak, and the original comes back byte for byte
+        Bmb.Core.Skins.Normal = true; await Task.Run(() => Bmb.Core.Skins.Install(_ => { }));
+        string normal = Bmb.Core.Skins.NormalPack;
+        if (!normal.Contains("scratch", StringComparison.OrdinalIgnoreCase)) { ok("Car skins: the normal Blur test only runs on the scratch copy", false); return; }
+        using (var p = new Bmb.Core.Pak(normal))
+            ok("Also in normal Blur: the skin is in its cache root.pak", !p.Read(Bmb.Core.Skins.ModelPath("opel_astra_extreme_legend_viii"))!.AsSpan().SequenceEqual(Bmb.Core.Skins.ModelBytes("opel_astra_extreme_legend_viii")));
+        Bmb.Core.Skins.TurnAllOff(); await Task.Run(() => Bmb.Core.Skins.Install(_ => { }));
+        ok("Uninstall: normal Blur's root.pak is the original again, byte for byte", File.ReadAllBytes(normal).AsSpan().SequenceEqual(File.ReadAllBytes(Bmb.Core.Paths.RootOriginal)));
+        Bmb.Core.Skins.Normal = false;
+        using (var p = new Bmb.Core.Pak(pack))
+            ok("Uninstall: the game's own picture is back in root.pak", p.Read(Bmb.Core.Skins.ModelPath("opel_astra_extreme_legend_viii"))!.AsSpan().SequenceEqual(Bmb.Core.Skins.ModelBytes("opel_astra_extreme_legend_viii")));
+        Bmb.Core.Skins.Remove("opel_astra_extreme_legend_viii", _skins.PicNow!);
+        SetMode("2d");
+    }
+
     async Task LookTests(Action<string, bool> ok, Func<int, Task> pump, Action<string> shot)
     {
+        await SkinTests(ok, pump, shot);
         await RowTests(ok, pump, shot);
         SetMode("2d"); Map2.Sel = 4; WithTilt(10, r => { Map2.Fit(); G.Refresh(); RefreshProps(); Application.DoEvents(); shot("tilt_2d"); });
         SetMode("3d"); WithTilt(10, r => { V3.Dirty(); V3.Ensure(); int i = Enumerable.Range(0, r.Count).OrderByDescending(k => Math.Abs(r.Tan[k])).First(); V3.Select("point:4"); V3.LookAt(r.Centre[i].X, r.Height[i], r.Centre[i].Z, r.Heading[i]); V3.Gizmo = "rotate"; G.Refresh(); Application.DoEvents(); shot("tilt_3d"); V3.Gizmo = "move"; });
         V3.Dirty(); V3.Reset(); await pump(60);
         SetMode("collision"); WithTilt(10, r => { V3.Dirty(); V3.Ensure(); G.Refresh(); Application.DoEvents(); shot("tilt_collision"); }); V3.Dirty(); await pump(60);
-        foreach (var m in new[] { "2d", "3d", "collision", "ai", "light", "surface", "car" })
+        foreach (var m in new[] { "2d", "3d", "collision", "ai", "light", "surface", "car", "skins" })
         {
             SetMode(m); Help(); await pump(120);
             ok($"Short help: {m}", HelpCard.Last is { Visible: true } && HelpCard.Last.Width < 520 && HelpCard.Last.Height < 420);
@@ -140,7 +188,7 @@ public sealed partial class MainForm
         foreach (var (w, h) in new[] { (960, 600), (1100, 680), (1280, 720), (1920, 1040) })
         {
             WindowState = FormWindowState.Normal; Size = new Size(w, h); await pump(120);
-            foreach (var m in new[] { "2d", "3d", "collision", "ai", "light", "surface", "car" })
+            foreach (var m in new[] { "2d", "3d", "collision", "ai", "light", "surface", "car", "skins" })
             {
                 SetMode(m); await pump(140);
                 FitPanels(); await pump(40);

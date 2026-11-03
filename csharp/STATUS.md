@@ -77,8 +77,17 @@ follow your Wheels choice.
   **Not tested in game yet**, so the feel of the car and the AI on a tilted road are unknown. A map with no tilt builds byte for byte as before.
 - **3D object list:** every row, named group and whole list has an eye (hide or show, in this view only: the game and the map file do not change) and a target (solo). Track points have the eye only. The eye resets when you open another map or close the program. X still removes an object from the game.
 - **3D view light:** a low sun and hard shadows on the ground (button Sun + shadows). Shadows fall on the ground only, not on the road or on objects.
+- **Car skins tab (2.1.0, 2026-11-03):** skins for the game's Boss / Legend / livery / Rat cars (38 cars; plain-paint cars have no body picture).
+  Per car: Export picture, Export UV map, Load my skin, Use the game's picture, Skin on. "Build skins" writes the skins that are on straight into
+  Blur REBORN's `rebrn
+oot.pak` (and the game's picture back for skins turned off); Build + install keeps them too. Blur.exe and `cache\` are never touched.
+  Skins live in `Blur Map Builder\skins\` (same files as the Python prototype). Car list, body picture and UV map checked against Python: same 38 cars.
+  **Seen in game 2026-11-03: the user's Corvette C3 Rat skin shows in Blur REBORN.**
+  **Also in normal Blur** (tick, off by default, asks first): Build skins also makes normal Blur's `cache
+oot.pak` = the original + the skins;
+  turned off (or Uninstall all), the original comes back byte for byte. Car models are only in root.pak (root_streaming.pak has none). **Seen in normal Blur too (2026-11-03): the Corvette C3 Rat skin shows.**
 - **Panels:** the small arrow at the top corner of Locations, Object library, Objects in this map and the Map panel folds it to a thin strip; the arrow brings it back. It is kept with the layout.
-- **Release:** version 2.0.0, file name `Blur Map Builder.exe`, the name the Python updater looks for. It updates itself from GitHub releases like Python did; the last version stays beside it as `.old`. `Blur Map Tester.exe` stays the small Python one (it uses the same files). Nothing has been pushed or released yet.
+- **Release:** version 2.1.0 (2.0.0 on 2026-10-31, 2.1.0 with Car skins on 2026-11-03), file name `Blur Map Builder.exe`, the name the Python updater looks for. It updates itself from GitHub releases like Python did; the last version stays beside it as `.old`. `Blur Map Tester.exe` stays the small Python one (it uses the same files). Released 2026-10-31 as v2.0.0; the source is in the `csharp` folder of the GitHub repo.
 - **Language:** English or Russian. The first start asks once; the box at the bottom right changes it (the program restarts). The build log and names from the game stay in English. The choice is kept in `%LOCALAPPDATA%\BlurMapBuilderCS\language.txt`, not in the game folder.
 - **Look:** the old icon, rounded buttons, dark lists and scroll bars, short help on every tab and window (Help, F1 or the ? button; All keys opens the long list).
 - **Window size:** tested at 960x600, 1100x680, 1280x720 and 1920x1040. Narrow windows get shorter names, two rows on top; the 3D tab drops the object list and map panel below 1240 wide. Lighting and Custom car no longer show the map panels.
@@ -101,7 +110,7 @@ follow your Wheels choice.
 
 ## Test results
 
-- **Robot test of the window: 202 of 202 passed, in English and in Russian** (run again after the tilt + look change; the Windows test also tries 4 window sizes on every tab). It used the tools of every tab, undid everything, and the map came back
+- **Robot test of the window: 214 of 214 passed, in English and in Russian** (run again after the tilt + look change; the Windows test also tries 4 window sizes on every tab). It used the tools of every tab, undid everything, and the map came back
   exactly. `world.json` was the same byte for byte afterwards. Then it built from the window.
 - **Your map + 5 cars, compared with Python file by file:**
   - gamedata pack: **all 623 files the same**.

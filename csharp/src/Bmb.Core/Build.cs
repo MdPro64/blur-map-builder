@@ -758,6 +758,7 @@ public static class Build
         }
         if (!opt.NoCars) frontend = CarBuild.MenuPictures(frontend, wld);
         Add(FrontendBpr, frontend);
+        files.AddRange(Skins.BuildFiles(files, n => src.Read(n)!, log));      // the player's car skins, over whatever the build changed in those models
         // a later entry replaces an earlier one of the same name (Python's dict)
         var uniq = new Dictionary<string, byte[]>();
         foreach (var (k, v) in files) uniq[k] = v;

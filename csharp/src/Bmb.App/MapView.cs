@@ -620,7 +620,7 @@ public sealed class MapView
     void Light() { D.Touched(); G.Invalidate(); }
     void Chosen() { Selected?.Invoke(); G.Invalidate(); }
 
-    bool Off => Mode is "3d" or "collision" or "light" or "car";
+    bool Off => Mode is "3d" or "collision" or "light" or "car" or "skins";
 
     void PanStart(MouseEventArgs e) { _pan = (e.X, e.Y); _panStart = (Ox, Oz); }
 
