@@ -22,9 +22,9 @@ public sealed class ModelInfo
 }
 public sealed class ElementInfo { public string Name = ""; public double[] Box = new double[6]; public float[] M = new float[12]; public int Parent, ModelIndex, ElementIndex; }
 public sealed class TexInfo { public string Name = ""; public int W, H, Mips, Off, Len; public uint Dxt; }
-public sealed class VStreamInfo { public int Bytes, Count, Start, Length; public List<(int Type, int Channel, int Sub)> Def = new(); }
+public sealed class VStreamInfo { public int Bytes, Count, Start, Length; public List<(int Type, int Channel, int Sub)> Def = new(); public List<int> Offs = new(); }
 public sealed class FStreamInfo { public int Start, Count, Length; }
-public sealed class MeshInfo { public int Material, Definition, FaceType, FaceStream, Object; public List<(int FaceOff, int FaceCount, int VOff, int VCount)> Data1 = new(); public List<int> VOffset = new(); }
+public sealed class MeshInfo { public int Material, Definition, FaceType, FaceStream, Object; public List<(int FaceOff, int FaceCount, int VOff, int VCount)> Data1 = new(); public List<int> VOffset = new(), VStream = new(); }
 
 public static class CpModel
 {
@@ -147,8 +147,8 @@ public static class CpModel
             for (int j = 0; j < nd; j++)
             {
                 r.Ad();
-                int type = r.Int(); r.Ad(4); int ch = r.Int(), sub = r.Int();
-                vs.Def.Add((type, ch, sub));
+                int type = r.Int(); int eoff = r.Int(); int ch = r.Int(), sub = r.Int();
+                vs.Def.Add((type, ch, sub)); vs.Offs.Add(eoff);
             }
             r.Ad();
             int no = r.Int();
@@ -222,7 +222,7 @@ public static class CpModel
             for (int j = 0; j < n1; j++) { r.Ad(); int a = r.Int(), b = r.Int(), c = r.Int(), d = r.Int(); mi.Data1.Add((a, b, c, d)); }
             r.Ad();
             int n2 = r.Int();
-            for (int j = 0; j < n2; j++) { r.Ad(); r.Ad(8); mi.VOffset.Add(r.Int()); r.Ad(4); r.Ad(); r.Ad(8); }
+            for (int j = 0; j < n2; j++) { r.Ad(); mi.VStream.Add(r.Int()); r.Ad(4); mi.VOffset.Add(r.Int()); r.Ad(4); r.Ad(); r.Ad(8); }   // VStream: which vertex block
             m.MeshInfos.Add(mi);
         }
         return m;

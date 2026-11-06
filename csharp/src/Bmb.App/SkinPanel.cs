@@ -19,6 +19,10 @@ public sealed class SkinPanel : Panel
     SkinCar? _car;
     int _job; bool _filling;
     public bool Busy;
+    // shown while Build skins works: a moving bar and the step it is on
+    readonly ProgressBar _bar = new() { Style = ProgressBarStyle.Marquee, MarqueeAnimationSpeed = 25, Width = 260, Height = 10, Margin = new Padding(6, 10, 8, 4) };
+    readonly Label _step = new() { AutoSize = true, ForeColor = Theme.Warn, Margin = new Padding(0, 6, 4, 4), UseMnemonic = false };
+    readonly FlowLayoutPanel _busyRow = new() { AutoSize = true, WrapContents = false, BackColor = Theme.Bg, Margin = new Padding(0, 4, 0, 0), Visible = false };
 
     public SkinPanel(MainForm f)
     {
@@ -27,7 +31,7 @@ public sealed class SkinPanel : Panel
         _on = Theme.Check("Skin on", false, v => { if (!_filling) Turn(v); });
         var left = new Panel { Dock = DockStyle.Left, Width = 290, BackColor = Theme.Panel };
         left.Controls.Add(_tree);
-        left.Controls.Add(new Label { Text = "GAME CARS WITH A BODY PICTURE", Dock = DockStyle.Top, Height = 30, ForeColor = Theme.Head, Font = Theme.Bold, Padding = new Padding(8, 8, 0, 0) });
+        left.Controls.Add(new Label { Text = "GAME CARS", Dock = DockStyle.Top, Height = 30, ForeColor = Theme.Head, Font = Theme.Bold, Padding = new Padding(8, 8, 0, 0) });
         _tree.BringToFront();
         _tree.DrawNode += DrawCar;
         _tree.AfterSelect += (_, e) => { if (_filling) return; if (e.Node?.Tag is int) Pick(); };
@@ -43,10 +47,13 @@ public sealed class SkinPanel : Panel
         var row2 = new FlowLayoutPanel { AutoSize = true, WrapContents = true, BackColor = Theme.Bg, Margin = new Padding(0, 6, 0, 0) };
         row2.Controls.Add(Theme.Btn("⇧ Export picture...", ExportPicture));
         row2.Controls.Add(Theme.Btn("⇧ Export UV map...", ExportUv));
+        var maskBtn = Theme.Btn("⇧ Export UV mask...", ExportMask); row2.Controls.Add(maskBtn);
+        Look.Tip(maskBtn, "The painted parts solid white on a clear picture. In Photoshop: Ctrl + click its layer to select only the car's body.");
         row2.Controls.Add(Theme.Btn("⇩ Load my skin...", LoadSkin, Theme.Blue));
+        _busyRow.Controls.Add(_bar); _busyRow.Controls.Add(_step);
         row2.Controls.Add(Theme.Btn("Use the game's picture", RemoveSkin));
         _on.Margin = new Padding(12, 6, 2, 0); row2.Controls.Add(_on);
-        _top.Controls.Add(_title); _top.Controls.Add(row); _top.Controls.Add(row2); _top.Controls.Add(_state);
+        _top.Controls.Add(_busyRow); _top.Controls.Add(_title); _top.Controls.Add(row); _top.Controls.Add(row2); _top.Controls.Add(_state);
         _top.Resize += (_, _) => { row.MaximumSize = row2.MaximumSize = new Size(Math.Max(300, _top.ClientSize.Width - 24), 0); _state.MaximumSize = new Size(Math.Max(300, _top.ClientSize.Width - 30), 0); };
         var right = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Bg, Padding = new Padding(10, 0, 10, 10) };
         right.Controls.Add(_view); right.Controls.Add(_top);
@@ -165,13 +172,13 @@ public sealed class SkinPanel : Panel
     public int OpenGroups => _tree.Nodes.Cast<TreeNode>().Count(n => n.IsExpanded);
     public void ToggleGroup(int g) { var n = _tree.Nodes[g]; if (n.IsExpanded) n.Collapse(); else n.Expand(); }
     /// the robot presses a button
-    public void Run(string what) { if (what == "export") ExportPicture(); else if (what == "uv") ExportUv(); else if (what == "load") LoadSkin(); }
+    public void Run(string what) { if (what == "export") ExportPicture(); else if (what == "uv") ExportUv(); else if (what == "mask") ExportMask(); else if (what == "load") LoadSkin(); }
 
     /// the skin (or the game's picture) with the UV lines, made in the background
     void Show2()
     {
         if (_car == null || Pic == null) return;
-        string car = _car.Car, pic = Pic; bool uv = _uv.Checked, has = Skins.Has(car, pic);
+        string car = _car.Car, pic = Pic; bool uv = _uv.Checked, has = Skins.Has(car, pic), plain = _car.Plain;
         _filling = true; _on.Checked = Skins.IsOn(car, pic); _on.Enabled = has; _filling = false;
         int job = ++_job;
         _state.Text = Lang.T("Loading the picture...");
@@ -183,7 +190,9 @@ public sealed class SkinPanel : Panel
                 var img = has && File.Exists(Skins.SkinFile(car, pic)) ? Bmb.Core.Rgba.Load(Skins.SkinFile(car, pic)) : game;
                 if (img.W > 1024) img = img.Resize(1024, Math.Max(1, img.H * 1024 / img.W));
                 if (uv) img = Skins.UvMap(car, pic, img.W, img.H, img);
-                return (img.ToBitmap(), Lang.T($"{(has ? "YOUR SKIN" : "the game's own picture")} - {pic}, game picture {game.W} x {game.H}"));
+                string what = Lang.T($"{(has ? "YOUR SKIN" : "the game's own picture")} - {pic}, game picture {game.W} x {game.H}");
+                if (plain) what = Lang.T("Plain-paint car: your skin covers the whole body (clear parts turn light grey).") + Environment.NewLine + what;
+                return (img.ToBitmap(), what);
             }
             catch (Exception e) { return ((Bitmap?)null, Lang.T("This picture can't be shown: " + e.Message)); }
         }).ContinueWith(t =>
@@ -217,6 +226,15 @@ public sealed class SkinPanel : Panel
         if (path == null) return;
         Skins.UvMap(_car.Car, Pic).Save(path);
         _f.Say("Saved the UV map (lines on a clear picture - put it as the top layer): " + path, Theme.Good);
+    }
+
+    void ExportMask()
+    {
+        if (_car == null || Pic == null) return;
+        var path = _f.SaveAs("Export the UV mask", "PNG picture|*.png", $"{_car.Car}_{Pic}_mask.png");
+        if (path == null) return;
+        Skins.UvMap(_car.Car, Pic, mask: true).Save(path);
+        _f.Say("Saved the UV mask (the body's parts white, the rest clear): " + path, Theme.Good);
     }
 
     void LoadSkin()
@@ -254,19 +272,29 @@ public sealed class SkinPanel : Panel
         if (Play.GameRunning()) { _f.Say("Blur is running: close it first, then Build skins", Theme.Bad); return "running"; }
         Busy = true;
         _f.Say("Building skins into Blur REBORN...");
+        ShowBusy(Lang.T("Building skins..."));
         var lines = new List<string>();
         string msg; Color col;
         try
         {
-            var (on, back) = await Task.Run(() => Skins.Install(s => { lock (lines) lines.Add(s); }));
+            var (on, back) = await Task.Run(() => Skins.Install(s => { lock (lines) lines.Add(s); }, s => BeginInvoke(() => ShowBusy(Lang.T(s)))));
             msg = on == 0 && back == 0 ? Lang.T("No skin is on: nothing to change") : Lang.T($"Skins built: {on} car(s) with your skin, {back} back to the game's picture. Start Blur REBORN to see them");
             col = Theme.Good;
         }
         catch (Exception e) { msg = Lang.T("Build skins failed: " + e.Message); col = Theme.Bad; }
         Busy = false;
+        ShowBusy(null);
         _f.Say(msg, col);
         _tree.Invalidate();
         return msg;
+    }
+
+    /// the moving bar and its step while Build skins works (null = hide)
+    void ShowBusy(string? step)
+    {
+        if (IsDisposed) return;
+        _busyRow.Visible = step != null;
+        if (step != null) { _step.Text = step; _f.Say(step); }
     }
 
     public void SetNormal(bool on)

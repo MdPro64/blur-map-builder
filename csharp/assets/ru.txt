@@ -851,3 +851,16 @@ Class C ||| Класс C
 Class D ||| Класс D
 Other ||| Другие
 {} on ||| вкл: {}
+GAME CARS ||| МАШИНЫ ИГРЫ
+Plain-paint car: your skin covers the whole body (clear parts turn light grey). ||| Машина с простой краской: скин покрывает весь кузов (прозрачные места станут светло-серыми).
+New body pictures for the game's cars: Boss, Legend, livery, Rat and plain-paint cars. ||| Новые картинки кузова для машин игры: Boss, Legend, ливреи, Rat и машины с простой краской.
+Plain-paint cars: the skin covers the whole body. ||| Машины с простой краской: скин покрывает весь кузов.
+Export UV mask... ||| Экспорт UV-маски...
+Export the UV mask ||| Экспорт UV-маски
+The painted parts solid white on a clear picture. In Photoshop: Ctrl + click its layer to select only the car's body. ||| Окрашиваемые части белым на прозрачном фоне. В Photoshop: Ctrl + клик по слою, чтобы выделить только кузов.
+Saved the UV mask (the body's parts white, the rest clear): {} ||| UV-маска сохранена (кузов белый, остальное прозрачно): {}
+Building skins... ||| Сборка скинов...
+Preparing {} ({} of {}) ||| Подготовка: {} ({} из {})
+Writing Blur REBORN's pack... ||| Запись пакета Blur REBORN...
+Writing normal Blur's pack... ||| Запись пакета обычного Blur...
+Putting normal Blur's own pack back... ||| Возврат родного пакета обычного Blur...

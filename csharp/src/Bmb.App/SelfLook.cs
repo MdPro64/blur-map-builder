@@ -146,11 +146,28 @@ public sealed partial class MainForm
         TestFile = skin; shown = false; _skins.Run("load"); for (int i = 0; i < 80 && !shown; i++) await pump(100);
         ok("Car skins: Load my skin turns it on", Bmb.Core.Skins.OnNow().ContainsKey("opel_astra_extreme_legend_viii"));
         shot("skins_loaded");
+        // a plain-paint car (no body picture of its own): it is listed, and gets a picture slot when its skin is built
+        const string X5 = "bmw_x548msport_stock";
+        int x5 = _skins.Cars!.FindIndex(c => c.Car == X5);
+        ok($"Car skins: plain-paint cars are listed ({_skins.Cars.Count(c => c.Plain)} of them)", x5 >= 0 && _skins.Cars[x5].Plain && _skins.Cars.Count(c => c.Plain) >= 30);
+        if (x5 >= 0)
+        {
+            shown = false; _skins.Pick(x5); for (int i = 0; i < 80 && !shown; i++) await pump(100);
+            TestFile = skin; shown = false; _skins.Run("load"); for (int i = 0; i < 80 && !shown; i++) await pump(100);
+            ok("Car skins: a plain-paint car takes a skin", Bmb.Core.Skins.OnNow().ContainsKey(X5));
+            shot("skins_plain");
+        }
         string msg = await Task.Run(() => Bmb.Core.Skins.Install(_ => { })).ContinueWith(t => $"{t.Result.On} on");      // the core: the button refuses while a real Blur runs
         using (var p = new Bmb.Core.Pak(pack))
         {
             var m = p.Read(Bmb.Core.Skins.ModelPath("opel_astra_extreme_legend_viii"))!;
             ok($"Build skins: the skin is in Blur REBORN's root.pak ({msg})", !m.AsSpan().SequenceEqual(Bmb.Core.Skins.ModelBytes("opel_astra_extreme_legend_viii")) && m.Length == Bmb.Core.Skins.ModelBytes("opel_astra_extreme_legend_viii").Length);
+            if (x5 >= 0)
+            {
+                var px = p.Read(Bmb.Core.Skins.ModelPath(X5))!; var ox = Bmb.Core.Skins.ModelBytes(X5);
+                bool reads = true; try { var M = Bmb.Core.CpModel.Read(px); reads = M.FxFiles.Any(f => f.Equals("veh_Paint_b_c.fx", StringComparison.OrdinalIgnoreCase)) && !M.FxFiles.Any(f => f.StartsWith("veh_paint_a", StringComparison.OrdinalIgnoreCase)); } catch (Exception) { reads = false; }
+                ok("Build skins: the plain-paint car got its picture slot and still reads as a model", px.Length > ox.Length && reads);
+            }
         }
         // normal Blur, on the scratch copy: the skin goes into its cache root.pak, and the original comes back byte for byte
         Bmb.Core.Skins.Normal = true; await Task.Run(() => Bmb.Core.Skins.Install(_ => { }));
@@ -162,8 +179,12 @@ public sealed partial class MainForm
         ok("Uninstall: normal Blur's root.pak is the original again, byte for byte", File.ReadAllBytes(normal).AsSpan().SequenceEqual(File.ReadAllBytes(Bmb.Core.Paths.RootOriginal)));
         Bmb.Core.Skins.Normal = false;
         using (var p = new Bmb.Core.Pak(pack))
+        {
             ok("Uninstall: the game's own picture is back in root.pak", p.Read(Bmb.Core.Skins.ModelPath("opel_astra_extreme_legend_viii"))!.AsSpan().SequenceEqual(Bmb.Core.Skins.ModelBytes("opel_astra_extreme_legend_viii")));
-        Bmb.Core.Skins.Remove("opel_astra_extreme_legend_viii", _skins.PicNow!);
+            if (x5 >= 0) ok("Uninstall: the plain-paint car is the game's own again", p.Read(Bmb.Core.Skins.ModelPath(X5))!.AsSpan().SequenceEqual(Bmb.Core.Skins.ModelBytes(X5)));
+        }
+        foreach (var c in new[] { "opel_astra_extreme_legend_viii", X5 })
+            foreach (var pic in (Bmb.Core.Skins.All().Obj(c)?.Keys.ToList() ?? new List<string>())) Bmb.Core.Skins.Remove(c, pic);
         SetMode("2d");
     }
 
