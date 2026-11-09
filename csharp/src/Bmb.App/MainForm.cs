@@ -10,7 +10,7 @@ public sealed partial class MainForm : Form
     public readonly GlControl G = new() { Dock = DockStyle.Fill };
     public MapView Map2; public View3D V3;
     public string Mode = "2d";
-    readonly Dictionary<string, Control> _bars = new();
+    Dictionary<string, Control> _bars = new();
     readonly Dictionary<string, CheckBox> _tabs = new();
     readonly Dictionary<string, List<CheckBox>> _tools = new();
     readonly Panel _toolRow = new() { Dock = DockStyle.Top, Height = 48, BackColor = Theme.Panel2 };
@@ -40,7 +40,7 @@ public sealed partial class MainForm : Form
         G.Render += () => { if (Is3D) V3.Draw(); else Map2.Draw(); };
         if (Doc.AutosaveNewer() && !test && MessageBox.Show("There are unsaved changes from last time (auto-save). Open them?", "Auto-save", MessageBoxButtons.YesNo) == DialogResult.Yes) { D.Load(); D.LoadAutosave(); D.Dirty = true; }
         else D.Load();
-        _build = Theme.Btn("▶ Build + install (Ctrl+B)", Build, Theme.Orange);
+        _build = Look.Tip(Theme.Btn("▶ Build + install", Build, Theme.Orange), "Build the maps and put them in the game (Ctrl+B)");
         _update = Theme.Btn("⟳ Check for updates", () => CheckUpdates(false));
         MakeUi();
         Map2.Edited += Changed; Map2.Selected += RefreshProps; Map2.Say += (s, c) => Say(s, c);
@@ -53,7 +53,7 @@ public sealed partial class MainForm : Form
         SizeChanged += (_, _) => { if (IsHandleCreated) { FitTop(); FitPanels(); } };
     }
 
-    public bool Is3D => Mode is "3d" or "collision";
+    public bool Is3D => Mode is "3d" or "collision" or "land";
 
     // ---- layout of the window ---------------------------------------------------------------------------------
     readonly List<(string Name, Control C, Splitter S, int Default, bool Height)> _panels = new();
@@ -76,25 +76,28 @@ public sealed partial class MainForm : Form
     {
         var bar = _topPanel;
         var right = _topRight;
-        right.Controls.Add(Theme.Btn("⚙", UpdateSource));
+        Button? gear = null;
+        gear = Theme.Icon("⚙", () => SettingsMenu(gear!), "Settings: updates, window layout, language");
+        right.Controls.Add(gear);
         right.Controls.Add(_update);
-        _save = Theme.Btn("✔ Save (Ctrl+S)", DoSave); right.Controls.Add(_save);
-        _play = Theme.Btn("▶ Play (F5)", () => PlayDialog(), Theme.Blue); _play.Font = Theme.Bold; right.Controls.Add(_play);
+        right.Controls.Add(Theme.Icon("↶", Undo, "Undo (Ctrl+Z)")); right.Controls.Add(Theme.Icon("↷", Redo, "Redo (Ctrl+Y)"));
+        _save = Look.Tip(Theme.Btn("✔ Save", DoSave), "Save (Ctrl+S)"); right.Controls.Add(_save);
+        _play = Look.Tip(Theme.Btn("▶ Play", () => PlayDialog(), Theme.Blue), "Play the last build (F5)"); _play.Font = Theme.Bold; right.Controls.Add(_play);
         _build.Font = Theme.Bold;
         right.Controls.Add(_build);
         var tabs = _topTabs;
-        foreach (var (val, txt) in new[] { ("2d", "▦ 2D map"), ("3d", "▲ 3D"), ("collision", "⚠ Collision"), ("ai", "➿ AI path"), ("light", "☀ Lighting"), ("surface", "▩ Surface"), ("car", "⛟ Custom car"), ("skins", "🎨 Car skins") })
+        foreach (var (val, txt) in new[] { ("2d", "▦ 2D map"), ("3d", "▲ 3D"), ("land", "⛰ Landscape"), ("surface", "▩ Surface"), ("collision", "⚠ Collision"), ("ai", "➿ AI path"), ("light", "☀ Lighting"), ("car", "⛟ Custom car"), ("skins", "🎨 Car skins") })
         {
             var t = Theme.Toggle(txt, on => { if (on) SetMode(val); });
-            t.Font = Theme.Bold;
+            t.Font = Theme.Bold; Look.Tip(t, $"Ctrl+{_tabs.Count + 1}");
             _tabs[val] = t; tabs.Controls.Add(t);
         }
         bar.Controls.Add(tabs); bar.Controls.Add(right);
-        var bottom = new Panel { Dock = DockStyle.Bottom, Height = 30, BackColor = Theme.Panel };
+        var bottom = _bottom = new Panel { Dock = DockStyle.Bottom, Height = 30, BackColor = Theme.Panel };
         var lay = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, WrapContents = false, BackColor = Theme.Panel, Padding = new Padding(0, 2, 4, 0) };
         lay.Controls.Add(Theme.Lbl("Layout")); lay.Controls.Add(_layoutBox);
         lay.Controls.Add(Theme.Btn("Load", LayoutLoad)); lay.Controls.Add(Theme.Btn("Save", LayoutSave)); lay.Controls.Add(Theme.Btn("Delete", LayoutDelete)); lay.Controls.Add(Theme.Btn("Reset current layout", LayoutReset));
-        bottom.Controls.Add(_status); bottom.Controls.Add(lay);
+        bottom.Controls.Add(_status);
         _layoutBar = lay;
         var langBar = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, WrapContents = false, BackColor = Theme.Panel, Padding = new Padding(4, 2, 6, 0) };
         _langBox.Items.Add("English"); _langBox.Items.Add("Русский");
@@ -102,7 +105,7 @@ public sealed partial class MainForm : Form
         _langBox.SelectionChangeCommitted += (_, _) => LanguageChanged();
         langBar.Controls.Add(new Label { Text = "🌐", AutoSize = true, ForeColor = Theme.Head, Font = Theme.Ui, Margin = new Padding(0, 5, 2, 0) });
         langBar.Controls.Add(Look.Tip(_langBox, "Language"));
-        bottom.Controls.Add(langBar);
+        bottom.Controls.Add(langBar); _langBar = langBar;
 
         MakeToolBars();
 
@@ -110,16 +113,8 @@ public sealed partial class MainForm : Form
         var tp = _leftP;
         tp.Controls.Add(_tree);
         var head = new Label { Text = "LOCATIONS & MAPS", UseMnemonic = false, Dock = DockStyle.Top, Height = 24, ForeColor = Theme.Head, Font = Theme.Bold, Padding = new Padding(4, 6, 0, 0) };
-        var btns = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Theme.Panel, Padding = new Padding(4) };
-        foreach (var (t, a, c) in new (string, Action, string?)[] { ("✚  New map (Ctrl+N)", NewMap, null), ("⌂  New location (Ctrl+L)", NewLocation, null), ("⧉  Duplicate map (Ctrl+D)", DupMap, null), ("✎  Rename (F2)", Rename, null),
-            ("✖  Delete map", DeleteMap, "#7a2a3a"), ("✖  Delete location", DeleteLocation, "#7a2a3a"), ("⇩  Import map (.blurmap)", ImportMap, null), ("⇧  Export this map", ExportMap, null) })
-        {
-            var b = Theme.Btn(t, a, c != null ? ColorTranslator.FromHtml(c) : null);
-            b.AutoSize = false; b.Width = 196; b.Height = 28; b.TextAlign = ContentAlignment.MiddleLeft; btns.Controls.Add(b);
-            _treeBtns.Add(b);
-        }
-        tp.Controls.Add(head); tp.Controls.Add(btns);
-        tp.Resize += (_, _) => { foreach (var q in _treeBtns) q.Width = Math.Max(60, tp.ClientSize.Width - 12); };
+        var tools = TreeTools();
+        tp.Controls.Add(tools); tp.Controls.Add(head);
         _tree.BringToFront();
         _lowP.Controls.Add(_checks);
         _lowP.Controls.Add(new Label { Text = "CHECKS", Dock = DockStyle.Top, Height = 22, ForeColor = Theme.Head, Font = Theme.Bold, Padding = new Padding(4, 4, 0, 0) });
@@ -140,8 +135,9 @@ public sealed partial class MainForm : Form
         V3.MakePanels(Centre);
         Foldable("left", _leftP, true); Foldable("right", _rightP, false);
         G.BringToFront();
-        Controls.Add(_body); Controls.Add(_toolRow); Controls.Add(bar); Controls.Add(bottom);
+        Controls.Add(_body); Controls.Add(_toolRow); Controls.Add(bar); Controls.Add(bottom); Controls.Add(_rail);
         _body.BringToFront();
+        MakeSimple();
         Look.DarkScroll(_tree, _checks, _props, _lightPanel);
         _tree.SelectedIndexChanged += (_, _) => TreePick();
         _tree.DrawMode = DrawMode.OwnerDrawFixed; _tree.ItemHeight = 22;
@@ -169,13 +165,49 @@ public sealed partial class MainForm : Form
         int w = Math.Max(_toolRow.Width, 200), total = 0;
         foreach (Control c in _toolRow.Controls)
         {
-            if (!c.Visible) continue;
-            int h = 0;
-            if (c is FlowLayoutPanel f) { h = f.GetPreferredSize(new Size(w, 0)).Height; f.Height = h; }
-            else { foreach (Control q in c.Controls) if (q is FlowLayoutPanel f2) { int e = f2.GetPreferredSize(new Size(w, 0)).Height; f2.Height = e; h += e; } c.Height = h; }
-            total += h;
+            if (!_bars.TryGetValue(Mode, out var cur) || c != cur) continue;      // (Visible is false for all while the row itself is hidden)
+            int Measure()
+            {
+                int h = 0;
+                if (c is FlowLayoutPanel f) { h = f.GetPreferredSize(new Size(w, 0)).Height; f.Height = h; }
+                else { foreach (Control q in c.Controls) if (q is FlowLayoutPanel f2) { int e = f2.GetPreferredSize(new Size(w, 0)).Height; f2.Height = e; h += e; } c.Height = h; }
+                return h;
+            }
+            // too narrow: the buttons drop their key hint "(S)" (it stays in the tooltip) before the bar takes another line
+            Compact(c, false);
+            int full = Measure();
+            Compact(c, true);
+            int small = Measure();
+            if (small >= full) { Compact(c, false); small = Measure(); }
+            total += small;
         }
+        _toolRow.Visible = total > 0;
         if (total > 0 && _toolRow.Height != total) _toolRow.Height = total;
+    }
+
+    readonly Dictionary<ButtonBase, string> _fullText = new();
+    static readonly System.Text.RegularExpressions.Regex KeyHint = new(@"\s+\([^()]{1,12}\)$");
+    void Compact(Control bar, bool on)
+    {
+        void Walk(Control p)
+        {
+            foreach (Control c in p.Controls)
+            {
+                if (c is ButtonBase b)
+                {
+                    if (!_fullText.TryGetValue(b, out var full))
+                    {
+                        if (!KeyHint.IsMatch(b.Text)) continue;
+                        _fullText[b] = full = b.Text;
+                        Look.Tip(b, full);
+                    }
+                    string want = on ? KeyHint.Replace(full, "") : full;
+                    if (b.Text != want) b.Text = want;
+                }
+                else Walk(c);
+            }
+        }
+        Walk(bar);
     }
 
     CheckBox ToolBtn(string key)
@@ -201,6 +233,7 @@ public sealed partial class MainForm : Form
     readonly Label _aiState = Theme.Lbl("");
     readonly List<(string Key, RadioButton B)> _brushBtns = new(), _sideBtns = new();
     readonly ComboBox _surfRoad = Theme.Combo(110), _surfFeel = Theme.Combo(110);
+    readonly Spin _bumpH = new("height (m)", 0.3, 0.05, 0.05, 2, "0.00"), _bumpSize = new("spacing (m)", 3, 0.5, 1, 20, "0.0");
     readonly Label _surfSides = new() { AutoSize = false, Width = 48, Height = 24, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.White };
     readonly CheckBox _surfVariety = new() { Text = "Varied asphalt", AutoSize = true, ForeColor = Theme.Text, Font = Theme.Ui, Margin = new Padding(8, 4, 2, 1), TabStop = false };
     Spin _aiLaneBox = null!;
@@ -217,19 +250,19 @@ public sealed partial class MainForm : Form
         foreach (var k in MapView.Types) TypeBox.Items.Add(k);
         TypeBox.SelectedItem = "Nitro"; TypeBox.SelectionChangeCommitted += (_, _) => { Map2.SetType((string)TypeBox.SelectedItem!); RefreshProps(); };
         g.Controls.Add(TypeBox);
-        tb.Controls.Add(_snapBox = Theme.Check("Snap (G)", false, v => Map2.Snap = v));
+        _snapBox = Theme.Toggle("⌗ Snap (G)", v => Map2.Snap = v); _snapBox.Margin = new Padding(6, 15, 2, 2);
+        tb.Controls.Add(Look.Tip(_snapBox, "Snap points to a 10 m grid"));
         Common(tb);
         _bars["2d"] = tb;
-        foreach (var (mode, text) in new[] { ("3d", "3D VIEW"), ("collision", "COLLISION  -  green = drive here, red = solid, yellow = bridges and tilted road"), ("light", "LIGHTING of the whole location") })
         {
             var f = Bar();
-            f.Controls.Add(new Label { Text = text, AutoSize = true, ForeColor = Theme.Head, Font = Theme.Ui, Margin = new Padding(4, 7, 8, 0) });
-            Common(f);
-            _bars[mode] = f;
+            f.Controls.Add(new Label { Text = "LIGHTING of the whole location", AutoSize = true, ForeColor = Theme.Head, Font = Theme.Ui, Margin = new Padding(4, 7, 8, 0) });
+            f.Controls.Add(Theme.Icon("❔", Help, "Short help for this tab (F1)"));
+            _bars["light"] = f;
         }
         var car = Bar();
         car.Controls.Add(new Label { Text = "Your own cars - fair: never better than the best car of their class", AutoSize = true, ForeColor = Theme.Head, Font = Theme.Ui, Margin = new Padding(8, 6, 8, 6) });
-        car.Controls.Add(Theme.Btn("❔ Help", Help));
+        car.Controls.Add(Theme.Icon("❔", Help, "Short help for this tab (F1)"));
         _bars["car"] = car;
         var sk = Bar();
         var bs = Theme.Btn("⚙ Build skins", async () => await _skins.BuildSkins(), Theme.Orange); bs.Font = Theme.Bold; sk.Controls.Add(bs);
@@ -237,7 +270,7 @@ public sealed partial class MainForm : Form
         _skinNormal = Theme.Check("Also in normal Blur", false, v => { if (!_fillingSkins) _skins.SetNormal(v); });
         _skinNormal.Margin = new Padding(10, 7, 4, 0);
         sk.Controls.Add(Look.Tip(_skinNormal, "Off: only Blur REBORN gets the skins. On: Build skins also writes them into normal Blur's cache\\root.pak (your original stays in Blur Map Builder\\base, and comes back when you turn this off)"));
-        sk.Controls.Add(Theme.Btn("❔ Help", Help));
+        sk.Controls.Add(Theme.Icon("❔", Help, "Short help for this tab (F1)"));
         _bars["skins"] = sk;
         var ai = Bar();
         ai.Controls.Add(new Label { Text = "AI PATH", AutoSize = true, ForeColor = ColorTranslator.FromHtml("#ffe27a"), Font = Theme.Bold, Margin = new Padding(4, 7, 8, 0) });
@@ -251,34 +284,41 @@ public sealed partial class MainForm : Form
         Common(ai);
         _bars["ai"] = ai;
         // the Surface tab: brush on top, whole road below
-        var sf = new Panel { Dock = DockStyle.Top, BackColor = ColorTranslator.FromHtml("#122036") };
-        var low = Bar(); low.BackColor = sf.BackColor; var top = Bar(); top.BackColor = sf.BackColor;
-        var note = new Label { Text = "LEFT click = add\nRIGHT click = delete", AutoSize = true, BackColor = ColorTranslator.FromHtml("#1c3a5c"), ForeColor = ColorTranslator.FromHtml("#7dffa8"), Font = Theme.Ui, Padding = new Padding(6, 2, 6, 2), Margin = new Padding(4) };
-        top.Controls.Add(note);
-        var bt = Group(top, "BRUSH");
-        var shortName = new Dictionary<string, string> { ["roughdirt"] = "Rough", ["sand"] = "Sand", ["water"] = "Water", ["deepwater"] = "Deep water", ["tarmac"] = "Asphalt" };
+        // row 1 = the brush (what you paint), row 2 = its options (only the ones for this brush) + the whole road
+        var sf = new Panel { Dock = DockStyle.Top, BackColor = Theme.Panel2 };
+        var low = Bar(); var top = Bar();
+        var bt = Group(top, "PAINT WITH  (left drag = paint, right drag = remove)");
+        var shortName = new Dictionary<string, string> { ["roughdirt"] = "Rough", ["sand"] = "Sand", ["water"] = "Water", ["deepwater"] = "Deep water", ["tarmac"] = "Asphalt", ["drygrass"] = "Dry grass" };
         foreach (var key in Surface.Order)
         {
             string k = key;
-            var r = Theme.Radio(shortName.GetValueOrDefault(k, Surface.Surfaces[k].Label), Surface.Surfaces[k].Colour, () => { Map2.BrushKey = k; Say($"Brush: {Surface.Surfaces[k].Label} - left drag paints, right drag removes"); });
+            var r = Theme.Radio(shortName.GetValueOrDefault(k, Surface.Surfaces[k].Label), Surface.Surfaces[k].Colour, () => { Map2.BrushKey = k; SurfBrushShow(); Say($"Brush: {Surface.Surfaces[k].Label} - left drag paints, right drag removes"); });
             r.Checked = k == "dirt"; _brushBtns.Add((k, r)); bt.Controls.Add(r);
         }
-        var size = new Spin("size (m)", 6, 1, 1, 40, "0"); size.Set += v => Map2.BrushSize = v; bt.Controls.Add(size);
-        var wr = Group(low, "WHOLE ROAD");
-        wr.Controls.Add(Theme.Lbl("type"));
-        foreach (var k in Surface.Surfaces.Keys.Where(k => k != "deepwater")) _surfRoad.Items.Add(Surface.Surfaces[k].Label);
-        _surfRoad.SelectionChangeCommitted += (_, _) => SurfSet("road", Surface.Surfaces.First(kv => kv.Value.Label == (string)_surfRoad.SelectedItem!).Key);
-        wr.Controls.Add(_surfRoad);
-        wr.Controls.Add(Theme.Lbl("sides")); wr.Controls.Add(Theme.Btn("-", () => SurfSides(-1))); wr.Controls.Add(_surfSides); wr.Controls.Add(Theme.Btn("+", () => SurfSides(1)));
-        foreach (var key in new[] { "dirt", "roughdirt", "gravel", "grass", "sand", "water", "deepwater" })
         {
-            string k = key;
-            var r = Theme.Radio(shortName.GetValueOrDefault(k, Surface.Surfaces[k].Label), Surface.Surfaces[k].Colour, () => SurfSet("side_type", k));
-            _sideBtns.Add((k, r)); wr.Controls.Add(r);
+            var rb = Theme.Radio("Bumps", MapView.BumpColour, () => { Map2.BrushKey = "bumps"; SurfBrushShow(); Say("Brush: BUMPS - the ground goes up and down like a broken road. Left drag adds, right drag removes"); });
+            _brushBtns.Add(("bumps", rb)); bt.Controls.Add(rb);
+            Look.Tip(rb, "Bumps: rough ground that goes up and down (a broken road). Works on the road and next to it.");
         }
+        var bo = Group(low, "BRUSH");
+        var size = new Spin("size (m)", 6, 1, 1, 40, "0").Tight(); size.Set += v => Map2.BrushSize = v; bo.Controls.Add(size);
+        bo.Controls.Add(Look.Tip(Theme.Colored("Clear paint", "#7a2a3a", SurfClear), "Removes everything painted on this map (the whole road settings stay)"));
+        var bg = Group(low, "BUMPS (the whole map)"); _bumpGroup = bg.Parent!;
+        _bumpH.Tight(); _bumpSize.Tight(); _bumpH.Set += v => SurfSet("bump_h", Math.Round(v, 2)); bg.Controls.Add(_bumpH);
+        _bumpSize.Set += v => SurfSet("bump_size", Math.Round(v, 1)); bg.Controls.Add(_bumpSize);
+        Look.Tip(_bumpH, "How high the bumps go (m)"); Look.Tip(_bumpSize, "How far apart the bumps are (m): small = rough, big = rolling");
+        bg.Controls.Add(Look.Tip(Theme.Colored("⚡ Auto bumps...", "#8a4a1a", SurfAutoBumps), "Bumpy stretches at random places along the road (not the whole road). Auto, or set the height, length and distance yourself"));
+        var wr = Group(low, "WHOLE ROAD");
+        foreach (var k in Surface.Surfaces.Keys.Where(k => k != "deepwater" && !Surface.Mixes.ContainsKey(k))) _surfRoad.Items.Add(Surface.Surfaces[k].Label);
+        _surfRoad.SelectionChangeCommitted += (_, _) => SurfSet("road", Surface.Surfaces.First(kv => kv.Value.Label == (string)_surfRoad.SelectedItem!).Key);
+        wr.Controls.Add(Look.Tip(_surfRoad, "What the whole road is made of"));
         _surfVariety.CheckedChanged += (_, _) => { if (!_filling2) SurfSet("variety", _surfVariety.Checked); };
-        wr.Controls.Add(_surfVariety);
-        wr.Controls.Add(Theme.Colored("Clear paint", "#7a2a3a", SurfClear));
+        wr.Controls.Add(Look.Tip(_surfVariety, "The game's own asphalt with worn, cracked parts (4 kinds), and repair patches at random places along the road"));
+        wr = Group(low, "SIDES OF THE ROAD");
+        wr.Controls.Add(Theme.Btn("-", () => SurfSides(-1))); wr.Controls.Add(_surfSides); wr.Controls.Add(Theme.Btn("+", () => SurfSides(1)));
+        foreach (var k in SideKeys) _surfSide.Items.Add(Surface.Surfaces[k].Label);
+        _surfSide.SelectionChangeCommitted += (_, _) => SurfSet("side_type", SideKeys[_surfSide.SelectedIndex]);
+        wr.Controls.Add(Look.Tip(_surfSide, "What the strips next to the road are made of (sides = how wide)"));
         var gr = Group(low, "GRIP (this location)");
         foreach (var (_, n) in UiText.FeelNames) _surfFeel.Items.Add(n);
         _surfFeel.SelectionChangeCommitted += (_, _) => SurfFeel(UiText.FeelNames.First(q => q.Name == (string)_surfFeel.SelectedItem!).Key);
@@ -286,11 +326,26 @@ public sealed partial class MainForm : Form
         Common(top);
         sf.Controls.Add(low); sf.Controls.Add(top);
         _bars["surface"] = sf;
+        SurfBrushShow();
+        _bars["land"] = LandBar();
         foreach (var c in _bars.Values) { c.Visible = false; _toolRow.Controls.Add(c); }
         _toolRow.Resize += (_, _) => FitBar();
     }
 
     CheckBox _snapBox = null!, _aiPenBtn = null!;
+    Control _bumpGroup = null!;
+    static readonly string[] SideKeys = { "dirt", "roughdirt", "gravel", "grass", "sand", "water", "deepwater" };
+    readonly ComboBox _surfSide = Theme.Combo(110);
+
+    /// the bump options only show with the Bumps brush
+    void SurfBrushShow()
+    {
+        if (_bumpGroup == null) return;
+        bool on = Map2.BrushKey == "bumps";
+        if (_bumpGroup.Visible == on) return;
+        _bumpGroup.Visible = on;
+        if (Mode == "surface") FitBar();
+    }
 
     // the top bar on a narrow window: shorter names first, then two rows
     readonly Panel _topPanel = new() { Dock = DockStyle.Top, Height = 40, BackColor = Theme.Panel };
@@ -360,22 +415,27 @@ public sealed partial class MainForm : Form
     {
         int W = ClientSize.Width;
         if (W < 50 || _save == null) return;
-        bool shorter = W < (Lang.Ru ? 1760 : 1420);
-        _save.Text = shorter ? "✔ Save" : "✔ Save (Ctrl+S)"; _play.Text = shorter ? "▶ Play" : "▶ Play (F5)";
-        if (!Building) _build.Text = shorter ? "▶ Build + install" : "▶ Build + install (Ctrl+B)";
-        _update.Visible = W >= (Lang.Ru ? 1400 : 1180);
-        int tabs = _topTabs.Controls.Cast<Control>().Sum(c => c.PreferredSize.Width + c.Margin.Horizontal) + 10, right = _topRight.PreferredSize.Width;
+        _update.Visible = _updateFound;
+        if (Simple) { _save.Text = "✔ Save"; if (!Building) _build.Text = "▶ Build + install"; return; }      // they sit in the bottom bar: room enough
+        int tabs = _topTabs.Controls.Cast<Control>().Sum(c => c.PreferredSize.Width + c.Margin.Horizontal) + 10;
+        // short labels first when it does not fit on one line (the full names are in the tooltips)
+        _save.Text = "✔ Save"; if (!Building) _build.Text = "▶ Build + install";
+        int right = _topRight.PreferredSize.Width;
+        if (tabs + right + 8 > W) { _save.Text = "✔"; if (!Building) _build.Text = "▶ Build"; right = _topRight.PreferredSize.Width; }
         bool two = tabs + right + 8 > W;
         _topTabs.WrapContents = tabs > W;                         // a very narrow window: the tabs take two rows too
         int tabRows = _topTabs.WrapContents ? _topTabs.GetPreferredSize(new Size(W, 0)).Height : 36;
         _topPanel.Height = Math.Max(40, tabRows + 4) + (two ? 36 : 0);
         _topRight.Dock = two ? DockStyle.Bottom : DockStyle.Right; _topRight.Height = 36;
-        _layoutBar.Visible = W >= 1120;
+
     }
 
     void Common(FlowLayoutPanel f)
     {
-        f.Controls.Add(Look.Tip(Theme.Btn("❔ Help", Help), "Short help for this tab (F1)")); f.Controls.Add(Look.Tip(Theme.Btn("⛶ Fit", FitNow), "Show the whole map")); f.Controls.Add(Look.Tip(Theme.Btn("↶ Undo", Undo), "Ctrl+Z")); f.Controls.Add(Look.Tip(Theme.Btn("↷ Redo", Redo), "Ctrl+Y"));
+        // on a bar with titled groups the two sit in a group without a title, so they line up with the buttons
+        bool groups = f.Controls.OfType<FlowLayoutPanel>().Any(p => p.FlowDirection == FlowDirection.TopDown);
+        var to = groups ? Group(f, " ") : f;
+        to.Controls.Add(Look.Tip(Theme.Btn("⛶ Fit", FitNow), "Show the whole map (F)")); to.Controls.Add(Theme.Icon("❔", Help, "Short help for this tab (F1)"));
     }
 
     void FitNow() { if (Is3D) V3.Reset(); else Map2.Fit(); G.Invalidate(); }
@@ -387,6 +447,7 @@ public sealed partial class MainForm : Form
         _settingMode = true;
         Mode = m;
         foreach (var (k, t) in _tabs) t.Checked = k == m;
+        RailRefresh();
         _settingMode = false;
         LoadBegin(m);
         try { ShowTab(m); }
@@ -396,7 +457,8 @@ public sealed partial class MainForm : Form
             case "light": Say($"LIGHTING of the location '{D.Loc.Str("name")}': pick a game city as the start, change what you like, Build + install, look in game"); break;
             case "car": Say("CUSTOM CAR: + New, pick a class and a body car, then spend the class's stat points"); break;
             case "skins": break;
-            case "surface": Say($"SURFACE: left drag = paint {Surface.Surfaces[Map2.BrushKey].Label}, right drag = remove, middle drag = move the map, wheel = zoom.  Whole road: type / sides / varied asphalt on the bar"); break;
+            case "land": Say("LANDSCAPE (3D): left drag = use the tool, right drag = back to flat (Paint: remove the paint), middle drag = turn, Shift+middle = move, wheel = zoom.  Auto hills = hills all around the road"); break;
+            case "surface": Say($"SURFACE: left drag = paint {(Map2.BrushKey == "bumps" ? "bumps" : Surface.Surfaces[Map2.BrushKey].Label)}, right drag = remove, middle drag = move the map, wheel = zoom.  Whole road: type / sides / varied asphalt on the bar"); break;
             case "ai": Say("AI PATH: the yellow line is where the AI cars drive (the band = their lane). Auto = made for you; Pen = draw it yourself (drag on the road; drawing over a part replaces that part)"); break;
             case "3d": case "collision": Say($"{(m == "collision" ? "COLLISION view" : "3D view")}: middle-drag turn, Shift+middle move, wheel zoom, numpad 7/1/3 views, 5 flat, Home all  (F3 = next view)"); break;
             default: ToolHint(); break;
@@ -416,7 +478,7 @@ public sealed partial class MainForm : Form
     void LoadBegin(string m)
     {
         _tabTime.Restart();
-        _loadName = m switch { "2d" => "2D map", "3d" => "3D view", "collision" => "Collision", "ai" => "AI path", "light" => "Lighting", "surface" => "Surface", "skins" => "Car skins", _ => "Custom car" };
+        _loadName = m switch { "2d" => "2D map", "3d" => "3D view", "collision" => "Collision", "ai" => "AI path", "light" => "Lighting", "surface" => "Surface", "land" => "Landscape", "skins" => "Car skins", _ => "Custom car" };
         if (!IsHandleCreated) return;
         SendMessage(Handle, 0x000B, IntPtr.Zero, IntPtr.Zero);                 // WM_SETREDRAW off
         if (_tabMs.GetValueOrDefault(m, long.MaxValue) > ShowAfterMs) LoadShow(5);
@@ -469,6 +531,7 @@ public sealed partial class MainForm : Form
         FitTop(); FitBar();
         FitPanels();
         if (m == "surface") SurfRefresh();
+        else if (m == "land") LandRefresh();
         else if (m == "ai") AiRefresh();
         LoadStep(90);
         _propsKey = "";
@@ -733,6 +796,11 @@ public sealed partial class MainForm : Form
     {
         bool typing = ActiveControl is TextBox || ActiveControl is ComboBox || ActiveControl is RichTextBox || (ActiveControl as ContainerControl)?.ActiveControl is TextBox || InTextBox();
         var key = k & Keys.KeyCode; bool ctrl = (k & Keys.Control) != 0, shift = (k & Keys.Shift) != 0, alt = (k & Keys.Alt) != 0;
+        if (ctrl && !alt && key >= Keys.D1 && key <= Keys.D9)
+        {
+            var order = new[] { "2d", "3d", "land", "collision", "ai", "light", "surface", "car", "skins" };
+            SetMode(order[key - Keys.D1]); return true;                    // Ctrl+1..9: the tabs in their order
+        }
         if (ctrl)
         {
             switch (key)
@@ -800,7 +868,7 @@ public sealed partial class MainForm : Form
 
     void ToggleView()
     {
-        var order = new[] { "2d", "3d", "collision", "ai", "light", "surface", "car", "skins" };
+        var order = new[] { "2d", "3d", "land", "collision", "ai", "light", "surface", "car", "skins" };
         SetMode(order[(Array.IndexOf(order, Mode) + 1) % order.Length]);
     }
 
@@ -852,7 +920,7 @@ public sealed partial class MainForm : Form
         // the 3D tab on a narrow window: the object list goes first, the middle stays usable
         V3.Narrow(W < 1240);
         bool canvas = Mode is not ("light" or "car" or "skins");
-        _rightP.Visible = _rightSash.Visible = canvas && !(Mode == "3d" && W < 1240);
+        _rightP.Visible = _rightSash.Visible = canvas && !(Mode == "3d" && W < 1700);     // 3D has its own two panels: the view needs the room
         var shown = _panels.Where(p => !p.Height && p.C.Visible && (p.C.Parent?.Visible ?? false)).ToList();
         int total = shown.Where(p => !Folded(p.Name)).Sum(p => Sz(p.Name, p.Default));
         double k = total > 0 ? Math.Min(1.0, Math.Max(0, W - 420.0) / total) : 1.0;

@@ -36,12 +36,18 @@ local M = {
 	seen = false,      -- screens opened (lowercase GoScreen / PushScreen names) - tables made in the hook, see below
 	seen_list = false,
 	pob_off = false,  -- "Previously on Blur" switched off for this start
+	-- fast start (target.fast): skip the logo movies, the attract movie and "press start", as the keys would
+	fast_done = false, -- reached the mode select (or gave up): fast start stops
+	fast_wait = 0,     -- frames the current intro screen has been in front
+	fast_gui = false,  -- the intro GUI table those frames belong to
+	fast_presses = 0,  -- "press start" sent
+	last_screen = "",  -- the last GoScreen / PushScreen name (lowercase)
 }
 
 M.info = {
 	name = "QuickStart",
 	description = "Starts a custom LAN race on the map from the track designer",
-	version = 0.14,
+	version = 0.15,
 }
 
 local T = { enabled = false }
@@ -411,7 +417,76 @@ local function rec_tick()
 	end
 end
 
+-- ---- FAST START (target.fast = true, also for a normal start) -----------------------------------------------
+-- Does what the player's keys do on the intro screens (decoded from the game's Intro\*.lua):
+--   the Activision movie screen: Enter = GUI.StartGame() (-> Intro\BizarreSplash.lua)
+--   Intro\BizarreSplash.lua: Enter = GoScreen("Intro\\Legal.lua") (the boot loading screen)
+--   Intro\AttractSplash.lua (the long Blur movie): Enter = AttractSplash_GoStartScreen()
+--   Intro\StartScreen.lua at STAGE_PRESS_START: the game's own invite code sends
+--     ContextTable[Main].MessageUpdate(ButtonStart, pad, true) - the same as pressing Start / Enter
+-- Each one only after its screen was in front for a few frames, never while a popup is up.
+local function fast_tick()
+	if M.fast_done or not T.fast then
+		return
+	end
+	local c = ctx()
+	local gui = (c and c.GUI) or GUI
+	if type(gui) ~= "table" then
+		return
+	end
+	if gui ~= M.fast_gui then
+		M.fast_gui = gui
+		M.fast_wait = 0
+	end
+	M.fast_wait = M.fast_wait + 1
+	if M.fast_wait < 8 then
+		return
+	end
+	local popup = type(UIScreen) == "table" and type(UIScreen.IsPopupActive) == "function" and UIScreen.IsPopupActive()
+	if popup then
+		return
+	end
+	if gui.STAGE_MODE_SELECT ~= nil then
+		if gui.current_stage == gui.STAGE_MODE_SELECT then
+			M.fast_done = true
+			log("fast start: at the mode select")
+		elseif gui.current_stage == gui.STAGE_PRESS_START and gui.finished == false and M.fast_presses < 4
+				and M.fast_wait % 90 == 8 then
+			local main = ContextTable and UIEnums.Context and ContextTable[UIEnums.Context.Main]
+			if main and type(main.MessageUpdate) == "function" then
+				M.fast_presses = M.fast_presses + 1
+				log("fast start: press start " .. M.fast_presses)
+				main.MessageUpdate(UIEnums.Message.ButtonStart, 0, true)
+			end
+		end
+		return
+	end
+	if M.fast_wait ~= 8 then
+		return
+	end
+	if M.last_screen == "intro\\attractsplash.lua" and type(rawget(_G, "AttractSplash_GoStartScreen")) == "function" then
+		log("fast start: skip the attract movie")
+		AttractSplash_GoStartScreen()
+	elseif gui.wait_for_copy == false and gui.finished == false then
+		log("fast start: skip the Bizarre movie")
+		GoScreen("Intro\\Legal.lua")
+	elseif type(gui.StartGame) == "function" and gui.finished == false then
+		log("fast start: skip the Activision movie")
+		gui.StartGame()
+	end
+end
+
 local function tick()
+	if not M.fast_done and T.fast then
+		local ok, err = pcall(fast_tick)
+		if not ok then
+			M.fast_done = true
+			log("fast start FAILED: " .. tostring(err))
+		end
+	end
+	if not T.enabled and not T.record then
+		return
+	end
 	if T.record then
 		M.frames = M.frames + 1
 		pcall(rec_tick)
@@ -460,16 +535,16 @@ local function tick()
 	end
 	if not M.pending then
 		if M.step == 0 and at_mode_select() then
-			queue(1, "to multiplayer", to_multiplayer, 20, is_start_select)   -- let the cubes finish appearing
+			queue(1, "to multiplayer", to_multiplayer, 10, is_start_select)   -- let the cubes finish appearing
 		elseif M.step == 1 and M.seen and M.seen["multiplayer\\mpmain.lua"] and g("OpenApp")
-				and (M.left_mp or M.frames - M.mpmain_frame > 900) then
+				and (M.left_mp or M.frames - M.mpmain_frame > 600) then
 			-- recorded: ~185 frames after the menu opens it runs its own cleanup (LaunchScreen(0) ... net_MpLeave,
 			-- NetRace.Delete, LeaveMultiplayerMode -> mode 3): LAN must come AFTER that or it is undone
-			queue(2, "LAN", to_lan, 45)                             -- the multiplayer menu
+			queue(2, "LAN", to_lan, 20)                             -- the multiplayer menu
 		elseif M.step == 2 and g("MpLan_SetupGame") and is_lan_screen(cur_gui()) then
-			queue(3, "host", to_host, 45, is_lan_screen)            -- the LAN screen (an app: no GoScreen)
+			queue(3, "host", to_host, 20, is_lan_screen)            -- the LAN screen (an app: no GoScreen)
 		elseif M.step == 3 and g("MpModeSelect_CreateGame") and is_mode_select(cur_gui()) then
-			queue(4, "custom race", to_lobby, 25, is_mode_select)   -- the host (mode select) screen
+			queue(4, "custom race", to_lobby, 15, is_mode_select)   -- the host (mode select) screen
 		end
 	end
 	local p = M.pending
@@ -504,11 +579,15 @@ local function start_ticking()
 end
 
 function M.GoScreen(screen, _opts)
+	local s = string.lower(tostring(screen))
+	M.last_screen = s
+	if T.fast and not M.fast_done then
+		start_ticking()
+	end
 	if not T.enabled or (not T.record and (not T.auto or M.step < 0)) then
 		return
 	end
 	start_ticking()
-	local s = string.lower(tostring(screen))
 	if not M.seen then
 		-- NOT at load time: this file's top level runs in lua5.1.dll (Amax's loader), and an EMPTY table made there
 		-- points at the DLL's dummy node; the game's own Lua then writes into the DLL on the first insert = crash
@@ -537,7 +616,7 @@ function M.init()
 		T = t
 	end
 	log("target: " .. table.concat(T.city_names or {}, "/") .. " > " .. table.concat(T.route_names or {}, "/"))
-	if T.enabled and (T.auto or T.record) then
+	if (T.enabled and (T.auto or T.record)) or T.fast then
 		pcall(start_ticking)
 	end
 	return true

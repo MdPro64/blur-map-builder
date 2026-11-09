@@ -390,6 +390,56 @@ public static class ModelImport
 
     public static string ModelFile(int slot, int k) => $"models\\objects\\flat_earth\\imp_{slot:x2}_{k:000}.model";
 
+    /// for every placed import: the biggest size (x, y, z) it is placed at on any map (edits "obj:N" scale)
+    public static Dictionary<string, double[]> MaxScales(JObj wld)
+    {
+        var o = new Dictionary<string, double[]>();
+        foreach (var loc in wld.Objs("locations"))
+            foreach (var m in loc.Objs("maps"))
+            {
+                var objs = m.Objs("objects").ToList(); var edits = m.Obj("edits");
+                for (int n = 0; n < objs.Count; n++)
+                {
+                    if (objs[n].Str("id") is not string id) continue;
+                    double[] sc = { 1, 1, 1 };
+                    if (edits?.Obj($"obj:{n}") is { } ed && ed.ContainsKey("scale"))
+                        sc = ed["scale"] is List<object?> l ? new[] { Math.Abs(Json.D(l[0])), Math.Abs(Json.D(l[1])), Math.Abs(Json.D(l[2])) } : Enumerable.Repeat(Math.Abs(Json.D(ed["scale"])), 3).ToArray();
+                    if (!o.TryGetValue(id, out var cur)) o[id] = cur = new double[] { 1, 1, 1 };
+                    for (int q = 0; q < 3; q++) cur[q] = Math.Max(cur[q], sc[q]);
+                }
+            }
+        return o;
+    }
+
+    /// slot -> the size built into its models (only imports placed bigger than 1); set by Prepare at the start of a build
+    public static Dictionary<int, double[]> Baked = new();
+    public static void Prepare(JObj wld)
+    {
+        var big = MaxScales(wld);
+        Baked = new();
+        foreach (var e in Entries())
+            if (big.TryGetValue(e.Str("id")!, out var sc) && sc.Max() > 1.0001) Baked[(int)e.Int("slot")] = sc;
+    }
+    /// the size built into the model a placement (its def uid) uses, or null
+    public static double[]? BakedFor(uint defUid)
+    {
+        if (defUid < ImportUid || defUid >= ImportUid + 256 * 256) return null;
+        return Baked.TryGetValue((int)((defUid - ImportUid) / 256), out var s) ? s : null;
+    }
+    static List<double[]> Scaled(IList<double[]> verts, double[] s)
+    {
+        var o = new List<double[]>(verts.Count);
+        foreach (var v in verts)
+        {
+            var w = (double[])v.Clone();
+            for (int q = 0; q < 3; q++) w[q] = v[q] * s[q];
+            double nx = v[3] / s[0], ny = v[4] / s[1], nz = v[5] / s[2], l = Math.Sqrt(nx * nx + ny * ny + nz * nz);
+            if (l > 1e-12) { w[3] = nx / l; w[4] = ny / l; w[5] = nz / l; }
+            o.Add(w);
+        }
+        return o;
+    }
+
     public static List<JObj> Used(JObj wld)
     {
         var ids = new HashSet<string>();
@@ -443,7 +493,12 @@ public static class ModelImport
             Parallel.For(0, ps.Count, k =>
             {
                 var p = ps[k];
-                built[k] = CpModel.NewTextureIds(CpModel.MakeMesh(bas, p.Verts, p.Strip, enc[p.Mat]), 0x0F5A0000 | ((uint)slot << 8) | ((uint)p.Mat & 0xFF));
+                // the game decides "on screen?" from the model's own box without the placement's size: a model placed 30x
+                // big vanished whenever its small box left the screen (a box made bigger alone made them vanish for good).
+                // So the biggest size it is placed at is built into the model, and each placement is made that much smaller.
+                var verts = Baked.TryGetValue(slot, out var sc) ? Scaled(p.Verts, sc) : p.Verts;
+                var d = CpModel.MakeMesh(bas, verts, p.Strip, enc[p.Mat]);
+                built[k] = CpModel.NewTextureIds(d, 0x0F5A0000 | ((uint)slot << 8) | ((uint)p.Mat & 0xFF));
             });
             for (int k = 0; k < ps.Count; k++) files.Add(new(ModelFile(slot, k), built[k]));
             log($"imported model {e.Str("name")}: {e.Int("tris")} triangles in {ps.Count} piece(s)");

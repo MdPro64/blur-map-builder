@@ -250,13 +250,25 @@ public static class Setup
     [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
     static extern bool CreateHardLink(string link, string target, IntPtr sec);
 
+    /// the game's QuickStart plugin = this version's copy (written only when it differs)
+    public static void RefreshPlugin()
+    {
+        if (!Directory.Exists(Plugins)) return;
+        string dst = Path.Combine(Plugins, "quickstart", "quickstart.lua");
+        using var s = Assembly.GetExecutingAssembly().GetManifestResourceStream("quickstart.lua")!;
+        using var ms = new MemoryStream(); s.CopyTo(ms);
+        var d = ms.ToArray();
+        if (File.Exists(dst) && File.ReadAllBytes(dst).AsSpan().SequenceEqual(d)) return;
+        Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
+        File.WriteAllBytes(dst, d);
+    }
+
     static void InstallPlugin(Action<string> log)
     {
         if (!Directory.Exists(Plugins)) return;
         string dst = Path.Combine(Plugins, "quickstart");
         Directory.CreateDirectory(dst);
-        using (var s = Assembly.GetExecutingAssembly().GetManifestResourceStream("quickstart.lua")!)
-        using (var f = File.Create(Path.Combine(dst, "quickstart.lua"))) s.CopyTo(f);
+        RefreshPlugin();
         if (!File.Exists(QuickTarget)) File.WriteAllText(QuickTarget, "return { enabled = false }\n", new UTF8Encoding(false));
         string lst = Path.Combine(Plugins, "plugins.lua");
         if (File.Exists(lst))

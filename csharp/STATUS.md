@@ -47,6 +47,43 @@ The C# window keeps its own auto-save the same way as Python, and asks before cl
 - **Tab changes:** the window stays still with a small loading bar, and the new tab appears whole. Tabs that open fast show no bar.
 - **Other:** first-start setup, start-up picture, help window, layouts as in Python, crash reports.
 
+## UI / UX round (2026-11-08, test build publish_new14, nothing committed)
+
+- One slim top bar: tabs on the left; ⚙ menu, Undo / Redo icons, Save, Play, Build on the right. Labels shorten (Save = ✔,
+  Build) only when the row is too narrow; the full names and shortcuts are in the tooltips.
+- ⚙ menu (UiChrome.cs, dark menus = DarkMenu): check for updates, update source, window layouts (load / save as / reset /
+  delete), language, help, version. The bottom bar is only the status line + the language box.
+- Map list: a row of icons (new map, new location, duplicate, rename, ⋯) and the same as a right-click menu; delete moved
+  into the menus (was 8 big buttons, 2 of them red).
+- Tool bars: Undo / Redo no longer repeated per tab; 3D and Collision have no bar of their own (the view's row has ❔);
+  Lighting has no Fit. When a bar would wrap, its buttons drop the "(S)" key hints first (FitBar / Compact).
+- 3D: the MAP panel steps aside below 1700 px wide (the 3D tab has its own two panels).
+- Car list drawn like the map list (RoundList). Snap is a toggle button. Ctrl+1..9 = the tabs.
+- Self-test: `BMB_ONLY=tour` = pictures of every tab, menus and windows (scratch\ui\tour_*.png); pictures now use
+  PrintWindow (the window is captured even when covered).
+- NOT run: the full robot test (some of its checks look at the old bottom bar / buttons and may need updating before a push).
+
+## 2.3.0 second round (2026-11-07, not tried in the game yet, nothing committed)
+
+- **Fast start** (assets/quickstart.lua v0.15, copied into the game by Play / Build: `Setup.RefreshPlugin`): with `fast = true` in
+  target.lua (Play window checkbox, on by default, saved in data/play.json) the plugin does what the keys do on the intro
+  screens: Activision movie -> GUI.StartGame(), Bizarre movie -> GoScreen Legal, attract movie -> AttractSplash_GoStartScreen(),
+  Press Start -> ContextTable[Main].MessageUpdate(ButtonStart, 0, true) (the game's own invite code does this). Also for a
+  normal start. The LAN walk waits less (600 frames max instead of 900, shorter step delays). The Amax login box is untouched.
+  Checked only in a Lua 5.1 simulation (lupa), NOT in the game.
+- **Landscape tab = the 3D view** (View3DLand.cs): ray marched brush, live textured hills, ring under the mouse, Paint tool,
+  "Auto texture by slope" (land["auto_tex"], land["paint"] on the 8 m grid). Heights between the 8 m points = cubic B-spline,
+  built at 4 / 6 / 8 ... m (finest that fits). Slope textures: ground / dirt / rock, borders get mixed pictures
+  (grassdirt, dirtrock). Auto hills fill the strip to the road kerb with flat ground.
+- **Game pictures** (GameTex.cs): read from base/root.pak.original models, index in data/gametex.json: tarmacplain02 (asphalt),
+  ambient_rock02 (rock), concreteblock1, hay01 (dry grass; tinted = grass), drilltowertexture01 (worn), uv_distort_04 (mask).
+  New surfaces: rock, drygrass, concrete (+ internal patch, worn, grassdirt, dirtrock). The exe did not grow.
+- **Varied asphalt**: 4 variants made from the game asphalt + worn surface in cloudy patches, and random repair patches along
+  every road (Surface.AutoPatches, not stored, never over the middle line).
+- **Auto bumps** (Surface tab, BUMPS group): Terrain.AutoBumps, Auto or custom (height, spacing, longest bit, most road between).
+- Short check: `BMB_ONLY=land bash tools/run_ui_test.sh` (23 checks + a build). Full robot NOT run (only before a push).
+  Test exe: publish_new13.
+
 ## What is still different from Python
 
 - **Wheels:** the C# build now copies the chosen car's **tyres and rim rings** into your car as well. In Python only the rim's face
@@ -87,7 +124,7 @@ oot.pak` (and the game's picture back for skins turned off); Build + install kee
 oot.pak` = the original + the skins;
   turned off (or Uninstall all), the original comes back byte for byte. Car models are only in root.pak (root_streaming.pak has none). **Seen in normal Blur too (2026-11-03): the Corvette C3 Rat skin shows.**
 - **Panels:** the small arrow at the top corner of Locations, Object library, Objects in this map and the Map panel folds it to a thin strip; the arrow brings it back. It is kept with the layout.
-- **Release:** version 2.1.0 (2.0.0 on 2026-10-31, 2.1.0 with Car skins on 2026-11-03), file name `Blur Map Builder.exe`, the name the Python updater looks for. It updates itself from GitHub releases like Python did; the last version stays beside it as `.old`. `Blur Map Tester.exe` stays the small Python one (it uses the same files). Released 2026-10-31 as v2.0.0; the source is in the `csharp` folder of the GitHub repo.
+- **Release:** version 2.3.0 (2.0.0 on 2026-10-31, 2.1.0 with Car skins on 2026-11-03, 2.2.0 plain-paint skins, 2.3.0 Landscape / Simple layout on 2026-11-10), file name `Blur Map Builder.exe`, the name the Python updater looks for. It updates itself from GitHub releases like Python did; the last version stays beside it as `.old`. `Blur Map Tester.exe` stays the small Python one (it uses the same files). Released 2026-10-31 as v2.0.0; the source is in the `csharp` folder of the GitHub repo.
 - **Language:** English or Russian. The first start asks once; the box at the bottom right changes it (the program restarts). The build log and names from the game stay in English. The choice is kept in `%LOCALAPPDATA%\BlurMapBuilderCS\language.txt`, not in the game folder.
 - **Look:** the old icon, rounded buttons, dark lists and scroll bars, short help on every tab and window (Help, F1 or the ? button; All keys opens the long list).
 - **Window size:** tested at 960x600, 1100x680, 1280x720 and 1920x1040. Narrow windows get shorter names, two rows on top; the 3D tab drops the object list and map panel below 1240 wide. Lighting and Custom car no longer show the map panels.

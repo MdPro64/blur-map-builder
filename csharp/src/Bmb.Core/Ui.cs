@@ -17,6 +17,7 @@ public static class UiText
     {
         ["scenery"] = "look only - tick Solid to make it a wall", ["breakable"] = "breaks / falls when hit", ["movable"] = "cars push it around", ["animated"] = "animated object",
         ["import"] = "your own model (.glb) - look only, tick Solid to make it a box wall",
+        ["ramp"] = "jump ramp - drive over it. S scales length / width / height, R turns it",
     };
     public const int MaxMaps = 12;
     public const string GithubRepo = "MdPro64/blur-map-builder", Discord = "mdproii";
@@ -576,13 +577,16 @@ public static class Previews
         return o;
     }
 
-    static Pic? Texture(byte[] data, TexInfo t)
+    static Pic? Texture(byte[] data, TexInfo t) => ReadTexture(data, t, Tex);
+
+    /// one picture of a game model (DXT1 / DXT5, colour only), its first stored size at most max wide
+    public static Pic? ReadTexture(byte[] data, TexInfo t, int max)
     {
         if (t.Dxt != DXT1 && t.Dxt != DXT5) return null;
         int w = t.W, h = t.H, mips = Math.Max(1, t.Mips), block = t.Dxt == DXT5 ? 16 : 8, off = t.Off;
         for (int i = 0; i < mips - 1; i++)
         {
-            if (Math.Max(w, h) <= Tex) break;
+            if (Math.Max(w, h) <= max) break;
             off += Math.Max(1, (w + 3) / 4) * Math.Max(1, (h + 3) / 4) * block;
             w = Math.Max(1, w / 2); h = Math.Max(1, h / 2);
         }
@@ -1081,11 +1085,20 @@ public static class Play
     static string LuaList(IEnumerable<string?> items) => "{" + string.Join(", ", items.Where(s => !string.IsNullOrEmpty(s)).Select(s => "\"" + s!.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"")) + "}";
 
     /// the Amax QuickStart plugin's target: custom LAN races start on this map. Returns an error text or null
+    static string FastFile => Path.Combine(Paths.Data, "play.json");
+    /// fast start: the QuickStart plugin skips the logo movies, the attract movie and "press start" (on by default)
+    public static bool Fast
+    {
+        get { try { var o = (JObj)Json.Load(FastFile)!; return !o.ContainsKey("fast") || o.Truthy("fast"); } catch (Exception) { return true; } }
+        set { try { Directory.CreateDirectory(Paths.Data); File.WriteAllText(FastFile, Json.Dumps(new JObj { ["fast"] = value }, -1)); } catch (IOException) { } }
+    }
+
     public static string? WriteQuickstart(JObj world, JObj loc, JObj m, bool on)
     {
+        try { Setup.RefreshPlugin(); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
         World.AssignIds(world);
         string text = $"-- written by the track designer ({DateTime.Now:yyyy-MM-dd HH:mm}): the map the QuickStart plugin opens a custom LAN race on\n" +
-            $"return {{\n\tenabled = {(on ? "true" : "false")},\n\tauto = true,\n\tcity_names = {LuaList(new[] { loc.Str("name"), loc.Str("city_name") })},\n\troute_names = {LuaList(new[] { m.Str("name"), m.Str("route_name") })},\n" +
+            $"return {{\n\tenabled = {(on ? "true" : "false")},\n\tfast = {(Fast ? "true" : "false")},\n\tauto = true,\n\tcity_names = {LuaList(new[] { loc.Str("name"), loc.Str("city_name") })},\n\troute_names = {LuaList(new[] { m.Str("name"), m.Str("route_name") })},\n" +
             $"\tcity_uid = {Signed32(loc.Int("city_uid"))},\n\troute_uid = {Signed32(m.Int("route_uid"))},\n\tlaps = {(m.Truthy("laps") ? m.Int("laps") : 1)},\n}}\n";
         try
         {

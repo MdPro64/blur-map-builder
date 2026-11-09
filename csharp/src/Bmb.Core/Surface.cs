@@ -53,12 +53,30 @@ public static class Surface
     public sealed record Kind(string Label, int Mat, string Colour, byte[] Rgb, int Shine, int Glow);
     public static readonly Dictionary<string, Kind> Surfaces = new()
     {
-        ["tarmac"] = new("Asphalt", 1, "#565c66", new byte[] { 88, 92, 98 }, 30, 60), ["dirt"] = new("Dirt", 4, "#8a6a42", new byte[] { 122, 92, 60 }, 8, 35),
-        ["roughdirt"] = new("Rough dirt", 33, "#6c5234", new byte[] { 98, 74, 50 }, 6, 30), ["gravel"] = new("Gravel", 32, "#9a9286", new byte[] { 140, 134, 122 }, 10, 40),
-        ["grass"] = new("Grass", 6, "#4f7d3a", new byte[] { 70, 108, 52 }, 6, 35), ["sand"] = new("Wet sand", 9, "#c2a878", new byte[] { 176, 152, 110 }, 40, 40),
+        ["tarmac"] = new("Asphalt", 1, "#565c66", new byte[] { 88, 92, 98 }, 30, 60), ["dirt"] = new("Dirt", 4, "#8a6a42", new byte[] { 122, 92, 60 }, 8, 80),
+        ["roughdirt"] = new("Rough dirt", 33, "#6c5234", new byte[] { 98, 74, 50 }, 6, 75), ["gravel"] = new("Gravel", 32, "#9a9286", new byte[] { 140, 134, 122 }, 10, 85),
+        ["grass"] = new("Grass", 6, "#4f7d3a", new byte[] { 70, 108, 52 }, 6, 80), ["sand"] = new("Wet sand", 9, "#c2a878", new byte[] { 176, 152, 110 }, 40, 85),
         ["water"] = new("Water (shallow)", 34, "#3a78a8", new byte[] { 52, 92, 120 }, 200, 70), ["deepwater"] = new("Deep water", 22, "#1e4a7a", new byte[] { 28, 58, 92 }, 220, 60),
+        // pictures from the game's own files (GameTex); without them the colour noise below is used
+        // (glow ~80-90 like the road's 95: with 35 the hills were near black at night and every texture looked the same)
+        ["rock"] = new("Rock", 1, "#7d766c", new byte[] { 118, 112, 102 }, 14, 85), ["drygrass"] = new("Dry grass", 6, "#a88a52", new byte[] { 160, 132, 82 }, 6, 85),
+        ["concrete"] = new("Concrete", 1, "#8c8c88", new byte[] { 132, 132, 128 }, 20, 90),
+        ["patch"] = new("Patched asphalt", 1, "#3e4248", new byte[] { 62, 66, 72 }, 30, 55), ["worn"] = new("Worn asphalt", 1, "#6a6660", new byte[] { 104, 100, 94 }, 24, 50),
+        // the hills' borders between two textures (a picture of both, mixed in spots): no hard stairs between grass and dirt
+        ["grassdirt"] = new("Grass + dirt", 6, "#667048", new byte[] { 96, 100, 58 }, 6, 80), ["dirtrock"] = new("Dirt + rock", 4, "#80705a", new byte[] { 120, 102, 80 }, 8, 80),
     };
-    public static readonly string[] Order = { "dirt", "roughdirt", "gravel", "grass", "sand", "water", "deepwater", "tarmac" };
+    /// mixed keys: (first, second)
+    public static readonly Dictionary<string, (string A, string B)> Mixes = new() { ["grassdirt"] = ("grass", "dirt"), ["dirtrock"] = ("dirt", "rock") };
+    public static readonly string[] Order = { "dirt", "roughdirt", "gravel", "grass", "drygrass", "sand", "rock", "concrete", "water", "deepwater", "tarmac" };
+    /// every key in a fixed order: its place makes the picture ids of its models (TextureSalt)
+    static readonly string[] SaltOrder = { "tarmac", "dirt", "roughdirt", "gravel", "grass", "sand", "water", "deepwater", "rock", "drygrass", "concrete", "patch", "worn", "grassdirt", "dirtrock" };
+    /// where a key's picture comes from in the game: name, colour (multiplied, 1 = as it is), grey first (true = take only the light / dark of it)
+    static readonly Dictionary<string, (string Name, double R, double G, double B, bool Grey)> GameSource = new()
+    {
+        ["rock"] = ("ambient_rock02_diff", 1.0, 1.0, 1.0, false), ["grass"] = ("hay01_diff", 0.52, 0.80, 0.36, true), ["drygrass"] = ("hay01_diff", 0.92, 0.86, 0.72, false),
+        ["concrete"] = ("concreteblock1_diff", 1.0, 1.0, 1.0, false), ["patch"] = ("tarmacplain02_diff", 0.62, 0.64, 0.68, false), ["worn"] = ("drilltowertexture01_diff", 1.05, 1.02, 0.98, false),
+        ["tarmac"] = ("tarmacplain02_diff", 1.0, 1.0, 1.0, false),
+    };
     public const double CellM = 2.0, StepM = 4.0, PatchLift = 0.02, OverlayLift = 0.07, TexM = 8.0, SideTaper = 25.0, LevelM = 3.0;
     const int MaxTris = 760;
     public const uint FeelSourceUid = 0xA5F91096;
@@ -455,9 +473,43 @@ public static class Surface
         return a;
     }
 
+    /// the game's picture for a key, coloured as the key wants, or null (not there)
+    public static byte[]? GamePicture(string key, int w, int h)
+    {
+        if (!GameSource.TryGetValue(key, out var g)) return null;
+        var px = GameTex.Rgb(g.Name, w, h);
+        if (px == null) return null;
+        var o = new byte[px.Length];
+        for (int i = 0; i < px.Length; i += 3)
+        {
+            double r = px[i], gg = px[i + 1], b = px[i + 2];
+            if (g.Grey) { double l = (0.3 * r + 0.59 * gg + 0.11 * b) * 1.35; r = gg = b = l; }
+            o[i] = (byte)Math.Clamp(r * g.R, 0, 255); o[i + 1] = (byte)Math.Clamp(gg * g.G, 0, 255); o[i + 2] = (byte)Math.Clamp(b * g.B, 0, 255);
+        }
+        return o;
+    }
+
     public static (byte[] Diff, byte[] Mat) MaterialTexture(string key, int w, int h, int seed = 1)
     {
         var sf = Surfaces[key];
+        if (Mixes.TryGetValue(key, out var mix))
+        {
+            var (a, am) = MaterialTexture(mix.A, w, h, seed); var (b, _) = MaterialTexture(mix.B, w, h, seed);
+            var mask = TileNoise(w, h, 9 + seed, w / 14.0);
+            var px = new byte[a.Length];
+            for (int i = 0; i < w * h; i++)
+            {
+                double t = Math.Clamp((mask[i] - 0.38) / 0.24, 0, 1); t = t * t * (3 - 2 * t);
+                for (int c = 0; c < 3; c++) px[3 * i + c] = (byte)(a[3 * i + c] * (1 - t) + b[3 * i + c] * t);
+            }
+            return (px, am);
+        }
+        if (key != "tarmac" && GamePicture(key, w, h) is { } gp)
+        {
+            var gm = new byte[w * h * 3];
+            for (int i = 0; i < w * h; i++) { gm[3 * i] = (byte)sf.Shine; gm[3 * i + 1] = (byte)sf.Glow; }
+            return (gp, gm);
+        }
         var n1 = TileNoise(w, h, seed, w / 32.0);
         var n2 = TileNoise(w, h, seed + 7, w / 128.0);
         var fine = new NumpyRng(seed + 3).Fill(w * h);
@@ -534,6 +586,42 @@ public static class Surface
         if (s.Road != "tarmac") Rows(s.Road, y => onRoad[y]);
         else if (s.Variety)
         {
+            // the game's own asphalt grain + its worn, cracked surface in cloudy patches (a different part of the cloud
+            // per variant). Sampled in metres: along the road one picture is RoadMesh.URepeat (14 m) long, so the tile
+            // sizes divide 14 m and the picture still joins up with itself.
+            var grain = GameTex.Get("tarmacplain02_diff", 512); var worn = GameTex.Get("drilltowertexture01_diff", 512); var cloud = GameTex.Get("uv_distort_04", 512);
+            if (grain != null && worn != null && cloud != null)
+            {
+                double mean = 0; int cnt = 0;
+                for (int y = 0; y < h; y++) if (onRoad[y]) for (int x = 0; x < w; x++) { int p = 3 * (y * w + x); if (!keep[p / 3]) { mean += (img[p] + img[p + 1] + img[p + 2]) / 3; cnt++; } }
+                mean = cnt > 0 ? mean / cnt : 90;
+                double gm = 0; for (int i = 0; i < grain.Px.Length; i += 3) gm += (grain.Px[i] + grain.Px[i + 1] + grain.Px[i + 2]) / 3.0;
+                gm /= grain.Px.Length / 3.0;
+                double wm = 0; for (int i = 0; i < worn.Px.Length; i += 3) wm += (worn.Px[i] + worn.Px[i + 1] + worn.Px[i + 2]) / 3.0;
+                wm /= worn.Px.Length / 3.0;
+                double along = RoadMesh.URepeat;
+                int Px(Pic p, double u, double v, double tile) => 3 * ((int)Py.Mod(Math.Floor(v / tile * p.H), p.H) * p.W + (int)Py.Mod(Math.Floor(u / tile * p.W), p.W));
+                double ox = variant * 0.37, oy = variant * 0.61;
+                for (int y = 0; y < h; y++)
+                {
+                    if (!onRoad[y]) continue;
+                    double vm = across[y];
+                    for (int x = 0; x < w; x++)
+                    {
+                        int p = y * w + x;
+                        if (keep[p]) continue;
+                        double um = (x + 0.5) / w * along;
+                        int gq = Px(grain, um, vm, along / 4), wq = Px(worn, um, vm, along / 2);
+                        int cq = 3 * ((int)Py.Mod(Math.Floor((vm / (2 * along) + oy) * cloud.H), cloud.H) * cloud.W + (int)Py.Mod(Math.Floor(((x + 0.5) / w + ox) * cloud.W), cloud.W));
+                        double t = Math.Clamp((cloud.Px[cq] / 255.0 - 0.55) / 0.15, 0, 1);
+                        for (int c = 0; c < 3; c++)
+                        {
+                            double gv = grain.Px[gq + c] / gm * mean, wv = worn.Px[wq + c] / wm * mean * 1.08;
+                            img[3 * p + c] = gv * (1 - t) + wv * t;
+                        }
+                    }
+                }
+            }
             var blot = TileNoise(w, h, 21 + variant, w / 20.0);
             var patch = TileNoise(w, h, 31 + variant, w / 10.0);
             for (int y = 0; y < h; y++)
@@ -571,11 +659,60 @@ public static class Surface
         return (o, mt);
     }
 
+    // ---- varied asphalt: repair patches ---------------------------------------------------------------------------
+    static readonly ConditionalWeakTable<Network, Dictionary<string, Dictionary<(int, int), (string, double)>>> PatchCache = new();
+
+    /// "Varied asphalt" on an asphalt road: patched and worn pieces of the game's own asphalt at random places along every
+    /// road (never over the middle line), as painted cells that are not stored in the map (the same every time)
+    public static Dictionary<(int, int), (string Key, double St)> AutoPatches(JObj m, Network net)
+    {
+        var st = Settings(m);
+        if (!st.Variety || st.Road != "tarmac") return new();
+        string sig = m.Int("route_uid").ToString(CultureInfo.InvariantCulture) + "|" + st.Sides.ToString(CultureInfo.InvariantCulture);
+        var cache = PatchCache.GetOrCreateValue(net);
+        lock (cache) if (cache.TryGetValue(sig, out var hit)) return hit;
+        var o = new Dictionary<(int, int), (string, double)>();
+        var rng = new PyRandom(77 + (m.Int("route_uid") & 0xFFFF));
+        foreach (var r in net.Drivable())
+        {
+            double pos = rng.Uniform(15, 50);
+            while (pos < r.Length - 8)
+            {
+                double len = rng.Uniform(4, 14), hw = r.WAt(pos) / 2 - Math.Max(1.0, st.Sides + 0.6);
+                double pw = rng.Uniform(1.8, 4.2);
+                double room = hw - 0.9 - pw / 2;            // keep 0.9 m off the middle line and inside the edge
+                if (room > 0.2)
+                {
+                    double lat = (rng.Random() < 0.5 ? -1 : 1) * (0.9 + pw / 2 + rng.Uniform(0, room));
+                    var (cx, cz, a) = r.At(pos, lat);
+                    double fx = Math.Sin(a), fz = Math.Cos(a), sx = -Math.Cos(a), sz = Math.Sin(a);
+                    string key = rng.Random() < 0.62 ? "patch" : "worn";
+                    double reach = len / 2 + pw / 2 + 2;
+                    var (i0, j0) = CellOf(cx - reach, cz - reach); var (i1, j1) = CellOf(cx + reach, cz + reach);
+                    for (int i = i0; i <= i1; i++)
+                        for (int j = j0; j <= j1; j++)
+                        {
+                            double x = (i + 0.5) * CellM - cx, z = (j + 0.5) * CellM - cz;
+                            double u = x * fx + z * fz, v = x * sx + z * sz;
+                            double wob = 0.7 * (Terrain.Noise((cx + x) / 3.0, (cz + z) / 3.0, 5) - 0.5);
+                            double k = Math.Clamp(Math.Min(len / 2 - Math.Abs(u), pw / 2 - Math.Abs(v)) / 1.2 + 0.5 + wob, 0, 1);
+                            if (k < 0.05) continue;
+                            if (!o.TryGetValue((i, j), out var old) || old.Item2 < k) o[(i, j)] = (key, Math.Round(k, 2));
+                        }
+                }
+                pos += len + rng.Uniform(25, 110);
+            }
+        }
+        lock (cache) { if (cache.Count > 4) cache.Clear(); cache[sig] = o; }
+        return o;
+    }
+
     // ---- overlay models -----------------------------------------------------------------------------------------
     public static SortedDictionary<string, (List<(double, double, double, double)> Rects, List<List<(double X, double Z)>> Polys)> PaintShapes(JObj m, Network net)
     {
         var o = new SortedDictionary<string, (List<(double, double, double, double)>, List<List<(double, double)>>)>(StringComparer.Ordinal);
         var ps = PaintStrengths(m);
+        foreach (var (c, v) in AutoPatches(m, net)) ps.TryAdd(c, v);      // what you painted wins
         if (ps.Count == 0) return o;
         var (_, sides) = BaseCells(m, net);
         foreach (string key in ps.Values.Select(v => v.Key).Distinct().OrderBy(k => k, StringComparer.Ordinal))
@@ -757,7 +894,9 @@ public static class Surface
     }
 
     public static uint TextureSalt(JObj m, string key, int variant = 0) =>
-        0x0F3C0000 | (((uint)m.Int("route_uid") & 0xFF) << 8) | ((uint)Surfaces[key].Mat & 0x3F) << 2 | ((uint)variant & 3);
+        0x0F3C0000 | (((uint)m.Int("route_uid") & 0xFF) << 8) | ((uint)SaltId(key) & 0x3F) << 2 | ((uint)variant & 3);
+    /// the old keys keep their old ids (their Mat number), the new ones get numbers no Mat uses
+    static int SaltId(string key) => Array.IndexOf(SaltOrder, key) < 8 ? Surfaces[key].Mat : 40 + Array.IndexOf(SaltOrder, key);
 
     // ---- how they drive ---------------------------------------------------------------------------------------------
     public static readonly Dictionary<string, uint> FeelUids = new() { ["strong"] = 0xF1D50001, ["extreme"] = 0xF1D50002 };

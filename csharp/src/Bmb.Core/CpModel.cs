@@ -12,6 +12,8 @@ public sealed class ModelInfo
     public double[] BBox = new double[6];
     public Dictionary<string, (int Off, int W, int H, int Mips)> Textures = new();
     public List<ElementInfo> AllElements = new();
+    /// per model entry: the 12 floats before its box, their offset, the 6 after its name (look only)
+    public List<float[]> ModelRaw = new(), ModelRaw2 = new(); public List<int> ModelRawAt = new();
     public List<VStreamInfo> VStreams = new();
     public List<FStreamInfo> FStreams = new();
     public List<MeshInfo> MeshInfos = new();
@@ -76,9 +78,11 @@ public static class CpModel
         r.Sec(8, 2);
         for (int i = 0; i < nModels; i++)
         {
+            m.ModelRaw.Add(Enumerable.Range(0, 12).Select(k => B.F32(data, r.P + 4 * k)).ToArray()); m.ModelRawAt.Add(r.P);
             r.Ad(4 * 12); m.ModelBoxes.Add(r.Box());
             int nameIdx = r.Int();
             if (nameIdx >= names.Count || nameIdx < -names.Count) throw new InvalidDataException("name index");
+            m.ModelRaw2.Add(Enumerable.Range(0, 6).Select(k => B.F32(data, r.P + 4 * k)).ToArray());
             r.Ad(4 * 6);
         }
         r.Sec(8, 1);
@@ -474,7 +478,7 @@ public static class CpModel
     }
 
     /// ANY mesh into a one-mesh, triangle-strip model. verts = x y z nx ny nz u v
-    public static byte[] MakeMesh(byte[] data, IList<double[]> verts, IList<int> strip, IDictionary<string, byte[]>? encoded = null)
+    public static byte[] MakeMesh(byte[] data, IList<double[]> verts, IList<int> strip, IDictionary<string, byte[]>? encoded = null, double[]? scaleBox = null)
     {
         var P = Parse(data);
         if (P.Meshes.Count != 1 || P.Meshes[0].Type != 1) throw new InvalidOperationException("needs a model with one triangle-strip mesh");
@@ -495,7 +499,11 @@ public static class CpModel
         {
             x0 = Math.Min(x0, v[0]); x1 = Math.Max(x1, v[0]); y0 = Math.Min(y0, v[1]); y1 = Math.Max(y1, v[1]); z0 = Math.Min(z0, v[2]); z1 = Math.Max(z1, v[2]);
         }
-        WriteBBox(d, P, new[] { x0, y0 - 0.01, z0, x1, y1 + 0.01, z1 });
+        var box = new[] { x0, y0 - 0.01, z0, x1, y1 + 0.01, z1 };
+        // scaleBox: the box also covers the shape made this many times bigger (x, y, z), for a model placed bigger
+        if (scaleBox != null)
+            for (int q = 0; q < 3; q++) { box[q] = Math.Min(box[q], box[q] * scaleBox[q]); box[q + 3] = Math.Max(box[q + 3], box[q + 3] * scaleBox[q]); }
+        WriteBBox(d, P, box);
         if (encoded != null)
             foreach (var (name, enc) in encoded)
             {

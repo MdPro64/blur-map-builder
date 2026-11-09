@@ -569,7 +569,7 @@ public static class Build
                 var main = Road.ForMap(m);
                 var net = RoadMesh.NetworkChunks(m, main);
                 var ss = Surface.Settings(m);
-                int variants = ss.Variety ? 3 : 1;
+                int variants = ss.Variety ? 4 : 1;
                 var jobs = new List<(string Name, Func<byte[]> Make)>();
                 for (int ri = 0; ri < net.Count; ri++)
                 {
@@ -843,6 +843,10 @@ public static class Build
                 pieces.AddRange(p2); decks.AddRange(dk);
                 var sp = Surface.PhysicsPatches(m, net);
                 patches.AddRange(sp);
+                var ter = Terrain.Make(m, net, Terrain.Budget(m, road, net));
+                patches.AddRange(ter.Decks); pieces.AddRange(ter.Walls);
+                if (ter.Ramps + ter.Bumps + ter.Hills > 0)
+                    log($"{loc.Str("name")} / {m.Str("name")}: {ter.Ramps} jump ramp(s), {ter.Bumps} bump model(s){(ter.Bumps > 0 ? $" ({ter.BumpStep:0} m grid)" : "")}, {ter.Hills} hill model(s){(ter.Hills > 0 ? $" ({ter.HillStep:0} m grid)" : "")}");
                 if (sp.Count > 0)
                     log($"{loc.Str("name")} / {m.Str("name")}: surface patches " + string.Join(", ", sp.GroupBy(q => q.Mat).OrderBy(g => g.Key).Select(g => $"{g.Key} x{g.Count()}")));
                 var b = road.Bounds(1500.0);
@@ -891,6 +895,7 @@ public static class Build
         var log = opt.Log;
         Directory.CreateDirectory(Paths.FeWork);
         var wld = World.AssignIds(World.Load());
+        ModelImport.Prepare(wld);
         string U = Paths.Unpacked;
         byte[] R(params string[] p) => File.ReadAllBytes(Path.Combine(new[] { U }.Concat(p).ToArray()));
         var f = new Dictionary<string, byte[]>

@@ -20,7 +20,9 @@ public sealed partial class MainForm
         {
             G.Refresh(); Application.DoEvents();
             using var b = new Bitmap(Width, Height);
-            using (var g = Graphics.FromImage(b)) g.CopyFromScreen(Location, Point.Empty, Size);
+            bool got;
+            using (var g = Graphics.FromImage(b)) { var dc = g.GetHdc(); got = PrintWindow(Handle, dc, 2); g.ReleaseHdc(dc); }   // the window itself, even when covered
+            if (!got) using (var g = Graphics.FromImage(b)) g.CopyFromScreen(Location, Point.Empty, Size);
             b.Save(Path.Combine(outDir, name + ".png"));
         }
         double Frames(int n, Action step)
@@ -33,6 +35,52 @@ public sealed partial class MainForm
         bool Press(Keys k) { var m = new Message(); return ProcessCmdKey(ref m, k); }
         await Pump(400);
         Refresh2(); await Pump(100);
+        if (Environment.GetEnvironmentVariable("BMB_ONLY") == "tour")
+        {
+            // pictures of every tab only (for looking at the UI); nothing is changed or built
+            foreach (var m in new[] { "2d", "3d", "land", "collision", "ai", "light", "surface", "car", "skins" })
+            {
+                SetMode(m); await Pump(250);
+                if (m == "2d") { Map2.Fit(); await Pump(100); }
+                Shot("tour_" + m);
+            }
+            SetMode("2d"); Map2.Sel = 4; RefreshProps(); await Pump(150); Shot("tour_2d_point");
+            SetMode("3d"); V3.Select("obj:0"); await Pump(200); Shot("tour_3d_selected"); V3.Select(null);
+            void ShotOf(Form? f, string name)
+            {
+                if (f == null) return;
+                using var b = new Bitmap(f.Width, f.Height);
+                using (var g = Graphics.FromImage(b)) { var dc = g.GetHdc(); PrintWindow(f.Handle, dc, 2); g.ReleaseHdc(dc); }
+                b.Save(Path.Combine(outDir, name + ".png"));
+            }
+            PlayDialog(); await Pump(200); ShotOf(LastPreview, "tour_play"); LastPreview?.Close();
+            Help(); await Pump(200); ShotOf(LastPreview, "tour_help"); LastPreview?.Close();
+            // the dark message window: a timer takes its picture and closes it (it is modal)
+            var tm = new System.Windows.Forms.Timer { Interval = 400 };
+            tm.Tick += (_, _) => { tm.Stop(); var bx = Application.OpenForms.Cast<Form>().LastOrDefault(q => q != this && q.Modal); ShotOf(bx, "tour_msgbox"); bx?.Close(); };
+            tm.Start();
+            MessageBox.Show(this, "Flat Earth / drifting : length 7392 m\n\nBuild anyway?", "Problems", MessageBoxButtons.YesNo);
+            SetMode("2d"); SettingsMenu(_save); await Pump(200); Shot("tour_menu_settings"); LastMenu?.Close();
+            TreeMenu(_tree, new Point(40, 40)); await Pump(200); Shot("tour_menu_tree"); LastMenu?.Close();
+            SetMode("2d");
+            File.WriteAllLines(Path.Combine(outDir, "ui_timing.txt"), rep);
+            return;
+        }
+        if (Environment.GetEnvironmentVariable("BMB_ONLY") == "land")
+        {
+            // a short check of the Landscape / Surface / ramps parts only (the full robot run is for releases)
+            await LandTests(Ok, ms => Pump(ms), Shot);
+            var qsw = Stopwatch.StartNew(); string qb = ""; BuildFinished = m => qb = m;
+            Build();
+            while (Building && qsw.Elapsed.TotalSeconds < 180) await Pump(100);
+            rep.Add($"Build + install from the window: {qsw.Elapsed.TotalSeconds:0.0} s - {qb}");
+            Ok("Build + install finished", qb.StartsWith("Built"));
+            await Pump(1000);
+            File.Delete(Doc.Autosave);
+            rep.Add($"RESULT {pass} passed, {fail} failed");
+            File.WriteAllLines(Path.Combine(outDir, "ui_timing.txt"), rep);
+            return;
+        }
         string worldAtStart = Json.Dumps(D.World, -1);
         foreach (var m in new[] { "2d", "3d", "collision", "ai", "light", "surface", "car" })
         {
@@ -331,6 +379,8 @@ public sealed partial class MainForm
         rep.Add($"RESULT {pass} passed, {fail} failed");
         File.WriteAllLines(Path.Combine(outDir, "ui_timing.txt"), rep);
     }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
 
     static double[] BoxC(Pick p)
     {

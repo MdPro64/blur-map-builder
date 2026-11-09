@@ -34,7 +34,7 @@ WORLD
   Ctrl+Z undo    Ctrl+Y (or Ctrl+Shift+Z) redo   (30 steps)
   Ctrl+S save    Ctrl+B build + install    F1 / H this help
 VIEW
-  F3 (or the 2D / 3D / Collision buttons at the top left)  switch views
+  F3 (or the 2D / 3D / Collision buttons at the top left)  switch views    Ctrl+1 .. Ctrl+9  the tabs in their order
   3D view (Blender keys): middle-drag turn, Shift+middle-drag move, Ctrl+middle-drag or wheel zoom,
      Alt+left-drag = middle-drag, numpad 7 top / 1 front / 3 side (Ctrl = opposite), 5 flat, 2 4 6 8 turn, Home all
   Collision view: green = drivable ground, red = solid (white ticks = the side that pushes cars away),
@@ -68,7 +68,7 @@ VIEW
     }
 
     /// the short help of the tab that is open; its All keys button opens the long list
-    void Help() { HelpCard.Show(this, Mode); LastPreview = HelpCard.Last; }
+    public void Help() { HelpCard.Show(this, Mode); LastPreview = HelpCard.Last; }
 
     public void FullHelp()
     {
@@ -107,7 +107,7 @@ VIEW
         else if (Updates.Newer(info.Value.Tag))
         {
             _updateInfo = info;
-            _update.Text = "⬇ Update " + info.Value.Tag; _update.BackColor = Theme.Orange;
+            _update.Text = "⬇ Update " + info.Value.Tag; _update.BackColor = Theme.Orange; _updateFound = true; FitTop();
             ShowUpdate();
         }
         else
@@ -318,8 +318,10 @@ VIEW
         p.Controls.Add(new Label { Text = "Start the game?", AutoSize = true, ForeColor = Theme.Text, Font = new Font("Segoe UI", 11f, FontStyle.Bold), Margin = new Padding(0, 4, 0, 6) });
         void Go(bool? lan) { f.Close(); if (lan != null) StartGame(lan.Value); }
         var a = Theme.Btn($"▶  Custom LAN race on  {D.Loc.Str("name")}  >  {D.Map.Str("name")}", () => Go(true), Theme.Orange); a.Font = Theme.Bold; p.Controls.Add(a);
-        p.Controls.Add(new Label { Text = "   in game: Multiplayer > LAN > Host game (Y): the lobby is already on this map", AutoSize = true, ForeColor = ColorTranslator.FromHtml("#9aa8b8") });
+        p.Controls.Add(new Label { Text = "   the game goes to the LAN lobby on this map by itself", AutoSize = true, ForeColor = ColorTranslator.FromHtml("#9aa8b8") });
         p.Controls.Add(Theme.Btn("▶  Start the game normally", () => Go(false)));
+        var fast = Theme.Check("Fast start: skip the intro movies and \"Press Start\" (both buttons)", Play.Fast, v => Play.Fast = v);
+        fast.ForeColor = Theme.Text; fast.Margin = new Padding(3, 8, 3, 4); p.Controls.Add(Look.Tip(fast, "The game skips the Activision / Bizarre movies, the Blur movie and the Press Start screen by itself. The Amax login box still needs you"));
         p.Controls.Add(Theme.Btn("Not now", () => Go(null)));
         f.Controls.Add(p);
         f.KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape) f.Close(); };

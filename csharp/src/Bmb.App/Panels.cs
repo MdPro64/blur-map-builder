@@ -377,11 +377,15 @@ public sealed partial class MainForm
         _filling2 = true;
         var s = Surface.Settings(D.Map);
         _surfRoad.SelectedItem = Surface.Surfaces[s.Road].Label;
-        foreach (var (k, b) in _sideBtns) b.Checked = k == s.SideType;
+        _surfSide.SelectedIndex = Math.Max(0, Array.IndexOf(SideKeys, s.SideType));
+        SurfBrushShow();
         _surfVariety.Checked = s.Variety;
         string feel = Surface.LocFeel(D.World, D.Loc);
         _surfFeel.SelectedItem = UiText.FeelNames.FirstOrDefault(q => q.Key == feel).Name ?? "Strong";
         _surfSides.Text = s.Sides > 0 ? $"{s.Sides:0} m" : "off";
+        var so = D.Map.Obj("surface");
+        _bumpH.Value = so != null && so.ContainsKey("bump_h") ? so.Num("bump_h") : 0.3;
+        _bumpSize.Value = so != null && so.ContainsKey("bump_size") ? so.Num("bump_size") : 3.0;
         _filling2 = false;
     }
 
@@ -389,7 +393,7 @@ public sealed partial class MainForm
     {
         Edit(() => { if (D.Map.Obj("surface") == null) D.Map["surface"] = new JObj(); D.Map.Obj("surface")![key] = v; });
         SurfRefresh();
-        string name = key switch { "road" => "Road type", "side_type" => "Sides", "variety" => "Varied asphalt", _ => key };
+        string name = key switch { "road" => "Road type", "side_type" => "Sides", "variety" => "Varied asphalt", "bump_h" => "Bump height (m)", "bump_size" => "Bump spacing (m)", _ => key };
         string shown = v is string s && Surface.Surfaces.TryGetValue(s, out var q) ? q.Label : v is true ? "ON" : v is false ? "OFF" : $"{v}";
         Say($"{name}: {shown} (Build + install to drive on it)", Theme.Good);
     }
@@ -398,9 +402,9 @@ public sealed partial class MainForm
 
     void SurfClear()
     {
-        if (Surface.Settings(D.Map).Paint.Count == 0) return;
-        Edit(() => { if (D.Map.Obj("surface") == null) D.Map["surface"] = new JObj(); D.Map.Obj("surface")!["paint"] = new JObj(); });
-        Say("All paint removed from this map");
+        if (Surface.Settings(D.Map).Paint.Count == 0 && D.Map.Obj("surface")?.Obj("bumps") == null) return;
+        Edit(() => { if (D.Map.Obj("surface") == null) D.Map["surface"] = new JObj(); D.Map.Obj("surface")!["paint"] = new JObj(); D.Map.Obj("surface")!.Remove("bumps"); });
+        Say("All paint and bumps removed from this map");
     }
 
     void SurfFeel(string key)

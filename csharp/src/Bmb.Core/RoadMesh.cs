@@ -478,7 +478,13 @@ public static class RoadMesh
         return o;
     }
 
-    public static List<Chunk> OverlayChunks(JObj m, Road main) => Surface.OverlayChunks(m, Network.Get(m, main));
+    public static List<Chunk> OverlayChunks(JObj m, Road main)
+    {
+        var net = Network.Get(m, main);
+        var o = Surface.OverlayChunks(m, net);
+        var t = Terrain.Make(m, net, Terrain.Budget(m, main, net));       // ramps, bumps, hills
+        return t.Chunks.Count == 0 ? o : o.Concat(t.Chunks).ToList();
+    }
 
     public static int ModelCount(JObj m, Road main) => NetworkChunks(m, main).Sum(c => c.Cs.Count) + OverlayChunks(m, main).Count;
 

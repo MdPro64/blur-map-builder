@@ -99,6 +99,28 @@ switch (cmd)
         Console.WriteLine($"done in {sw.Elapsed.TotalSeconds:0.00} s");
         break;
     }
+    case "terrainprep":     // terrainprep GAME IN_WORLD.json OUT_WORLD.json: every map gets 3 jump ramps, auto hills and a bump patch (test only)
+    {
+        Paths.Init(args[1]);
+        var w = (JObj)Json.Load(args[2])!;
+        foreach (var loc in w.Objs("locations"))
+            foreach (var m in loc.Objs("maps"))
+            {
+                var road = Road.ForMap(m); var net = Network.Get(m, road);
+                var objs = m.Arr("objects") ?? new List<object?>(); m["objects"] = objs;
+                foreach (var (f, id) in new[] { (0.3, "ramp:jump"), (0.55, "ramp:kicker"), (0.8, "ramp:table") })
+                {
+                    int i = (int)(road.Count * f);
+                    objs.Add(new JObj { ["id"] = id, ["x"] = road.Centre[i].X, ["z"] = road.Centre[i].Z, ["h"] = road.Height[i], ["turn"] = road.Heading[i] });
+                }
+                for (int i = (int)(road.Count * 0.45); i < (int)(road.Count * 0.5); i++) Terrain.BumpBrush(m, road.Centre[i].X, road.Centre[i].Z, road.WidthAt[i] / 2, false);
+                int n = Terrain.Auto(m, net, new Terrain.AutoSet());
+                var t = Terrain.Make(m, Network.Get(m, road), Terrain.Budget(m, road, Network.Get(m, road)));
+                Console.WriteLine($"{m.Str("name")}: {n} hill points; budget {Terrain.Budget(m, road, net)}; ramps {t.Ramps}, bumps {t.Bumps} ({t.BumpStep} m), hills {t.Hills} ({t.HillStep} m); max verts {t.Chunks.Max(c => c.Verts.Count)}, max strip {t.Chunks.Max(c => c.Strip.Count)}; decks {t.Decks.Count}, walls {t.Walls.Count}");
+            }
+        Json.Save(w, args[3]);
+        break;
+    }
     case "wheels":          // wheels GAME: every game car's wheels on every body car an imported body uses
     {
         Paths.Init(args[1]);
@@ -393,6 +415,59 @@ switch (cmd)
         Skins.UvMap(c.Car, c.Body, mask: true).Save(args[3]);
         break;
     }
+    case "texscan":         // texscan PAK OUTDIR REGEX: every picture of every model in PAK whose name matches REGEX, as small PNGs + a list (look only)
+    {
+        using var P = new Pak(args[1]); Directory.CreateDirectory(args[2]);
+        var rx = new System.Text.RegularExpressions.Regex(args[3], System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var lines = new List<string>(); var seen = new HashSet<string>();
+        foreach (var e in P.Files.Where(f => f.Offset != Pak.NoData && f.Name.EndsWith(".model", StringComparison.OrdinalIgnoreCase)))
+        {
+            byte[]? d; ModelInfo mi;
+            try { d = P.Read(e); if (d == null) continue; mi = CpModel.Read(d); } catch (Exception) { continue; }
+            foreach (var t in mi.TexList)
+            {
+                if (!rx.IsMatch(t.Name)) continue;
+                lines.Add($"{t.Name}	{t.W}x{t.H}	{(t.Dxt == 0x31545844 ? "DXT1" : t.Dxt == 0x35545844 ? "DXT5" : t.Dxt.ToString("X"))}	{e.Name}");
+                if (!seen.Add(t.Name.ToLowerInvariant())) continue;
+                var pic = Previews.ReadTexture(d, t, 128);
+                if (pic == null) continue;
+                Previews.SavePng(pic, Path.Combine(args[2], t.Name + ".png"));
+            }
+        }
+        File.WriteAllLines(Path.Combine(args[2], "list.txt"), lines);
+        Console.Error.WriteLine($"{lines.Count} pictures ({seen.Count} names), {sw.ElapsedMilliseconds} ms");
+        break;
+    }
+    case "texmodels":       // texmodels PAK OUTDIR FILEREGEX: the first picture of each model whose file name matches, one PNG per model + its picture id (look only)
+    {
+        using var P = new Pak(args[1]); Directory.CreateDirectory(args[2]);
+        var rx = new System.Text.RegularExpressions.Regex(args[3], System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        foreach (var e in P.Files.Where(f => f.Offset != Pak.NoData && rx.IsMatch(f.Name)))
+        {
+            var d = P.Read(e); if (d == null) continue;
+            ModelInfo mi; try { mi = CpModel.Read(d); } catch (Exception) { continue; }
+            var nm = Path.GetFileNameWithoutExtension(e.Name);
+            var parts = new List<string>();
+            foreach (var t in mi.TexList)
+            {
+                var pic = Previews.ReadTexture(d, t, 64); if (pic == null) continue;
+                Previews.SavePng(pic, Path.Combine(args[2], nm + "_" + t.Name + ".png"));
+                long r = 0, g = 0, b2 = 0; int n = pic.W * pic.H;
+                for (int i = 0; i < n; i++) { r += pic.Px[i * 3]; g += pic.Px[i * 3 + 1]; b2 += pic.Px[i * 3 + 2]; }
+                parts.Add($"{t.Name}={r / n},{g / n},{b2 / n}");
+            }
+            Console.WriteLine($"{nm}	{string.Join("  ", parts)}");
+        }
+        break;
+    }
+    case "boxes":           // boxes PAK NAME: a model's boxes and the numbers around them (look only)
+    {
+        using var P = new Pak(args[1]); var d = P.Read(args[2])!; var mi = CpModel.Read(d);
+        string F(IEnumerable<float> v) => string.Join(" ", v.Select(x => x.ToString("0.###")));
+        for (int i = 0; i < mi.ModelBoxes.Count; i++) Console.WriteLine($"model {i} @{mi.ModelRawAt[i]}: pre [{F(mi.ModelRaw[i])}] box [{string.Join(" ", mi.ModelBoxes[i].Select(x => x.ToString("0.###")))}] post [{F(mi.ModelRaw2[i])}]");
+        foreach (var e in mi.AllElements) Console.WriteLine($"element {e.Name} parent {e.Parent} box [{string.Join(" ", e.Box.Select(x => x.ToString("0.###")))}] m [{F(e.M.Select(x => (float)x))}]");
+        break;
+    }
     case "pakget":          // pakget PAK NAME OUT: one file out of a pack (look only)
     {
         using var P = new Pak(args[1]); File.WriteAllBytes(args[3], P.Read(args[2])!);
@@ -495,6 +570,25 @@ switch (cmd)
         var o = Surface.OverlayChunks(m, net);
         Console.WriteLine(string.Join(" ", o.Select(c => $"{c.Key} {c.Verts.Count} {c.Strip.Count} {c.Anchor[0]} {c.Anchor[2]}")));
         File.WriteAllText(args[3] + ".ov", Json.Dumps(o.Select(c => (object?)c.Verts.Select(v => (object?)v.Select(x => (object?)x).ToList()).ToList()).ToList(), -1));
+        break;
+    }
+    case "landkeys":        // landkeys GAME MAPS: every map with hills: its textures (quads per key) and slope spread (look only)
+    {
+        Paths.Init(args[1], args[2]);
+        var w = World.AssignIds(World.Load());
+        foreach (var loc in w.Objs("locations"))
+            foreach (var m in loc.Objs("maps"))
+            {
+                if (Terrain.Heights(m).Count == 0) continue;
+                var r = Road.ForMap(m); var net = Network.Get(m, r);
+                var sm = Terrain.Sample(m, net, 8);
+                var t = Terrain.Make(m, net, Terrain.Budget(m, r, net));
+                Console.WriteLine($"{loc.Str("name")} / {m.Str("name")}: ground={Terrain.Ground(m)} auto={Terrain.AutoTex(m)} paint={Terrain.LandPaint(m).Count} highest={Terrain.Heights(m).Values.Max():0} m");
+                Console.WriteLine("  8 m keys: " + string.Join(", ", sm.Keys.GroupBy(k => k.Value).OrderByDescending(g => g.Count()).Select(g => $"{g.Key} {g.Count()}")));
+                Console.WriteLine($"  build: {t.Hills} hill models on {t.HillStep} m, keys {string.Join(",", t.HillKeys)}");
+                var slopes = sm.Keys.Keys.Select(q => { double h00 = sm.H(q.Item1, q.Item2), h10 = sm.H(q.Item1 + 1, q.Item2), h01 = sm.H(q.Item1, q.Item2 + 1); double gx = (h10 - h00) / 8, gz = (h01 - h00) / 8; return Math.Atan(Math.Sqrt(gx * gx + gz * gz)) * 180 / Math.PI; }).OrderBy(v => v).ToList();
+                if (slopes.Count > 0) Console.WriteLine($"  slope deg: median {slopes[slopes.Count / 2]:0}, 90% {slopes[(int)(slopes.Count * 0.9)]:0}, max {slopes[^1]:0}");
+            }
         break;
     }
     default:

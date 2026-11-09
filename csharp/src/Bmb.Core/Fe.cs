@@ -3,7 +3,7 @@ namespace Bmb.Core;
 
 public static class Paths
 {
-    public const string Version = "2.2.0";
+    public const string Version = "2.3.0";
     /// game = the player's Blur folder (read only here); data = its "Blur Map Builder" folder; maps / outDir = where maps are read and packs go
     public static string Game = "", Data = "", Base = "", Unpacked = "", GamedataOriginal = "", RootOriginal = "", LevelTemplate = "", Addon = "",
         Catalog = "", ModelCache = "", Work = "", Tracks = "", Logs = "", Levels = "", PackDir = "", FeWork = "", GamedataOut = "", RootOut = "", WorldFile = "", Cache = "";

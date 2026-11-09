@@ -35,6 +35,7 @@ public sealed class CarPanel : Panel
     {
         _f = f; BackColor = Theme.Bg;
         Look.DarkScroll(_controls, _list);
+        RoundList.Dress(_list, 26);
         _bodyBtn = Theme.Btn("Use the game body", () => Set("body_glb", null));
         // left: the list
         var head = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, BackColor = Theme.Panel, Padding = new Padding(8) };

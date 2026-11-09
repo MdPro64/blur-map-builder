@@ -99,7 +99,7 @@ public sealed partial class View3D
     public event Action? Edited;
     readonly System.Windows.Forms.Timer _anim = new() { Interval = 16 };
 
-    static readonly Dictionary<string, double[]> KindRgb = new() { ["scenery"] = new[] { .6, .66, .75 }, ["breakable"] = new[] { 1, .72, .3 }, ["movable"] = new[] { .35, .8, 1 }, ["animated"] = new[] { .8, .5, 1 }, ["import"] = new[] { .35, .95, .55 } };
+    static readonly Dictionary<string, double[]> KindRgb = new() { ["scenery"] = new[] { .6, .66, .75 }, ["breakable"] = new[] { 1, .72, .3 }, ["movable"] = new[] { .35, .8, 1 }, ["animated"] = new[] { .8, .5, 1 }, ["import"] = new[] { .35, .95, .55 }, ["ramp"] = new[] { 1, .45, .2 } };
     static readonly Dictionary<string, double[]> TypeRgb = new() { ["Shunt"] = new[] { 1, .25, .25 }, ["Barge"] = new[] { 1, .62, .1 }, ["Shock"] = new[] { .23, .63, 1 }, ["Mine"] = new[] { 1, .88, .29 }, ["Bolt"] = new[] { .69, .44, 1 }, ["Nitro"] = new[] { .25, .88, 1 }, ["Shield"] = new[] { .25, 1, .44 }, ["Repair"] = new[] { 1.0, 1, 1 } };
     static readonly Dictionary<string, string> ObjectLabels = new()
     {
@@ -133,7 +133,7 @@ public sealed partial class View3D
 
     public void SetMode(string m)
     {
-        bool on = m is "3d" or "collision";
+        bool on = m is "3d" or "collision" or "land";
         Active = on;
         if (on) { if (SceneMode != m) _dirty = true; SceneMode = m; }
         else { Oper = null; DriveT = null; CamAnim = null; }
@@ -142,7 +142,7 @@ public sealed partial class View3D
         else { PanelShow(null); HoverHide(); }
     }
 
-    public void Dirty() { _dirty = true; G.Invalidate(); }
+    public void Dirty() { _dirty = true; _landDirty = true; G.Invalidate(); }
 
     public void Ensure() { if (_dirty) Rebuild(); }
 
@@ -271,12 +271,14 @@ public sealed partial class View3D
                     _textured.Add(new TexDraw { Key = mt.Key, Image = mt.Image, V = o, Owner = key });
                 }
             }
+            else if (Terrain.IsRamp(e)) { }      // drawn as its real shape with the ground models
             else M.Box(pos, V(bx[1] - bx[0], Math.Max(bx[3] - bx[2], .05), bx[5] - bx[4]), turn, KindRgb.GetValueOrDefault(e.Str("kind") ?? "", V(.7, .7, .7)), lift: bx[2], origin: new[] { bx[0], bx[1], bx[4], bx[5] }, k: k);
             M.CurRot = new[] { 0.0, 0 };
             bool solid = m.Obj("edits")?.Obj(key)?.Truthy("solid") == true;
             PickAdd(key, pos, turn, bx, k, scalable, rx, rz, $"{e.Str("name") ?? "?"}  ({UiText.KindText.GetValueOrDefault(e.Str("kind") ?? "", "")}, {e.Str("loc")} / {e.Str("cat")}){(solid ? "  - SOLID" : "")}");
             placedN++;
         }
+        foreach (var rp in Terrain.Ramps(m)) PlacedBox(rp.Key, V(rp.X, g + rp.Y, rp.Z), rp.Turn, rp.K, rp.Rx, rp.Rz, true);   // ramps: clickable (drawn as ground models)
         var (x0, x1, z0, z1) = road.Bounds(1500);
         M.Quad(V(x0, g - .3, z0), V(x1, g - .3, z0), V(x1, g - .3, z1), V(x0, g - .3, z1), V(.23, .27, .32), shade: false);
         for (double gx = Math.Floor(x0 / 100) * 100; gx < x1; gx += 100) M.Line(V(gx, g - .25, z0), V(gx, g - .25, z1), V(.3, .35, .4));
@@ -324,8 +326,12 @@ public sealed partial class View3D
                     Strip(rr, (q, k) => q.WidthAt[k] / 2 - sw * f1[k], (q, k) => q.WidthAt[k] / 2, col, .08, mask[1]);
                 }
             }
-            foreach (var c in RoadMesh.OverlayChunks(m, road)) AddChunk(M, c, Rgb(c.Key));
+            foreach (var c in Surface.OverlayChunks(m, net)) ChunkTex(c);
         }
+        // jump ramps, bumps and hills (the same models the build makes)
+        // (the Landscape tab draws the hills live instead: LandDraw)
+        var ter = Terrain.Make(m, net, Terrain.Budget(m, road, net));
+        foreach (var c in LandMode ? ter.Chunks.Take(ter.Chunks.Count - ter.Hills) : ter.Chunks) ChunkTex(c);
         for (int i = 0; i < n - 1; i++)
         {
             if (road.Height[i] > 0.5 || road.Height[i + 1] > 0.5)
@@ -1069,7 +1075,9 @@ public sealed partial class View3D
                 GL.glDepthMask(0); Shown(M, M.T, GL.TRIANGLES); GL.glDepthMask(1);
             }
         }
+        if (LandMode) LandDraw();
         if (!_drawOverlays) return;
+        if (LandMode) LandRing();
         var sel = PickOf(Sel); var op = Oper;
         if (SceneMode == "3d" && SoloKey == null)
         {
@@ -1154,6 +1162,7 @@ public sealed partial class View3D
         var mods = Control.ModifierKeys;
         _shiftDown = (mods & Keys.Shift) != 0; _ctrlDown = (mods & Keys.Control) != 0;
         if (e.Button == MouseButtons.Middle || (e.Button == MouseButtons.Left && (mods & Keys.Alt) != 0)) { MidPress(e); return; }
+        if (LandMode) { if (e.Button is MouseButtons.Left or MouseButtons.Right) LandDown(e, e.Button == MouseButtons.Right); return; }
         if (e.Button == MouseButtons.Right)
         {
             if (ScatterDrawing) ScatterDrawToggle(false);
@@ -1665,6 +1674,7 @@ public sealed partial class View3D
             G.Invalidate();
             return;
         }
+        if (LandMode) { LandMove(e.X, e.Y); return; }
         HoverMotion(e.X, e.Y, (Control.ModifierKeys & Keys.Control) != 0);
     }
 
@@ -1695,6 +1705,7 @@ public sealed partial class View3D
     {
         if (!Active) return;
         _drag = null;
+        if (LandMode) { LandUp(); return; }
         if (e.Button == MouseButtons.Left && Oper is { Drag: true }) ConfirmOp();
     }
 

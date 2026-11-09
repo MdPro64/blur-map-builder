@@ -105,6 +105,8 @@ public sealed partial class MainForm
         V3.Select(null);
         ok("Eye and solo do not change the map", Json.Dumps(D.World, -1) == before);
         ok("Language box in the corner", _langBox.Visible && _langBox.Items.Count == 2);
+        // 3D hides the map panel below 1700 px wide (the view needs the room): fold them all on a wide window
+        var oldSize = Size; Size = new Size(1800, Height); await pump(150);
         int wide = G.Width;
         foreach (var n in new[] { "left", "library", "objects", "right" }) ToggleFold(n);
         await pump(150); G.Refresh(); shot("fold_all");
@@ -115,6 +117,7 @@ public sealed partial class MainForm
         foreach (var n in new[] { "left", "library", "objects", "right" }) ToggleFold(n);
         await pump(150);
         ok($"Arrows open them again (view {G.Width} was {wide}, hidden: {string.Join(",", _folds.Values.SelectMany(f => f.Panel.Controls.Cast<Control>().Where(c => !c.Visible).Select(c => f.Panel.GetType().Name + "/" + c.GetType().Name + "/" + c.Text)))})", _rightP.Width > FoldW && G.Width <= wide + 30 && _folds.Values.All(f => f.Panel.Controls.Cast<Control>().All(c => c.Visible)));
+        Size = oldSize; await pump(150);
         WithTilt(10, r => { V3.Dirty(); V3.Ensure(); int i = Enumerable.Range(0, r.Count).OrderByDescending(k => Math.Abs(r.Tan[k])).First(); V3.LookAt(r.Centre[i].X, r.Height[i], r.Centre[i].Z, r.Heading[i]); G.Refresh(); Application.DoEvents(); shot("sun_tilt"); });
         V3.ToggleShadows(false); G.Refresh(); ok("Shadows off", !V3.Shadows); V3.ToggleShadows(true); G.Refresh(); ok("Shadows on", V3.Shadows);
         V3.Dirty(); V3.Reset(); await pump(60);
@@ -188,15 +191,113 @@ public sealed partial class MainForm
         SetMode("2d");
     }
 
+    // jump ramps (3D library), the Landscape tab, the bumps brush (Surface)
+    async Task LandTests(Action<string, bool> ok, Func<int, Task> pump, Action<string> shot)
+    {
+        void rep2(string line) => ok(line.Trim(), true);
+        var r = D.Road()!;
+        ok("Library: the jump ramps are listed", Bmb.Core.Layout.Catalog().Values.Count(e => e.Str("kind") == "ramp") >= 4);
+        // a ramp on the road
+        int i0 = (int)(r.Count * 0.3);
+        int n = 0;
+        Edit(() =>
+        {
+            var objs = D.Map.Arr("objects") ?? new List<object?>(); D.Map["objects"] = objs;
+            objs.Add(new JObj { ["id"] = "ramp:jump", ["x"] = r.Centre[i0].X, ["z"] = r.Centre[i0].Z, ["h"] = r.Height[i0], ["turn"] = r.Heading[i0] });
+            n = objs.Count - 1;
+        });
+        SetMode("3d"); V3.Dirty(); V3.Ensure();
+        var ramps = Bmb.Core.Terrain.Ramps(D.Map);
+        ok("Jump ramp: placed on the road", ramps.Any(q => q.Key == "obj:" + n));
+        V3.Select("obj:" + n); V3.LookAt(r.Centre[i0].X, r.Height[i0], r.Centre[i0].Z, r.Heading[i0]); G.Refresh(); await pump(80); shot("ramp_3d");
+        ok("Jump ramp: selecting it shows its settings", V3.PanelOpen);
+        Edit(() => { var o = (JObj)D.Map.Arr("objects")![n]!; o["ramp"] = new JObj { ["shape"] = "table", ["curve"] = 0.55, ["surface"] = "dirt" }; });
+        var rt = Bmb.Core.Terrain.Ramps(D.Map).First(q => q.Key == "obj:" + n);
+        ok("Jump ramp: the shape setting changes it (table top, dirt)", rt.Shape == "table" && rt.Surf == "dirt" && Math.Abs(rt.Top(0.5) - rt.H) < 1e-6 && rt.Top(0) < 0.01);
+        Edit(() => { var ed = D.Map.Obj("edits") ?? new JObj(); D.Map["edits"] = ed; ed["obj:" + n] = new JObj { ["scale"] = new List<object?> { 1.0, 2.0, 1.5 } }; });
+        rt = Bmb.Core.Terrain.Ramps(D.Map).First(q => q.Key == "obj:" + n);
+        ok($"Jump ramp: S scales its height and length ({rt.H:0.0} m high, {rt.L:0} m long)", Math.Abs(rt.H - 5.2) < 0.01 && Math.Abs(rt.L - 24) < 0.01);
+        V3.Dirty(); V3.Ensure(); V3.Select("obj:" + n); G.Refresh(); await pump(80); shot("ramp_table_3d");
+        V3.Select(null); V3.LookAt(r.Centre[i0].X, r.Height[i0], r.Centre[i0].Z, r.Heading[i0] + 1.2); V3.Dist = 55; V3.Pitch = 0.3; G.Refresh(); await pump(80); shot("ramp_view");
+        // hills
+        SetMode("land"); await pump(60);
+        ok("Landscape tab: its tool bar shows", _bars["land"].Visible);
+        TestLandAuto = _ => true; LandAuto(); TestLandAuto = null;
+        var hs = Bmb.Core.Terrain.Heights(D.Map);
+        ok($"Auto hills: made around the road ({hs.Count} points, highest {(hs.Count > 0 ? hs.Values.Max() : 0):0} m)", hs.Count > 200);
+        var net = Bmb.Core.Network.Get(D.Map, r); var rd = new Bmb.Core.Terrain.RoadDist(net);
+        ok("Auto hills: the road stays clear", Enumerable.Range(0, r.Count).All(k => rd.Clear(r.Centre[k].X, r.Centre[k].Z) == 0));
+        double fx = r.Centre[0].X + 400, fz = r.Centre[0].Z + 400;
+        double h0 = Bmb.Core.Terrain.HeightAt(D.Map, fx, fz);
+        Bmb.Core.Terrain.Brush(D.Map, "raise", fx, fz, 60, 5);
+        ok("Raise brush: lifts the ground", Bmb.Core.Terrain.HeightAt(D.Map, fx, fz) > h0 + 4);
+        Bmb.Core.Terrain.Brush(D.Map, "erase", fx, fz, 60, 1);
+        ok("Right drag: back to flat", Bmb.Core.Terrain.HeightAt(D.Map, fx, fz) < 0.5);
+        // the Landscape tab is the 3D view: a brush dab there, the ring, Paint, auto texture
+        V3.Reset(); G.Refresh(); LandRefresh(); await pump(80);
+        ok("Landscape tab: shows the 3D view", Is3D && V3.Active && V3.LandMode);
+        shot("land_tab");
+        double bx = r.Centre[0].X + 300, bz = r.Centre[0].Z + 300;
+        double hb = Bmb.Core.Terrain.HeightAt(D.Map, bx, bz);
+        V3.LandTool = "raise"; V3.LandStrength = 6; V3.LandDabAt(bx, bz);
+        ok("Landscape 3D: a Raise dab lifts the ground there", Bmb.Core.Terrain.HeightAt(D.Map, bx, bz) > hb + 3);
+        V3.LandHoverAt(bx, bz); V3.LookAt(bx, 20, bz, 0.8); V3.Dist = 260; V3.Pitch = 0.45; G.Refresh(); await pump(80); shot("land_brush_ring");
+        V3.LandTool = "paint"; V3.LandPaintKey = "concrete"; V3.LandSize = 40; V3.LandDabAt(bx, bz);
+        var sm = Bmb.Core.Terrain.Sample(D.Map, net, 4);
+        ok("Landscape 3D: Paint puts its texture on the hills", sm.Keys.Any(kv => kv.Value == "concrete"));
+        V3.LandDabAt(bx, bz, true);
+        ok("Landscape 3D: right drag with Paint removes it", !Bmb.Core.Terrain.Sample(D.Map, net, 4).Keys.Any(kv => kv.Value == "concrete"));
+        V3.LandTool = "raise"; V3.LandStrength = 1.5; V3.LandSize = 80;
+        var keys = Bmb.Core.Terrain.Sample(D.Map, net, 4).Keys.Values.Distinct().ToList();
+        ok($"Auto texture: flat, slopes and steep parts get different textures ({string.Join(", ", keys)})", keys.Contains("grass") && keys.Count >= 2);
+        double ra = Bmb.Core.Terrain.HeightAtLinear(D.Map, bx + 3, bz + 5), rs = Bmb.Core.Terrain.HeightAt(D.Map, bx + 3, bz + 5);
+        rep2($"   smooth height {rs:0.00} m (straight lines {ra:0.00} m)");
+        Edit(() => Bmb.Core.Terrain.Land(D.Map)["auto_tex"] = false);
+        ok("Auto texture off: one texture", Bmb.Core.Terrain.Sample(D.Map, net, 4).Keys.Values.Distinct().Count() == 1);
+        Edit(() => Bmb.Core.Terrain.Land(D.Map).Remove("auto_tex"));
+        V3.Dirty(); V3.Reset(); G.Refresh(); await pump(80); shot("land_tab_hills");
+        V3.LookAt(r.Centre[0].X, r.Height[0] + 10, r.Centre[0].Z, r.Heading[0] + 2.0); V3.Dist = 420; V3.Pitch = 0.18; G.Refresh(); await pump(80); shot("land_tab_close");
+        // bumps
+        SetMode("surface"); ok("Surface: bump options hidden with another brush", !_bumpGroup.Visible);
+        Map2.BrushKey = "bumps"; SurfBrushShow(); ok("Surface: bump options show with the Bumps brush (Advanced layout)", Simple || _bumpGroup.Visible);
+        for (int k = (int)(r.Count * 0.45); k < (int)(r.Count * 0.5); k++) Bmb.Core.Terrain.BumpBrush(D.Map, r.Centre[k].X, r.Centre[k].Z, r.WidthAt[k] / 2, false);
+        D.Touched(); Map2.Fit(); G.Refresh(); await pump(60); shot("bumps_2d");
+        Map2.BrushKey = "dirt"; SurfBrushShow();
+        // auto bumps: random short stretches, not the whole road
+        string bumpsBefore = Bmb.Core.Json.Dumps(D.Map.Obj("surface")?["bumps"], -1);
+        TestAutoBumps = s => { s.Height = 0.3; s.MaxLen = 20; s.MaxGap = 150; s.Keep = true; return true; }; SurfAutoBumps(); TestAutoBumps = null;
+        var bcells = D.Map.Obj("surface")?.Obj("bumps")?.Count ?? 0;
+        double roadCells = net.Drivable().Sum(q => q.Length * q.Width) / (Bmb.Core.Surface.CellM * Bmb.Core.Surface.CellM);
+        ok($"Auto bumps: bumpy stretches added, not the whole road ({bcells} cells of about {roadCells:0})", Bmb.Core.Json.Dumps(D.Map.Obj("surface")?["bumps"], -1) != bumpsBefore && bcells < roadCells * 0.5);
+        Map2.Fit(); G.Refresh(); await pump(60); shot("auto_bumps_2d");
+        // varied asphalt: the game's own asphalt + repair patches
+        Edit(() => { if (D.Map.Obj("surface") == null) D.Map["surface"] = new JObj(); D.Map.Obj("surface")!["variety"] = true; });
+        var patches = Bmb.Core.Surface.AutoPatches(D.Map, net);
+        ok($"Varied asphalt: repair patches along the road ({patches.Count} cells, {patches.Values.Select(v => v.Key).Distinct().Count()} kinds)", patches.Count > 20);
+        var (rd0, _) = Bmb.Core.Surface.RoadTexture(256, 128, r.Width, D.Map, 0); var (rd1, _) = Bmb.Core.Surface.RoadTexture(256, 128, r.Width, D.Map, 1);
+        ok("Varied asphalt: the kinds of asphalt differ", !rd0.AsSpan().SequenceEqual(rd1));
+        ok("Game pictures: read from the game's own files", Bmb.Core.GameTex.Get("ambient_rock02_diff") != null && Bmb.Core.GameTex.Get("tarmacplain02_diff") != null);
+        var t = Bmb.Core.Terrain.Make(D.Map, net, Bmb.Core.Terrain.Budget(D.Map, r, net));
+        ok($"Ground models: ramps {t.Ramps}, bumps {t.Bumps} ({t.BumpStep:0} m), hills {t.Hills} ({t.HillStep:0} m) fit in the map's 64", t.Ramps >= 1 && t.Bumps >= 1 && t.Hills >= 1 && t.Chunks.Count <= Bmb.Core.Terrain.Budget(D.Map, r, net));
+        int kb = (int)(r.Count * 0.47);
+        SetMode("3d"); V3.Dirty(); V3.Ensure(); V3.Select(null); V3.LookAt(r.Centre[kb].X, r.Height[kb], r.Centre[kb].Z, r.Heading[kb] + 0.6); V3.Dist = 60; V3.Pitch = 0.25; G.Refresh(); await pump(80); shot("bumps_3d");
+        V3.Reset(); G.Refresh(); await pump(80); shot("land_3d");
+        int kp = (int)(r.Count * 0.2); V3.LookAt(r.Centre[kp].X, r.Height[kp], r.Centre[kp].Z, r.Heading[kp] + 0.4); V3.Dist = 70; V3.Pitch = 0.35; G.Refresh(); await pump(80); shot("asphalt_patches_3d");
+        V3.LookAt(r.Centre[0].X, r.Height[0] + 10, r.Centre[0].Z, r.Heading[0] + 2.0); V3.Dist = 420; V3.Pitch = 0.18; G.Refresh(); await pump(80); shot("land_3d_close");
+        SetMode("collision"); V3.Dirty(); V3.Ensure(); V3.Reset(); G.Refresh(); await pump(80); shot("land_collision");
+        SetMode("2d");
+    }
+
     async Task LookTests(Action<string, bool> ok, Func<int, Task> pump, Action<string> shot)
     {
+        await LandTests(ok, pump, shot);
         await SkinTests(ok, pump, shot);
         await RowTests(ok, pump, shot);
         SetMode("2d"); Map2.Sel = 4; WithTilt(10, r => { Map2.Fit(); G.Refresh(); RefreshProps(); Application.DoEvents(); shot("tilt_2d"); });
         SetMode("3d"); WithTilt(10, r => { V3.Dirty(); V3.Ensure(); int i = Enumerable.Range(0, r.Count).OrderByDescending(k => Math.Abs(r.Tan[k])).First(); V3.Select("point:4"); V3.LookAt(r.Centre[i].X, r.Height[i], r.Centre[i].Z, r.Heading[i]); V3.Gizmo = "rotate"; G.Refresh(); Application.DoEvents(); shot("tilt_3d"); V3.Gizmo = "move"; });
         V3.Dirty(); V3.Reset(); await pump(60);
         SetMode("collision"); WithTilt(10, r => { V3.Dirty(); V3.Ensure(); G.Refresh(); Application.DoEvents(); shot("tilt_collision"); }); V3.Dirty(); await pump(60);
-        foreach (var m in new[] { "2d", "3d", "collision", "ai", "light", "surface", "car", "skins" })
+        foreach (var m in new[] { "2d", "3d", "land", "collision", "ai", "light", "surface", "car", "skins" })
         {
             SetMode(m); Help(); await pump(120);
             ok($"Short help: {m}", HelpCard.Last is { Visible: true } && HelpCard.Last.Width < 520 && HelpCard.Last.Height < 420);
@@ -209,7 +310,7 @@ public sealed partial class MainForm
         foreach (var (w, h) in new[] { (960, 600), (1100, 680), (1280, 720), (1920, 1040) })
         {
             WindowState = FormWindowState.Normal; Size = new Size(w, h); await pump(120);
-            foreach (var m in new[] { "2d", "3d", "collision", "ai", "light", "surface", "car", "skins" })
+            foreach (var m in new[] { "2d", "3d", "land", "collision", "ai", "light", "surface", "car", "skins" })
             {
                 SetMode(m); await pump(140);
                 FitPanels(); await pump(40);

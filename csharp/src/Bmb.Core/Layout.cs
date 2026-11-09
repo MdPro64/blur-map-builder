@@ -440,6 +440,7 @@ public static class Layout
         }
         catch (IOException) { }
         foreach (var e in ModelImport.Entries()) c[e.Str("id")!] = e;
+        foreach (var e in Terrain.RampEntries()) c[e.Str("id")!] = e;
         return _catalog = c;
     }
     public static void ReloadCatalog() => _catalog = null;
@@ -453,7 +454,7 @@ public static class Layout
         foreach (var o in m.Objs("objects"))
         {
             i++;
-            if (!Catalog().TryGetValue(o.Str("id") ?? "", out var e)) continue;
+            if (!Catalog().TryGetValue(o.Str("id") ?? "", out var e) || Terrain.IsRamp(e)) continue;   // ramps are ground models (Terrain)
             double x = o.Num("x"), z = o.Num("z"), a = o.Num("turn"), y = Fe.GroundY + o.Num("h");
             string key = $"obj:{i}", kind = e.Str("kind")!;
             if (kind == "breakable") lamps.Add((new LampSpot { X = x, Y = y, Z = z, Turn = a, Uid = Convert.ToUInt32(e.Str("uid"), 16) }, key));

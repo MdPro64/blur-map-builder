@@ -105,12 +105,77 @@ public static class Lang
     public static void Items(ToolStripItemCollection n) { if (Ru) foreach (ToolStripItem q in n) q.Text = T(q.Text); }
 }
 
-/// every message box of the program, in its language
+/// every message box of the program, in its language and in the program's dark look (not the white Windows box)
 static class MessageBox
 {
-    public static DialogResult Show(string text, string title = "") => System.Windows.Forms.MessageBox.Show(Lang.T(text), Lang.T(title));
-    public static DialogResult Show(IWin32Window owner, string text, string title = "", MessageBoxButtons b = MessageBoxButtons.OK, MessageBoxIcon i = MessageBoxIcon.None) => System.Windows.Forms.MessageBox.Show(owner, Lang.T(text), Lang.T(title), b, i);
-    public static DialogResult Show(string text, string title, MessageBoxButtons b, MessageBoxIcon i = MessageBoxIcon.None) => System.Windows.Forms.MessageBox.Show(Lang.T(text), Lang.T(title), b, i);
+    public static DialogResult Show(string text, string title = "") => DarkBox.Show(null, text, title, MessageBoxButtons.OK, MessageBoxIcon.None);
+    public static DialogResult Show(IWin32Window owner, string text, string title = "", MessageBoxButtons b = MessageBoxButtons.OK, MessageBoxIcon i = MessageBoxIcon.None) => DarkBox.Show(owner, text, title, b, i);
+    public static DialogResult Show(string text, string title, MessageBoxButtons b, MessageBoxIcon i = MessageBoxIcon.None) => DarkBox.Show(null, text, title, b, i);
+}
+
+/// the dark message window: a symbol, the text (scrolls when long), the buttons on the right; Enter = the first, Esc = cancel / no
+static class DarkBox
+{
+    public static DialogResult Show(IWin32Window? owner, string text, string title, MessageBoxButtons b, MessageBoxIcon i)
+    {
+        using var f = new Form
+        {
+            Text = Lang.T(title == "" ? "Blur Map Builder" : title), FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false, ShowInTaskbar = owner == null,
+            StartPosition = owner == null ? FormStartPosition.CenterScreen : FormStartPosition.CenterParent, BackColor = Theme.Panel, ForeColor = Theme.Text, Font = Theme.Ui,
+            Padding = new Padding(0), KeyPreview = true,
+        };
+        Look.Dress(f);
+        var body = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, RowCount = 1, Padding = new Padding(18, 18, 22, 12), BackColor = Theme.Panel, Dock = DockStyle.Top };
+        (string Sym, Color Col)? sym = i switch
+        {
+            MessageBoxIcon.Error => ("✖", Theme.Bad),
+            MessageBoxIcon.Warning => ("⚠", Theme.Warn),
+            MessageBoxIcon.Question => ("?", Theme.Head),
+            MessageBoxIcon.Information => ("ℹ", Theme.Head),
+            _ => b is MessageBoxButtons.YesNo or MessageBoxButtons.YesNoCancel ? ("?", Theme.Head) : null,
+        };
+        if (sym != null) body.Controls.Add(new Label { Text = sym.Value.Sym, AutoSize = true, ForeColor = sym.Value.Col, Font = new Font("Segoe UI Symbol", 20f, FontStyle.Bold), Margin = new Padding(0, 0, 14, 0) }, 0, 0);
+        string t = Lang.T(text);
+        var lbl = new Label { Text = t, AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = Theme.Text, Font = new Font("Segoe UI", 10f), UseMnemonic = false, Margin = new Padding(0, 4, 0, 0) };
+        Control msg = lbl;
+        if (lbl.GetPreferredSize(new Size(560, 0)).Height > 420)
+        {
+            var box = new TextBox { Text = t.Replace("\r\n", "\n").Replace("\n", "\r\n"), Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BorderStyle = BorderStyle.None, BackColor = Theme.Panel, ForeColor = Theme.Text, Font = new Font("Segoe UI", 10f), Size = new Size(580, 400), TabStop = false };
+            msg = box;
+        }
+        body.Controls.Add(msg, sym != null ? 1 : 0, 0);
+        if (sym == null) body.SetColumnSpan(msg, 2);
+        var row = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Dock = DockStyle.Top, BackColor = Theme.Panel2, Padding = new Padding(12, 10, 14, 10), WrapContents = false };
+        var list = b switch
+        {
+            MessageBoxButtons.YesNo => new[] { ("Yes", DialogResult.Yes), ("No", DialogResult.No) },
+            MessageBoxButtons.YesNoCancel => new[] { ("Yes", DialogResult.Yes), ("No", DialogResult.No), ("Cancel", DialogResult.Cancel) },
+            MessageBoxButtons.OKCancel => new[] { ("OK", DialogResult.OK), ("Cancel", DialogResult.Cancel) },
+            MessageBoxButtons.RetryCancel => new[] { ("Retry", DialogResult.Retry), ("Cancel", DialogResult.Cancel) },
+            _ => new[] { ("OK", DialogResult.OK) },
+        };
+        var result = list.Any(q => q.Item2 == DialogResult.Cancel) ? DialogResult.Cancel : list.Any(q => q.Item2 == DialogResult.No) ? DialogResult.No : list[0].Item2;
+        Button? first = null;
+        foreach (var (name, r) in list.Reverse())       // right to left: the first button ends up on the left
+        {
+            var rr = r;
+            var btn = Theme.Btn(Lang.T(name), () => { result = rr; f.Close(); }, rr == list[0].Item2 ? Theme.Blue : null);
+            btn.MinimumSize = new Size(88, 30); btn.Margin = new Padding(6, 0, 0, 0);
+            if (rr == list[0].Item2) { btn.Font = Theme.Bold; first = btn; }
+            row.Controls.Add(btn);
+        }
+        f.Controls.Add(row); f.Controls.Add(body);
+        var bs = body.GetPreferredSize(Size.Empty); var rs = row.GetPreferredSize(Size.Empty);
+        f.ClientSize = new Size(Math.Max(380, Math.Max(bs.Width, rs.Width)), bs.Height + rs.Height);
+        f.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Escape) { f.Close(); e.Handled = true; }        // result stays cancel / no / ok
+            else if (e.KeyCode == Keys.Enter) { result = list[0].Item2; f.Close(); e.Handled = true; }
+        };
+        f.Shown += (_, _) => { first?.Focus(); f.Activate(); };
+        if (owner != null) f.ShowDialog(owner); else f.ShowDialog();
+        return result;
+    }
 }
 
 /// the first start: English or Russian

@@ -138,7 +138,8 @@ public static class GenActorPack
             if (k >= tiles.Count) y -= ParkBelow;
             var ax = Layout.ActorAxes3(t.Turn, t.Rx, t.Pitch + t.Rz);
             var r = new List<double>(12);
-            for (int q = 0; q < 3; q++) foreach (double v in ax[q]) r.Add(v * t.Scale[q]);
+            var baked = ModelImport.BakedFor(t.Uid);     // an import's model is already built at its biggest size
+            for (int q = 0; q < 3; q++) foreach (double v in ax[q]) r.Add(v * t.Scale[q] / (baked?[q] ?? 1.0));
             r.Add(t.X); r.Add(y); r.Add(t.Z);
             Put12(ctx, at, r);
             int rec = at - 12;

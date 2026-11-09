@@ -29,6 +29,7 @@ public sealed partial class View3D
         var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Pn, Padding = new Padding(2) };
         top.Controls.Add(B("⬇ Top view", Top)); top.Controls.Add(B("⛶ Reset", Reset)); top.Controls.Add(B("▶ Drive", StartDrive)); top.Controls.Add(B("■ Stop", StopDrive));
         var sun = Theme.Toggle("☀ Sun + shadows", ToggleShadows); sun.Checked = Shadows; top.Controls.Add(Look.Tip(sun, "A low sun with hard shadows on the ground: tilted road shows up lighter or darker"));
+        if (_f != null) { var hb = Theme.Icon("❔", _f.Help, "Short help for this tab (F1)"); hb.BackColor = Pn; top.Controls.Add(hb); }
         _info = new Label { AutoSize = true, ForeColor = ColorTranslator.FromHtml("#9aa8b8"), Margin = new Padding(8, 6, 4, 0), UseMnemonic = false };
         top.Controls.Add(_info);
         _topBar = top;
@@ -149,7 +150,9 @@ public sealed partial class View3D
             t.Controls.Add(Theme.Colored("✖ Delete", "#4a2a2a", () => DeletePickup(p)), 3, r);
             r++;
         }
-        if (p.Editable && p.Point < 0 && p.Pickup < 0)
+        int rampN = RampIndex(p.Key);
+        if (rampN >= 0) r = RampRows(t, r, rampN);
+        if (p.Editable && p.Point < 0 && p.Pickup < 0 && rampN < 0)
         {
             var e = D.Map.Obj("edits")?.Obj(p.Key);
             _solidBox = Theme.Check("Solid - stops the car like a wall (off = just a shape)", e?.Truthy("solid") == true, v => { var q = EditOf(EditsCopy(), p.Key); q["solid"] = v; _f.BeginInvoke(() => Store(p.Key, q)); });
@@ -162,6 +165,75 @@ public sealed partial class View3D
         _panel.Controls.Add(t);
         _panel.Visible = true;
         PlacePanel();
+    }
+
+    // ---- jump ramp settings (a ramp is a library object: G / R / S move, turn and size it; these change its shape)
+    public bool PanelOpen => _panel is { Visible: true } && _panel.Controls.Count > 0;
+    int RampIndex(string key)
+    {
+        if (!key.StartsWith("obj:") || !int.TryParse(key[4..], out int n)) return -1;
+        var objs = D.Map.Arr("objects");
+        if (objs == null || n >= objs.Count || objs[n] is not JObj o) return -1;
+        return Terrain.IsRamp(Layout.Catalog().GetValueOrDefault(o.Str("id") ?? "")) ? n : -1;
+    }
+
+    static readonly (string Text, double V)[] RampCurves = { ("Straight", 0.0), ("Soft curve", 0.3), ("Curved", 0.55), ("Very curved (throws you up)", 0.85) };
+
+    int RampRows(TableLayoutPanel t, int r, int n)
+    {
+        var ramp = Terrain.Ramps(D.Map).FirstOrDefault(q => q.Key == "obj:" + n);
+        var o = (JObj)D.Map.Arr("objects")![n]!; var set = o.Obj("ramp") ?? new JObj();
+        var e = Layout.Catalog()[o.Str("id")!];
+        Label L(string txt) => new() { Text = txt, AutoSize = true, ForeColor = Fg, Margin = new Padding(3, 5, 3, 0) };
+        if (ramp != null)
+        {
+            var size = new Label { Text = $"JUMP RAMP   {ramp.W:0.0} wide x {ramp.L:0.0} long x {ramp.H:0.0} high (m)  -  S + drag to size it", AutoSize = true, MaximumSize = new Size(330, 0), ForeColor = ColorTranslator.FromHtml("#ff9a50"), Margin = new Padding(3, 8, 3, 2) };
+            t.Controls.Add(size, 0, r); t.SetColumnSpan(size, 4); r++;
+        }
+        t.Controls.Add(L("Shape"), 0, r);
+        var sh = Theme.Combo(170); sh.Items.Add("Kicker (up, then a drop)"); sh.Items.Add("Table top (up, flat, down)");
+        string shape = set.Str("shape") ?? e.Str("shape") ?? "kicker";
+        sh.SelectedIndex = shape == "table" ? 1 : 0;
+        sh.SelectionChangeCommitted += (_, _) => { string v = sh.SelectedIndex == 1 ? "table" : "kicker"; _f.BeginInvoke(() => RampSet(n, "shape", v)); };
+        t.Controls.Add(sh, 1, r); t.SetColumnSpan(sh, 3); r++;
+        t.Controls.Add(L("Curve"), 0, r);
+        var cv = Theme.Combo(170); foreach (var (tx, _) in RampCurves) cv.Items.Add(tx);
+        double curve = set.ContainsKey("curve") ? set.Num("curve") : e.Num("curve");
+        cv.SelectedIndex = RampCurves.Select((q, i) => (Math.Abs(q.V - curve), i)).Min().i;
+        cv.SelectionChangeCommitted += (_, _) => { double v = RampCurves[cv.SelectedIndex].V; _f.BeginInvoke(() => RampSet(n, "curve", v)); };
+        t.Controls.Add(cv, 1, r); t.SetColumnSpan(cv, 3); r++;
+        t.Controls.Add(L("Flat top (m)"), 0, r);
+        double lip = set.ContainsKey("lip") ? set.Num("lip") : e.Num("lip");
+        var lb = new TextBox { Width = 66, Text = lip.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture), BackColor = ColorTranslator.FromHtml("#1a1e24"), ForeColor = Fg, BorderStyle = BorderStyle.FixedSingle, TextAlign = HorizontalAlignment.Right };
+        lb.KeyDown += (_, ev) =>
+        {
+            if (ev.KeyCode != Keys.Enter) return;
+            ev.SuppressKeyPress = true;
+            if (double.TryParse(lb.Text.Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double v)) { double vv = Math.Clamp(v, 0, 200); _f.BeginInvoke(() => RampSet(n, "lip", vv)); }
+        };
+        t.Controls.Add(lb, 1, r);
+        var lh = new Label { Text = "(before scaling)", AutoSize = true, ForeColor = ColorTranslator.FromHtml("#6f7c8a"), Margin = new Padding(3, 5, 3, 0) };
+        t.Controls.Add(lh, 2, r); t.SetColumnSpan(lh, 2); r++;
+        t.Controls.Add(L("Surface"), 0, r);
+        var sf = Theme.Combo(170);
+        var keys = Surface.Surfaces.Keys.Where(k => k is not ("water" or "deepwater")).ToList();
+        foreach (var k in keys) sf.Items.Add(Surface.Surfaces[k].Label);
+        string sk = set.Str("surface") ?? "tarmac";
+        sf.SelectedIndex = Math.Max(0, keys.IndexOf(sk));
+        sf.SelectionChangeCommitted += (_, _) => { string v = keys[sf.SelectedIndex]; _f.BeginInvoke(() => RampSet(n, "surface", v)); };
+        t.Controls.Add(sf, 1, r); t.SetColumnSpan(sf, 3); r++;
+        t.Controls.Add(Theme.Colored("↺ Reset", "#3a3428", ResetObject), 0, r);
+        return r;
+    }
+
+    void RampSet(int n, string field, object v)
+    {
+        var objs = ObjsCopy();
+        if (n >= objs.Count || objs[n] is not JObj o) return;
+        if (o.Obj("ramp") is not { } set) o["ramp"] = set = new JObj();
+        set[field] = v;
+        SetObjects(objs, EditsCopy());
+        Select("obj:" + n);
     }
 
     double[]? PanelValues(string name, int n)
@@ -251,7 +323,7 @@ public sealed partial class View3D
         return f;
     }
 
-    static readonly (string Kind, string Title)[] KindTitles = { ("import", "Your models (imported .glb)"), ("scenery", "Scenery - look only (tick Solid = wall)"), ("breakable", "Breakable - smash / knock over"), ("movable", "Moves when hit (physics)"), ("animated", "Animated") };
+    static readonly (string Kind, string Title)[] KindTitles = { ("ramp", "Jump ramps (drive over them)"), ("import", "Your models (imported .glb)"), ("scenery", "Scenery - look only (tick Solid = wall)"), ("breakable", "Breakable - smash / knock over"), ("movable", "Moves when hit (physics)"), ("animated", "Animated") };
 
     public void FillLibrary()
     {
@@ -308,7 +380,15 @@ public sealed partial class View3D
         var p = PointUnder(mx, my);
         if (p == null || Placing == null) return;
         var objs = ObjsCopy();
-        objs.Add(new JObj { ["id"] = Placing.Str("id"), ["x"] = Py.RoundN(p[0], 2), ["z"] = Py.RoundN(p[2], 2), ["h"] = Py.RoundN(Math.Max(0, p[1] - Ground), 2), ["turn"] = 0.0 });
+        double turn0 = 0.0;
+        if (Terrain.IsRamp(Placing) && D.Road() is { } rr && net0(rr) is { } nn)
+        {
+            // a ramp faces the way the cars drive on the nearest road
+            double best = 1e18; foreach (var q in nn.Drivable()) for (int i = 0; i < q.Count; i++) { double d = Math.Pow(q.Centre[i].X - p[0], 2) + Math.Pow(q.Centre[i].Z - p[2], 2); if (d < best) { best = d; turn0 = q.Heading[i]; } }
+            turn0 = Py.RoundN(turn0, 4);
+        }
+        Network? net0(Road r) { try { return Network.Get(D.Map, r); } catch (Exception) { return null; } }
+        objs.Add(new JObj { ["id"] = Placing.Str("id"), ["x"] = Py.RoundN(p[0], 2), ["z"] = Py.RoundN(p[2], 2), ["h"] = Py.RoundN(Math.Max(0, p[1] - Ground), 2), ["turn"] = turn0 });
         Sel = "obj:" + (objs.Count - 1);
         SetObjects(objs, EditsCopy());
     }

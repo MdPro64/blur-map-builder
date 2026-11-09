@@ -864,3 +864,187 @@ Preparing {} ({} of {}) ||| Подготовка: {} ({} из {})
 Writing Blur REBORN's pack... ||| Запись пакета Blur REBORN...
 Writing normal Blur's pack... ||| Запись пакета обычного Blur...
 Putting normal Blur's own pack back... ||| Возврат родного пакета обычного Blur...
+# --- landscape, jump ramps, bumps (2.3)
+Landscape ||| Ландшафт
+Raise ||| Поднять
+Lower ||| Опустить
+Smooth ||| Сгладить
+Flatten ||| Выровнять
+Rough ||| Неровности
+Auto hills... ||| Авто-холмы...
+Auto hills ||| Авто-холмы
+Clear hills ||| Убрать холмы
+TOOL ||| ИНСТРУМЕНТ
+GROUND ||| ЗЕМЛЯ
+AUTO ||| АВТО
+strength ||| сила
+LEFT drag = use the tool\nRIGHT drag = back to flat ||| ЛЕВАЯ кнопка = инструмент\nПРАВАЯ кнопка = снова ровно
+Lifts the ground under the brush (hold and drag to build a hill) ||| Поднимает землю под кистью (держите и ведите, чтобы сделать холм)
+Lowers it again (never below the flat ground) ||| Опускает её (не ниже ровной земли)
+Rounds off sharp bumps and edges ||| Сглаживает острые бугры и края
+Makes a flat top at the height where you started the drag ||| Делает ровную вершину на высоте, где вы начали
+Adds random lumps (rocky hills) ||| Добавляет случайные бугры (каменистые холмы)
+Raise / Lower / Rough: metres per brush stroke step. Smooth / Flatten: how fast ||| Поднять / Опустить / Неровности: метры за шаг кисти. Сгладить / Выровнять: как быстро
+Builds hills all around the road (the road stays clear) ||| Строит холмы вокруг дороги (дорога остаётся свободной)
+Removes all hills of this map ||| Убирает все холмы этой карты
+Remove all hills of this map? ||| Убрать все холмы этой карты?
+All hills removed from this map ||| Все холмы этой карты убраны
+No hills yet.  Room for {} ground models on this map. ||| Холмов пока нет.  На этой карте есть место для {} моделей земли.
+Hills: highest {} m, {} model(s) on a {} m grid  ·  ramps {}, bumps {}  ·  {} model(s) left ||| Холмы: самый высокий {} м, {} модел. на сетке {} м  ·  трамплины {}, кочки {}  ·  осталось {} модел.
+Hills are now {} (look + grip) ||| Холмы теперь: {} (вид и сцепление)
+Auto hills: {} points made. Look at them in the 3D tab; Build + install to drive between them ||| Авто-холмы: сделано {} точек. Посмотрите во вкладке 3D; Собрать и установить, чтобы ездить между ними
+Hills: {} points of {} m, highest {} m - see them in the 3D tab, Build + install to drive on them ||| Холмы: {} точек по {} м, самый высокий {} м - смотрите во вкладке 3D, Собрать и установить, чтобы ездить по ним
+No hills on this map ||| На этой карте нет холмов
+LANDSCAPE: left drag = use the tool, right drag = flatten back to the ground, middle drag = move the map, wheel = zoom.  Auto hills = hills all around the road. See them in the 3D tab ||| ЛАНДШАФТ: левая кнопка = инструмент, правая = снова ровная земля, средняя = двигать карту, колесо = масштаб.  Авто-холмы = холмы вокруг дороги. Смотрите во вкладке 3D
+Landscape tool: {} - {} ||| Инструмент ландшафта: {} - {}
+AUTO HILLS AROUND THE ROAD ||| АВТО-ХОЛМЫ ВОКРУГ ДОРОГИ
+Hills start a little away from the road, rise, and fade out further away. ||| Холмы начинаются чуть дальше от дороги, поднимаются и сходят на нет дальше.
+The road itself always stays clear. ||| Сама дорога всегда остаётся свободной.
+height (m) ||| высота (м)
+start from road (m) ||| от дороги (м)
+hill area wide (m) ||| ширина холмов (м)
+rough (0 - 1) ||| неровность (0 - 1)
+shape number ||| номер формы
+Keep the hills I made (add to them) ||| Оставить мои холмы (добавить к ним)
+Build hills ||| Построить холмы
+Other shape ||| Другая форма
+Cancel ||| Отмена
+Build hills and mountains next to the road. ||| Стройте холмы и горы рядом с дорогой.
+Tools: Raise, Lower, Smooth, Flatten, Rough. Left drag = use it, right drag = flat again. ||| Инструменты: Поднять, Опустить, Сгладить, Выровнять, Неровности. Левая кнопка = применить, правая = снова ровно.
+Auto hills: hills all around the road in one click (try Other shape). ||| Авто-холмы: холмы вокруг дороги одним щелчком (попробуйте Другая форма).
+The road always stays clear: hills fade out next to it. ||| Дорога всегда свободна: рядом с ней холмы сходят на нет.
+Ground: grass, dirt, gravel... (look + grip). Look at the hills in the 3D tab. ||| Земля: трава, грязь, гравий... (вид и сцепление). Смотрите холмы во вкладке 3D.
+Bumps ||| Кочки
+bump height (m) ||| высота кочек (м)
+bump spacing (m) ||| шаг кочек (м)
+How high the bumps go (m) ||| Насколько высоки кочки (м)
+How far apart the bumps are (m): small = rough, big = rolling ||| Как далеко друг от друга кочки (м): мало = неровно, много = волнами
+Bumps: rough ground that goes up and down (a broken road). Works on the road and next to it. ||| Кочки: неровная земля вверх-вниз (разбитая дорога). Работает на дороге и рядом.
+Bumps: rough up-and-down ground, like a broken road. Set their height and spacing. ||| Кочки: неровная земля вверх-вниз, как разбитая дорога. Задайте высоту и шаг.
+Brush: BUMPS - the ground goes up and down like a broken road. Left drag adds, right drag removes ||| Кисть: КОЧКИ - земля вверх-вниз, как разбитая дорога. Левая кнопка добавляет, правая убирает
+Bumps on {} cells of {} m ({} m2) - Build + install to drive on them ||| Кочки на {} клетках по {} м ({} м2) - Собрать и установить, чтобы ездить по ним
+All paint and bumps removed from this map ||| Вся краска и кочки этой карты убраны
+Bump height (m) ||| Высота кочек (м)
+Bump spacing (m) ||| Шаг кочек (м)
+Jump ramps (drive over them)  ({}) ||| Трамплины (езжайте по ним)  ({})
+Jump ramp ||| Трамплин
+Kicker (short, steep) ||| Кикер (короткий, крутой)
+Big jump ramp ||| Большой трамплин
+Table top (up, flat, down) ||| Стол (вверх, ровно, вниз)
+Speed hump (small table) ||| Лежачий полицейский (малый стол)
+Jump ramps ||| Трамплины
+Built-in ||| Встроенные
+jump ramp - drive over it. S scales length / width / height, R turns it ||| трамплин - езжайте по нему. S меняет длину / ширину / высоту, R поворачивает
+JUMP RAMP   {} wide x {} long x {} high (m)  -  S + drag to size it ||| ТРАМПЛИН   {} ширина x {} длина x {} высота (м)  -  S + тянуть = размер
+Shape ||| Форма
+Kicker (up, then a drop) ||| Кикер (вверх, потом обрыв)
+Curve ||| Изгиб
+Straight ||| Прямой
+Soft curve ||| Мягкий изгиб
+Curved ||| Изогнутый
+Very curved (throws you up) ||| Сильно изогнутый (подбрасывает)
+Flat top (m) ||| Ровный верх (м)
+(before scaling) ||| (до масштаба)
+Jump ramps are in the library too: place one on the road, S sizes it, the panel sets its shape. ||| Трамплины тоже в библиотеке: поставьте на дорогу, S меняет размер, панель - форму.
+Fast start: skip the intro movies and "Press Start" (both buttons) ||| Быстрый старт: пропустить заставки и "Press Start" (обе кнопки)
+The game skips the Activision / Bizarre movies, the Blur movie and the Press Start screen by itself. The Amax login box still needs you ||| Игра сама пропускает ролики Activision / Bizarre, ролик Blur и экран Press Start. Окно входа Amax - всё ещё за вами
+Rock ||| Камень
+Dry grass ||| Сухая трава
+Concrete ||| Бетон
+Patched asphalt ||| Латаный асфальт
+Worn asphalt ||| Изношенный асфальт
+Grass + dirt ||| Трава + земля
+Dirt + rock ||| Земля + камень
+BUMPS ||| КОЧКИ
+Auto bumps... ||| Авто-кочки...
+Auto bumps ||| Авто-кочки
+Bumpy stretches at random places along the road (not the whole road). Auto, or set the height, length and distance yourself ||| Участки с кочками в случайных местах дороги (не вся дорога). Авто, или задайте высоту, длину и расстояние сами
+The game's own asphalt with worn, cracked parts (4 kinds), and repair patches at random places along the road ||| Настоящий асфальт из игры с изношенными, треснутыми местами (4 вида) и заплатками в случайных местах дороги
+AUTO BUMPS ALONG THE ROAD ||| АВТО-КОЧКИ ВДОЛЬ ДОРОГИ
+Short bumpy stretches at random places, with smooth road between them.\nThey never cover the whole road. ||| Короткие участки с кочками в случайных местах, между ними ровная дорога.\nОни никогда не покрывают всю дорогу.
+Auto: a few short, low bumpy bits ||| Авто: несколько коротких низких участков
+Custom: I set the numbers ||| Своё: я задаю числа
+longest bumpy bit (m) ||| самый длинный участок (м)
+most road between (m) ||| наибольшее расстояние между (м)
+place number ||| номер расстановки
+Across the whole road (off = sometimes one side only) ||| На всю ширину дороги (выкл = иногда только одна сторона)
+Keep the bumps I made (add to them) ||| Оставить мои кочки (добавить к ним)
+Make bumps ||| Сделать кочки
+Other places ||| Другие места
+Auto bumps: the road is too short for these settings ||| Авто-кочки: дорога слишком короткая для этих настроек
+Auto bumps: {} bumpy stretch(es) along the road. The orange marks show them; Build + install to drive them ||| Авто-кочки: {} участок(ов) вдоль дороги. Оранжевые метки показывают их; Собрать + установить, чтобы проехать
+paint ||| краска
+Paints a texture on the hills (right drag = back to automatic) ||| Рисует текстуру на холмах (правое перетаскивание = снова авто)
+The texture the Paint tool puts on the hills ||| Текстура, которую кладёт инструмент Краска
+Paint: {} on the hills (left drag). Right drag = back to automatic ||| Краска: {} на холмах (левое перетаскивание). Правое = снова авто
+Auto texture by slope ||| Авто-текстура по склону
+On: flat = the GROUND type, slopes = dirt, steep = rock (from the game's own pictures). Off: one texture, paint your own with the Paint tool ||| Вкл: ровно = тип ЗЕМЛИ, склоны = земля, круто = камень (картинки из самой игры). Выкл: одна текстура, рисуйте свою инструментом Краска
+Auto texture: flat = the ground, slopes = dirt, steep = rock. Painted places keep their paint ||| Авто-текстура: ровно = основа, склоны = земля, круто = камень. Покрашенные места остаются
+Auto texture off: the hills are all the GROUND texture, except where you paint ||| Авто-текстура выкл: все холмы - текстура ЗЕМЛИ, кроме покрашенных мест
+Hills: highest {} m, {} model(s) on a {} m grid ({})  ·  ramps {}, bumps {}  ·  {} model(s) left ||| Холмы: самый высокий {} м, {} модел. на сетке {} м ({})  ·  трамплины {}, кочки {}  ·  осталось {} модел.
+Auto hills: {} points made. Build + install to drive between them ||| Авто-холмы: сделано точек: {}. Собрать + установить, чтобы ездить между ними
+LANDSCAPE (3D): left drag = use the tool, right drag = back to flat (Paint: remove the paint), middle drag = turn, Shift+middle = move, wheel = zoom.  Auto hills = hills all around the road ||| ЛАНДШАФТ (3D): левое перетаскивание = инструмент, правое = снова ровно (Краска: убрать краску), среднее = поворот, Shift+среднее = сдвиг, колесо = масштаб.  Авто-холмы = холмы вокруг дороги
+Build hills and mountains next to the road, right in the 3D view. ||| Стройте холмы и горы рядом с дорогой прямо в 3D-виде.
+Paint: put a texture on the hills yourself (right drag = back to automatic). ||| Краска: положите текстуру на холмы сами (правое перетаскивание = снова авто).
+Auto texture by slope: flat = ground, slopes = dirt, steep = rock. ||| Авто-текстура по склону: ровно = основа, склоны = земля, круто = камень.
+Paint dirt, gravel, grass, rock, sand or water on the road. ||| Рисуйте на дороге землю, гравий, траву, камень, песок или воду.
+Auto bumps: short bumpy bits at random places, not the whole road. ||| Авто-кочки: короткие участки в случайных местах, не вся дорога.
+Varied asphalt: the game's own asphalt, worn parts and repair patches. ||| Разный асфальт: асфальт из игры, изношенные места и заплатки.
+The game walks to the lobby by itself. ||| Игра сама доходит до лобби.
+Fast start: skips the intro movies and Press Start. ||| Быстрый старт: пропускает заставки и Press Start.
+Landscape 3D: a Raise dab lifts the ground there ||| Ландшафт 3D: мазок Поднять поднимает землю
+the game goes to the LAN lobby on this map by itself ||| игра сама откроет LAN-лобби на этой карте
+▭  Window layout ||| ▭  Расположение окна
+⚙  Where updates come from... ||| ⚙  Откуда брать обновления...
+⟳  Check for updates ||| ⟳  Проверить обновления
+🌐  Language ||| 🌐  Язык
+❔  Help for this tab  (F1) ||| ❔  Справка по вкладке  (F1)
+Build the maps and put them in the game (Ctrl+B) ||| Собрать карты и поставить их в игру (Ctrl+B)
+Delete the current layout ||| Удалить текущее расположение
+Duplicate this map (Ctrl+D) ||| Копировать эту карту (Ctrl+D)
+More: import, export, delete ||| Ещё: импорт, экспорт, удаление
+Play the last build (F5) ||| Играть последнюю сборку (F5)
+Reset the panels (back to the saved sizes) ||| Сбросить панели (к сохранённым размерам)
+Save this layout as... ||| Сохранить расположение как...
+Settings: updates, window layout, language ||| Настройки: обновления, расположение окна, язык
+Snap points to a 10 m grid ||| Привязка точек к сетке 10 м
+⌗ Snap (G) ||| ⌗ Привязка (G)
+Undo (Ctrl+Z) ||| Отменить (Ctrl+Z)
+Redo (Ctrl+Y) ||| Повторить (Ctrl+Y)
+Save (Ctrl+S) ||| Сохранить (Ctrl+S)
+Show the whole map (F) ||| Показать всю карту (F)
+New map (Ctrl+N) ||| Новая карта (Ctrl+N)
+New location (Ctrl+L) ||| Новая локация (Ctrl+L)
+Rename (F2) ||| Переименовать (F2)
+✚  New map   (Ctrl+N) ||| ✚  Новая карта   (Ctrl+N)
+⌂  New location   (Ctrl+L) ||| ⌂  Новая локация   (Ctrl+L)
+⧉  Duplicate map   (Ctrl+D) ||| ⧉  Копировать карту   (Ctrl+D)
+✎  Rename   (F2) ||| ✎  Переименовать   (F2)
+⇩  Import map (.blurmap)... ||| ⇩  Импорт карты (.blurmap)...
+⇧  Export this map... ||| ⇧  Экспорт этой карты...
+✖  Delete map ||| ✖  Удалить карту
+✖  Delete location ||| ✖  Удалить локацию
+⇧ Export UV mask... ||| ⇧ Экспорт UV-маски...
+*    ... coming from above (0 = all round) ||| *    ... сверху (0 = со всех сторон)
+▶ Build ||| ▶ Собрать
+PAINT WITH  (left drag = paint, right drag = remove) ||| КРАСИТЬ  (левая кнопка = красить, правая = убрать)
+SIDES OF THE ROAD ||| ОБОЧИНЫ
+BUMPS (the whole map) ||| КОЧКИ (вся карта)
+What the whole road is made of ||| Из чего сделана вся дорога
+What the strips next to the road are made of (sides = how wide) ||| Из чего сделаны полосы у дороги (ширина - кнопками)
+Removes everything painted on this map (the whole road settings stay) ||| Убирает всю покраску на этой карте (настройки всей дороги остаются)
+spacing (m) ||| шаг (м)
+Road (2D map) ||| Дорога (2D карта)
+Draw the road: click to add points, drag to move them ||| Рисуйте дорогу: клик добавляет точку, перетаскивание двигает
+Look at the map in 3D, drive it ||| Смотрите карту в 3D, проезжайте по ней
+Hills: left drag builds, right drag flattens ||| Холмы: левая кнопка строит, правая выравнивает
+Paint dirt, grass, water... on and next to the road ||| Красьте грязь, траву, воду... на дороге и рядом
+Pick how the location looks (sun, sky, fog) ||| Выберите вид локации (солнце, небо, туман)
+Make your own car ||| Сделайте свою машину
+New paint for the cars ||| Новая покраска машин
+Where the AI cars drive (made by itself; change it here) ||| Где едут машины ИИ (строится само; меняйте здесь)
+Check where the car can drive ||| Проверьте, где может ехать машина
+Advanced layout: all the options ||| Полный вид: все настройки
+Simple layout  (icons on the side) ||| Простой вид  (значки сбоку)
+Advanced layout  (all the options) ||| Полный вид  (все настройки)
+Removes everything painted on this map ||| Убирает всю покраску на этой карте

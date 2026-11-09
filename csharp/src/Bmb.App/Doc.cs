@@ -173,6 +173,15 @@ public static class Theme
         return b;
     }
 
+    public static readonly Font IconFont = new("Segoe UI Symbol", 11.5f);
+    /// a button that is only a symbol (⚙, ↶ ...): a bigger symbol, the name in its tooltip
+    public static Button Icon(string symbol, Action a, string tip)
+    {
+        var b = Btn(symbol == "❔" ? "?" : symbol, a); b.Font = symbol == "❔" ? new Font("Segoe UI", 10.5f, FontStyle.Bold) : IconFont; b.MinimumSize = new Size(30, 28); b.Padding = new Padding(1, 0, 1, 0);
+        Look.Tip(b, tip);
+        return b;
+    }
+
     public static CheckBox Toggle(string text, Action<bool> a)
     {
         var b = new RoundToggle { Text = text, Appearance = Appearance.Button, AutoSize = true, MinimumSize = new Size(28, 28), FlatStyle = FlatStyle.Flat, BackColor = Glass, ForeColor = Color.White, Font = Ui, Margin = new Padding(2), Padding = new Padding(5, 1, 5, 1), TabStop = false };
@@ -232,7 +241,7 @@ public sealed class Spin : FlowLayoutPanel
     {
         _v = v; _step = step; _lo = lo; _hi = hi; _fmt = fmt;
         AutoSize = true; WrapContents = false; Margin = new Padding(2, 1, 2, 1); BackColor = Color.Transparent;
-        Controls.Add(new Label { Text = label, AutoSize = false, Width = 104, Height = 24, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Theme.Text, Font = Theme.Ui });
+        Controls.Add(new Label { Text = label, AutoSize = false, Width = 104, Height = 24, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Theme.Text, Font = Theme.Ui, Visible = label != "" });
         Controls.Add(Theme.Btn("-", () => Nudge(-_step)));
         _t = new TextBox { Width = 54, Text = v.ToString(fmt), BackColor = Theme.Field, ForeColor = Theme.Text, BorderStyle = BorderStyle.FixedSingle, Font = Theme.Ui };
         _t.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { Take(); e.SuppressKeyPress = true; } };
@@ -240,6 +249,8 @@ public sealed class Spin : FlowLayoutPanel
         Controls.Add(_t);
         Controls.Add(Theme.Btn("+", () => Nudge(_step)));
     }
+    /// on a tool bar: the name only as wide as its text (the panels keep the fixed width so their boxes line up)
+    public Spin Tight() { var l = (Label)Controls[0]; l.AutoSize = true; l.Padding = new Padding(0, 5, 0, 0); l.Margin = new Padding(4, 0, 0, 0); return this; }
     void Take() { if (double.TryParse(_t.Text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double v) && v != _v) Apply(v); else _t.Text = _v.ToString(_fmt); }
     void Nudge(double d) => Apply(_v + d);
     void Apply(double v) { _v = Math.Max(_lo, Math.Min(_hi, v)); _t.Text = _v.ToString(_fmt); Set?.Invoke(_v); }

@@ -3,7 +3,7 @@ using Bmb.Core;
 
 namespace Bmb.App;
 
-public sealed class MapView
+public sealed partial class MapView
 {
     readonly Doc D; public readonly GlControl G;
     public double Scale = 0.15, Ox, Oz;     // pixels per metre, world point at the top left
@@ -93,7 +93,8 @@ public sealed class MapView
         var r = D.Road();
         if (r == null) { Flush(); G.Text(10, 24, "The road can't be made (needs at least 2 points)", Red); return; }
         var net = D.Net()!;
-        bool hasNet = HasNet, clean = Mode == "surface";
+        bool hasNet = HasNet, clean = Mode is "surface" or "land";
+        if (Mode == "land") LandDraw(net);
         int bi = 0;
         foreach (var (_, br) in hasNet ? net.Branches : new()) RoadBand(t, br, bi++ == SelBranch ? BranchSel : BranchCol, 2);
         RoadBand(t, r, null, 3);
@@ -107,7 +108,7 @@ public sealed class MapView
                     Polyline(t, pts, 1, Math.Max(2, (int)(1.2 * Scale) + 2), Wall);
                 }
         if (hasNet) NetDraw(r, net, labels, clean);
-        if (Mode == "surface") SurfDraw(r, net);
+        if (Mode == "surface") { SurfDraw(r, net); BumpDraw(); }
         // the dashed centre line
         for (int i = 0; i < r.Count - 1; i += 4)
         {
@@ -222,8 +223,9 @@ public sealed class MapView
             var (bx, bz) = ToWorld(_mouse.X, _mouse.Y);
             var (sx, sy) = ToScreen(bx, bz);
             double pr = Math.Max(6, Math.Round(Math.Max(1, BrushSize) / 2 * Scale));
-            _top.Ring(sx, sy, pr, 2, White); _top.Ring(sx, sy, Math.Max(pr - 2, 2), 2, Erasing ? Rgba.Hex("#ff6060") : Rgba.Hex(Surface.Surfaces[BrushKey].Colour));
+            _top.Ring(sx, sy, pr, 2, White); _top.Ring(sx, sy, Math.Max(pr - 2, 2), 2, Erasing ? Rgba.Hex("#ff6060") : BrushKey == "bumps" ? Rgba.Hex(BumpColour) : Rgba.Hex(Surface.Surfaces[BrushKey].Colour));
         }
+        if (Mode == "land") LandRing();
         MeasureDraw(labels);
         Flush();
         foreach (var (x, y, s, c) in labels) G.Text(x, y, s, c);
@@ -620,7 +622,7 @@ public sealed class MapView
     void Light() { D.Touched(); G.Invalidate(); }
     void Chosen() { Selected?.Invoke(); G.Invalidate(); }
 
-    bool Off => Mode is "3d" or "collision" or "light" or "car" or "skins";
+    bool Off => Mode is "3d" or "collision" or "land" or "light" or "car" or "skins";
 
     void PanStart(MouseEventArgs e) { _pan = (e.X, e.Y); _panStart = (Ox, Oz); }
 
@@ -631,11 +633,13 @@ public sealed class MapView
         if (e.Button == MouseButtons.Right)
         {
             if (Mode == "surface") { BrushAt(e, true); return; }
+            if (Mode == "land") { LandAt(e, true); return; }
             if (Tool == "measure" && Measure != null) { Measure = null; Tell("Measure cleared (right click)"); G.Invalidate(); return; }
             PanStart(e); return;
         }
         if (e.Button != MouseButtons.Left) return;
         if (Mode == "surface") { BrushAt(e, false); return; }
+        if (Mode == "land") { LandAt(e, false); return; }
         if (Mode == "ai")
         {
             if (AiPen) { _aiStroke = new() { ToWorld(e.X, e.Y) }; }
@@ -962,7 +966,7 @@ public sealed class MapView
         D.Snapshot();
         _stroke = true; Erasing = erase;
         var (x, z) = ToWorld(e.X, e.Y);
-        Surface.Brush(D.Map, x, z, Math.Max(1.0, BrushSize) / 2, erase ? null : BrushKey);
+        Dab(x, z);
         G.Invalidate();
     }
 
@@ -970,7 +974,8 @@ public sealed class MapView
     {
         if (Off) return;
         _mouse = (e.X, e.Y);
-        if (_stroke) { var (x, z) = ToWorld(e.X, e.Y); Surface.Brush(D.Map, x, z, Math.Max(1.0, BrushSize) / 2, Erasing ? null : BrushKey); G.Invalidate(); return; }
+        if (_stroke) { var (x, z) = ToWorld(e.X, e.Y); Dab(x, z); G.Invalidate(); return; }
+        if (_landStroke) { var (x, z) = ToWorld(e.X, e.Y); LandDab(x, z); return; }
         if (_aiStroke != null)
         {
             var w = ToWorld(e.X, e.Y); var l = _aiStroke[^1];
@@ -1008,7 +1013,7 @@ public sealed class MapView
     void Hover(MouseEventArgs e)
     {
         var (x, z) = ToWorld(e.X, e.Y);
-        if (Mode == "surface") { G.Invalidate(); return; }
+        if (Mode is "surface" or "land") { G.Invalidate(); return; }
         if (_draft != null) { G.Invalidate(); return; }
         if (Measure != null && !MeasureDone) { _mouseWorld = (x, z); G.Invalidate(); return; }
         bool hover = false;
@@ -1052,9 +1057,13 @@ public sealed class MapView
     void Up(object? _, MouseEventArgs e)
     {
         if (Off) return;
+        if (_landStroke) { LandUp(); return; }
         if (_stroke)
         {
+            bool wasBumps = BrushKey == "bumps";
             _stroke = false; Erasing = false; Commit();
+            int nb = D.Map.Obj("surface")?.Obj("bumps")?.Count ?? 0;
+            if (wasBumps) { Tell($"Bumps on {nb} cells of {Surface.CellM:0} m ({nb * Surface.CellM * Surface.CellM:0} m2) - Build + install to drive on them", C("#58d06a")); return; }
             int n = Surface.Settings(D.Map).Paint.Count;
             Tell($"Painted {n} cells of {Surface.CellM:0} m ({n * Surface.CellM * Surface.CellM:0} m2) - Build + install to drive on it", C("#58d06a"));
             return;
