@@ -414,7 +414,7 @@ public sealed partial class MainForm
     }
 
     // ---- the Lighting tab
-    PictureBox? _lightPrev;
+
     readonly Dictionary<string, Bitmap> _skyPics = new();
     bool _lightBusy;
 
@@ -480,7 +480,7 @@ public sealed partial class MainForm
                 g.DrawLine(pen, 0, h / 2, 420, h / 2);
                 using var f = new Font("Segoe UI", 8);
                 using var y = new SolidBrush(Color.FromArgb(255, 210, 60)); using var gr = new SolidBrush(Color.FromArgb(160, 160, 160)); using var rd = new SolidBrush(Color.FromArgb(255, 110, 110));
-                g.DrawString("top half = the sky", f, y, 6, h / 2 - 16); g.DrawString("bottom half: not used", f, gr, 6, h / 2 + 2);
+                g.DrawString(Lang.T("top half = the sky"), f, y, 6, h / 2 - 16); g.DrawString(Lang.T("bottom half: not used"), f, gr, 6, h / 2 + 2);
                 if (note != null) g.DrawString(note, f, rd, 6, 4);
             }
             else bm = Previews.ToBitmap(LightUi.PresetSky(name, 420));
@@ -489,75 +489,156 @@ public sealed partial class MainForm
         catch (Exception e) when (e is not OutOfMemoryException) { err = e.Message; return null; }
     }
 
+    // the main controls first (plain names), the rest under Advanced: (colour key, slider key, label, tooltip = the game's name)
+    static readonly (string? Colour, string? Slider, string Label, string Tip)[] LightMain =
+    {
+        ("sun", "sun", "Sun", "Sun colour + strength"),
+        ("sky", "sky", "Sky light", "Sky (ambient) colour + strength: light from all around"),
+        ("object_light", "object_light", "Light on objects", "Light on placed objects (colour + strength): game models you placed"),
+        ("fog_colour", "fog_density", "Fog", "Fog colour + distance fog density"),
+        (null, "sky_intensity", "Sky brightness", "Sky picture brightness"),
+        (null, "sky_rotation", "Turn the sky", "Sky picture rotation"),
+        (null, "middle_grey", "Brightness (exposure)", "Exposure (middle grey)"),
+        (null, "bloom", "Glow", "Bloom strength (0 = no glow)"),
+    };
+    static readonly (string? Colour, string? Slider, string Label, string Tip)[] LightMore =
+    {
+        (null, "object_light_up", "Light on objects from above", "0 = all round, 1 = only from above"),
+        ("baked", "baked", "Baked light (road and ground)", "Baked light colour + strength"),
+        ("emissive", "emissive", "Lamps and windows glow", "Emissive (glow) colour + strength"),
+        (null, "height_fog", "Low fog (near the ground)", "Height fog density"),
+        (null, "exposure_min", "Exposure min", "The darkest the exposure goes"),
+        (null, "exposure_max", "Exposure max", "The brightest the exposure goes"),
+        (null, "bloom_threshold", "Glow threshold (higher = less glow)", "Bloom threshold"),
+    };
+    static bool _lightAdv;
+    LightPreviewBox? _lightBox;
+    Dictionary<string, double[]> _lightVals = new();
+
+    static double LightMax(string key) => LightUi.SampleFields.TryGetValue(key, out var s) ? s.Max : Lighting.Fields[key].Max;
+    static int LightN(string key) => LightUi.SampleFields.TryGetValue(key, out var s) ? s.N : Lighting.Fields[key].N;
+
+    SkyEnv LightEnv()
+    {
+        var (name, _) = Lighting.Effective(D.Loc); string? own = D.Loc.Obj("lighting")?.Str("sky_image");
+        if (own != null)
+        {
+            string file = Path.Combine(Paths.Tracks, own);
+            string key = file + "|" + (File.Exists(file) ? File.GetLastWriteTimeUtc(file).Ticks : 0);
+            return SkyEnv.Get(key, () => SkyEnv.FromFile(file));
+        }
+        return SkyEnv.Get("preset|" + name, () => SkyEnv.FromPreset(name));
+    }
+
     public void LightBuild()
     {
         if (_lightBusy) return;
         _lightBusy = true;
         var f = _lightPanel;
+        int scroll = f.VerticalScroll.Value;
         f.SuspendLayout();
         foreach (Control c in f.Controls.Cast<Control>().ToList()) c.Dispose();
         f.Controls.Clear();
         var (name, vals) = Lighting.Effective(D.Loc);
-        int pageW = Math.Max(f.ClientSize.Width - 40, 440);
-        var page = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Padding = new Padding(10), BackColor = Theme.Bg };
-        page.Controls.Add(new Label { Text = $"☀ LIGHTING  -  location: {D.Loc.Str("name")}  (all its maps)", AutoSize = true, ForeColor = Theme.Warn, Font = new Font("Segoe UI Symbol", 12f, FontStyle.Bold) });
+        _lightVals = Lighting.Fields.Keys.Concat(LightUi.SampleFields.Keys).ToDictionary(k => k, k => LightUi.Value(D.Loc, k));
+        int pageW = Math.Max(f.ClientSize.Width - 30 - (f.VerticalScroll.Visible ? 0 : SystemInformation.VerticalScrollBarWidth), 440);
+        var muted = ColorTranslator.FromHtml("#9aa8b8");
+        var page = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Padding = new Padding(12, 8, 12, 12), BackColor = Theme.Bg };
+        page.Controls.Add(new Label { Text = $"☀ LIGHTING  -  location: {D.Loc.Str("name")}  (all its maps)", AutoSize = true, UseMnemonic = false, ForeColor = Theme.Warn, Font = new Font("Segoe UI Symbol", 12f, FontStyle.Bold), Margin = new Padding(2, 0, 2, 4) });
         var bar = new FlowLayoutPanel { AutoSize = true, WrapContents = true, BackColor = Theme.Bg, MaximumSize = new Size(pageW, 0) };
-        bar.Controls.Add(Theme.Lbl("Start from the lighting of:"));
+        bar.Controls.Add(new Label { Text = "Start from the lighting of:", AutoSize = true, ForeColor = Theme.Text, Font = Theme.Ui, Margin = new Padding(4, 7, 2, 2) });
         var pv = Theme.Combo(220);
         foreach (var k in Lighting.Presets.Keys) pv.Items.Add(k);
         pv.SelectedItem = name;
+        pv.Margin = new Padding(2, 4, 8, 2);
         pv.SelectionChangeCommitted += (_, _) => { var v = (string)pv.SelectedItem!; BeginInvoke(() => LightSet(preset: v)); };
         bar.Controls.Add(pv);
-        bar.Controls.Add(Theme.Colored("☀ Light up placed objects", "#7a5a10", () => LightSet(many: new() { ["object_light"] = new[] { 1.0, 0.97, 0.92, 0.14 }, ["object_light_up"] = new[] { 0.6 } })));
-        bar.Controls.Add(Theme.Btn("↺ Reset to the preset", () => LightSet(reset: true)));
+        bar.Controls.Add(Look.Tip(Theme.Colored("☀ Light up placed objects", "#7a5a10", () => LightSet(many: new() { ["object_light"] = new[] { 1.0, 0.97, 0.92, 0.14 }, ["object_light_up"] = new[] { 0.6 } })), "Placed game models look black? This gives them light."));
+        bar.Controls.Add(Look.Tip(Theme.Btn("↺ Reset to the preset", () => LightSet(reset: true)), "Forget every change: back to the city's own lighting"));
         page.Controls.Add(bar);
-        page.Controls.Add(new Label { Text = "Changes need Build + install. Values you changed are marked *.", AutoSize = true, MaximumSize = new Size(pageW, 0), ForeColor = ColorTranslator.FromHtml("#9aa8b8"), Margin = new Padding(4, 2, 4, 6) });
-        var body = new FlowLayoutPanel { AutoSize = true, WrapContents = true, BackColor = Theme.Bg, MaximumSize = new Size(pageW, 0) };
-        var rows = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Theme.Bg };
-        var right = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Theme.Bg, Margin = new Padding(16, 0, 0, 0) };
-        _lightPrev = new PictureBox { Width = 420, Height = 300, BackColor = Color.Black, BorderStyle = BorderStyle.FixedSingle };
-        right.Controls.Add(_lightPrev);
-        string? own = D.Loc.Obj("lighting")?.Str("sky_image");
-        right.Controls.Add(new Label { Text = "SKY PICTURE  -  " + (own != null ? "yours: " + Path.GetFileName(own) : $"the preset's ({name})"), AutoSize = true, ForeColor = Theme.Warn, Font = Theme.Bold, Margin = new Padding(0, 10, 0, 2) });
-        var pic = SkyPicture(out string? err);
-        if (pic != null) right.Controls.Add(new PictureBox { Image = pic, Width = pic.Width, Height = pic.Height });
-        else right.Controls.Add(new Label { Text = "(no sky preview: " + err + ")", AutoSize = true, ForeColor = Theme.Bad });
-        var sb = new FlowLayoutPanel { AutoSize = true, BackColor = Theme.Bg };
-        sb.Controls.Add(Theme.Btn("🌄 Custom sky (HDRI)...", LightPickSky, Theme.Blue));
-        var useP = Theme.Btn("Use the preset's sky", () => LightSky(null)); useP.Enabled = own != null; sb.Controls.Add(useP);
-        right.Controls.Add(sb);
-        right.Controls.Add(new Label { Text = "A 360 panorama (2:1, .hdr / .png / .jpg): its top half becomes the sky, from straight up down to the horizon. 'Sky picture rotation' turns it, 'Sky picture brightness' sets how bright. Needs Build + install.", AutoSize = true, MaximumSize = new Size(420, 0), ForeColor = ColorTranslator.FromHtml("#9aa8b8") });
-        var fields = LightUi.SampleFields.Select(kv => (kv.Key, kv.Value.N, kv.Value.Label, kv.Value.Max)).Concat(Lighting.Fields.Select(kv => (kv.Key, kv.Value.N, kv.Value.Label, kv.Value.Max))).ToList();
-        foreach (var (key, n, label, mx) in fields)
+        page.Controls.Add(new Label { Text = "Changes need Build + install. Values you changed are marked *.", AutoSize = true, MaximumSize = new Size(pageW, 0), ForeColor = muted, Margin = new Padding(4, 2, 4, 8) });
+
+        // left: the controls in a card. right: the preview and the sky picture (below the controls when the window is narrow)
+        const int labelW = 190, swatchW = 42, sliderW = 210, valueW = 54;
+        int cardW = labelW + swatchW + sliderW + valueW + 24;
+        bool side = pageW >= cardW + 400;
+        int prevW = side ? Math.Min(720, pageW - cardW - 48) : Math.Min(640, pageW - 4), prevH = (int)(prevW * 0.6);
+        var body = new FlowLayoutPanel { AutoSize = true, WrapContents = false, FlowDirection = side ? FlowDirection.LeftToRight : FlowDirection.TopDown, BackColor = Theme.Bg, Margin = new Padding(0) };
+        var card = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Theme.Panel, Padding = new Padding(8, 4, 8, 8), Margin = new Padding(0, 0, side ? 16 : 0, 12) };
+
+        void Heading(string t) => card.Controls.Add(new Label { Text = t, AutoSize = true, UseMnemonic = false, ForeColor = Theme.Head, Font = Theme.Bold, Margin = new Padding(2, 8, 2, 2) });
+        void Row((string? Colour, string? Slider, string Label, string Tip) q)
         {
-            var v = LightUi.Value(D.Loc, key);
-            var r = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Theme.Bg, Margin = new Padding(0, 1, 0, 1) };
-            r.Controls.Add(new Label { Text = (vals.ContainsKey(key) ? "* " : "   ") + label, AutoSize = false, Width = 250, Height = 28, TextAlign = ContentAlignment.MiddleLeft, ForeColor = vals.ContainsKey(key) ? Theme.Warn : Theme.Text });
-            if (n == 4)
+            bool changed = (q.Colour != null && vals.ContainsKey(q.Colour)) || (q.Slider != null && vals.ContainsKey(q.Slider));
+            var r = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Theme.Panel, Margin = new Padding(0, 1, 0, 1) };
+            var lb = new Label { Text = (changed ? "* " : "") + q.Label, AutoSize = false, AutoEllipsis = true, UseMnemonic = false, Width = labelW, Height = 30, TextAlign = ContentAlignment.MiddleLeft, ForeColor = changed ? Theme.Warn : Theme.Text, Font = Theme.Ui, Margin = new Padding(2, 0, 0, 0) };
+            Look.Tip(lb, q.Tip);
+            r.Controls.Add(lb);
+            if (q.Colour != null)
             {
+                var v = _lightVals[q.Colour];
                 double peak = Math.Max(v.Take(3).Max(), 1e-6);
-                var cb = new RoundButton { Width = 34, Height = 24, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb((int)(255 * Math.Min(1, v[0] / peak)), (int)(255 * Math.Min(1, v[1] / peak)), (int)(255 * Math.Min(1, v[2] / peak))), TabStop = false, Margin = new Padding(4, 2, 4, 2) };
-                string k0 = key;
+                var cb = new RoundButton { Width = 32, Height = 22, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb((int)(255 * Math.Min(1, v[0] / peak)), (int)(255 * Math.Min(1, v[1] / peak)), (int)(255 * Math.Min(1, v[2] / peak))), TabStop = false, Margin = new Padding(4, 4, 6, 4) };
+                cb.FlatAppearance.BorderSize = 0;
+                string k0 = q.Colour;
                 cb.Click += (_, _) => LightColour(k0);
+                Look.Tip(cb, "Pick the colour");
                 r.Controls.Add(cb);
             }
-            if (key != "fog_colour")
+            else r.Controls.Add(new Panel { Width = swatchW, Height = 30, Margin = new Padding(0), BackColor = Theme.Panel });
+            if (q.Slider != null)
             {
-                int idx = n == 4 ? 3 : 0; double top = Math.Max(mx, v[idx]), res = mx / 200.0;
-                var tb = new TrackBar { Minimum = 0, Maximum = (int)Math.Round(top / res), Value = Math.Min((int)Math.Round(top / res), (int)Math.Round(v[idx] / res)), TickStyle = TickStyle.None, Width = 200, Height = 28, BackColor = Theme.Bg, AutoSize = false };
-                var val = new Label { Text = v[idx].ToString("0.###"), AutoSize = false, Width = 60, Height = 28, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.White };
-                string k1 = key; bool moved = false;
-                tb.Scroll += (_, _) => { moved = true; double nv = tb.Value * res; val.Text = nv.ToString("0.###"); LightPreview(k1, idx, nv); };
+                string k1 = q.Slider;
+                var v = _lightVals[k1]; double mx = LightMax(k1);
+                int idx = LightN(k1) == 4 ? 3 : 0; double top = Math.Max(mx, v[idx]), res = mx / 200.0;
+                var tb = new TrackBar { Minimum = 0, Maximum = (int)Math.Round(top / res), Value = Math.Min((int)Math.Round(top / res), (int)Math.Round(v[idx] / res)), TickStyle = TickStyle.None, Width = sliderW, Height = 30, BackColor = Theme.Panel, AutoSize = false, Margin = new Padding(0) };
+                var val = new Label { Text = v[idx].ToString("0.###"), AutoSize = false, Width = valueW, Height = 30, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.White, Font = Theme.Ui };
+                bool moved = false;
+                tb.Scroll += (_, _) => { moved = true; double nv = tb.Value * res; val.Text = nv.ToString("0.###"); LightPreview(k1, idx, nv, fast: true); };
                 tb.MouseUp += (_, _) => { if (moved) { moved = false; var cur = LightUi.Value(D.Loc, k1); cur[idx] = tb.Value * res; BeginInvoke(() => LightSet(k1, cur)); } };
                 tb.MouseWheel += (_, e) => ((HandledMouseEventArgs)e).Handled = true;
                 r.Controls.Add(tb); r.Controls.Add(val);
             }
-            rows.Controls.Add(r);
+            card.Controls.Add(r);
         }
-        body.Controls.Add(rows); body.Controls.Add(right);
+        Heading("LIGHT");
+        foreach (var q in LightMain.Take(3)) Row(q);
+        Heading("SKY AND FOG");
+        foreach (var q in LightMain.Skip(3).Take(3)) Row(q);
+        Heading("CAMERA");
+        foreach (var q in LightMain.Skip(6)) Row(q);
+        // Advanced: folded; its button says how many of them you changed, so no change hides
+        int advChanged = LightMore.Count(q => (q.Colour != null && vals.ContainsKey(q.Colour)) || (q.Slider != null && vals.ContainsKey(q.Slider)));
+        string advText = (_lightAdv ? "▾ " : "▸ ") + $"Advanced ({LightMore.Length})" + (advChanged > 0 ? $"  -  changed: {advChanged} *" : "");
+        var adv = Theme.Btn(advText, () => { _lightAdv = !_lightAdv; BeginInvoke(LightBuild); }, advChanged > 0 ? ColorTranslator.FromHtml("#5a4a12") : Theme.Glass);
+        adv.Margin = new Padding(2, 10, 2, 2);
+        Look.Tip(adv, "More settings: exposure limits, glow threshold, baked light, lamp glow, low fog");
+        card.Controls.Add(adv);
+        if (_lightAdv) foreach (var q in LightMore) Row(q);
+        body.Controls.Add(card);
+
+        var right = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Theme.Bg, Margin = new Padding(0) };
+        _lightBox = new LightPreviewBox { Width = prevW, Height = prevH, Margin = new Padding(0, 0, 0, 4), Caption = "Preview: the Dodge Challenger Tuner in this light" };
+        right.Controls.Add(_lightBox);
+        right.Controls.Add(new Label { Text = "A rough look: the game draws it a little differently.", AutoSize = true, MaximumSize = new Size(prevW, 0), ForeColor = muted, Margin = new Padding(2, 0, 2, 8) });
+        string? own = D.Loc.Obj("lighting")?.Str("sky_image");
+        var skyCard = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Theme.Panel, Padding = new Padding(8, 6, 8, 8), Margin = new Padding(0) };
+        skyCard.Controls.Add(new Label { Text = "SKY PICTURE  -  " + (own != null ? "yours: " + Path.GetFileName(own) : $"the preset's ({name})"), AutoSize = true, UseMnemonic = false, ForeColor = Theme.Warn, Font = Theme.Bold, Margin = new Padding(0, 0, 0, 4) });
+        int skyW = Math.Min(prevW - 16, 420);
+        var pic = SkyPicture(out string? err);
+        if (pic != null) skyCard.Controls.Add(new PictureBox { Image = pic, Width = skyW, Height = skyW * pic.Height / pic.Width, SizeMode = PictureBoxSizeMode.Zoom, Margin = new Padding(0) });
+        else skyCard.Controls.Add(new Label { Text = "(no sky preview: " + err + ")", AutoSize = true, ForeColor = Theme.Bad });
+        var sb = new FlowLayoutPanel { AutoSize = true, BackColor = Theme.Panel, Margin = new Padding(0, 4, 0, 0) };
+        sb.Controls.Add(Theme.Btn("🌄 Custom sky (HDRI)...", LightPickSky, Theme.Blue));
+        var useP = Theme.Btn("Use the preset's sky", () => LightSky(null)); useP.Enabled = own != null; sb.Controls.Add(useP);
+        skyCard.Controls.Add(sb);
+        skyCard.Controls.Add(new Label { Text = "A 360 panorama (2:1, .hdr / .png / .jpg): its top half becomes the sky, from straight up down to the horizon. 'Turn the sky' turns it, 'Sky brightness' sets how bright. Needs Build + install.", AutoSize = true, MaximumSize = new Size(skyW, 0), ForeColor = muted, Margin = new Padding(0, 4, 0, 0) });
+        right.Controls.Add(skyCard);
+        body.Controls.Add(right);
         page.Controls.Add(body);
         f.Controls.Add(page);
         f.ResumeLayout();
+        if (scroll > 0) { f.AutoScrollPosition = new Point(0, scroll); }
         LightPreview();
         _lightBusy = false;
     }
@@ -573,39 +654,12 @@ public sealed partial class MainForm
         LightSet(key, v);
     }
 
-    void LightPreview(string? key = null, int i = 0, double value = 0)
+    void LightPreview(string? key = null, int i = 0, double value = 0, bool fast = false)
     {
-        if (_lightPrev == null || _lightPrev.IsDisposed) return;
-        var keys = Lighting.Fields.Keys.Concat(LightUi.SampleFields.Keys).ToList();
-        var vals = keys.ToDictionary(k => k, k => LightUi.Value(D.Loc, k));
-        if (key != null) vals[key][i] = value;
-        var bm = new Bitmap(420, 300);
-        using (var g = Graphics.FromImage(bm))
-        {
-            static Color Hex(double r, double gr, double b) => Color.FromArgb(Math.Max(0, Math.Min(255, (int)(255 * r))), Math.Max(0, Math.Min(255, (int)(255 * gr))), Math.Max(0, Math.Min(255, (int)(255 * b))));
-            var sky = vals["sky"]; var fog = vals["fog_colour"];
-            double[] skyRgb = sky.Take(3).Select(c => c * Math.Min(1.0, 0.25 + vals["sky_intensity"][0] * 3)).ToArray();
-            for (int y = 0; y < 180; y += 6)
-            {
-                double t = y / 180.0;
-                using var br = new SolidBrush(Hex(skyRgb[0] * (1 - t) * 0.8 + fog[0] * t * 3, skyRgb[1] * (1 - t) * 0.8 + fog[1] * t * 3, skyRgb[2] * (1 - t) * 0.8 + fog[2] * t * 3));
-                g.FillRectangle(br, 0, y, 420, 6);
-            }
-            using (var gb = new SolidBrush(ColorTranslator.FromHtml("#3a3e44"))) g.FillRectangle(gb, 0, 180, 420, 120);
-            var ol = vals["object_light"]; double up = vals["object_light_up"][0], b0 = 0.55;
-            double[] amb = ol.Take(3).Select(c => c * ol[3] * 3.0 * (1 - 0.5 * up)).ToArray(), dir = ol.Take(3).Select(c => c * ol[3] * 3.0 * up).ToArray();
-            Color Face(double k) => Hex(b0 * (amb[0] + dir[0] * k), b0 * (amb[1] + dir[1] * k), b0 * (amb[2] + dir[2] * k));
-            void Poly(Color c, params int[] p)
-            {
-                var pts = new Point[p.Length / 2]; for (int q = 0; q < pts.Length; q++) pts[q] = new Point(p[2 * q], p[2 * q + 1]);
-                using var br = new SolidBrush(c); g.FillPolygon(br, pts); g.DrawPolygon(Pens.Black, pts);
-            }
-            Poly(Face(1.0), 150, 150, 230, 130, 290, 150, 210, 170); Poly(Face(0.55), 150, 150, 210, 170, 210, 250, 150, 230); Poly(Face(0.15), 210, 170, 290, 150, 290, 230, 210, 250);
-            using var f = new Font("Segoe UI", 9); using var f2 = new Font("Segoe UI", 8);
-            using var gg = new SolidBrush(ColorTranslator.FromHtml("#9aa8b8"));
-            g.DrawString("rough preview of a placed object (light on placed objects)", f, Brushes.White, 10, 8);
-            g.DrawString($"object light {ol[3]:0.00}   exposure {vals["middle_grey"][0]:0.00}   bloom {vals["bloom"][0]:0.00}", f2, gg, 10, 280);
-        }
-        var old = _lightPrev.Image; _lightPrev.Image = bm; old?.Dispose();
+        if (_lightBox == null || _lightBox.IsDisposed) return;
+        if (key != null && _lightVals.TryGetValue(key, out var v)) v[i] = value;
+        _lightBox.Preset = Lighting.Effective(D.Loc).Preset;
+        try { _lightBox.Show(LightEnv(), _lightVals, fast); }
+        catch (Exception e) when (e is not OutOfMemoryException) { Say("Lighting preview: " + e.Message, Theme.Bad); }
     }
 }

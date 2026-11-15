@@ -734,8 +734,10 @@ public static class Build
         if (!opt.NoCars)
         {
             aliases.AddRange(CarBuild.ModelAliases(wld));
+            aliases.AddRange(CarBuild.SoundAliases(wld, src));
             files.AddRange(CarBuild.ModelFiles(wld, src, log));
             files.AddRange(CarBuild.IconFiles(wld, src, log));
+            files.AddRange(CarBuild.SoundFiles(wld, src, log));
         }
         var (skyFiles, skyAliases) = Lighting.SkyFiles(wld, Paths.Tracks, n => src.Read(n)!, log);
         files.AddRange(skyFiles); aliases.AddRange(skyAliases);
@@ -953,6 +955,14 @@ public static class Build
         Pak.ReplaceFiles(tmp, Paths.GamedataOut, f.ToList());
         File.Delete(tmp);
         log("built " + Paths.GamedataOut);
+        // the boot pack (Blur REBORN reads it from rebrn\): the game's own, with the sound tables of the cars with their own sound
+        if (File.Exists(Paths.BootOriginal))
+        {
+            var boot = new List<KeyValuePair<string, byte[]>>();
+            foreach (var n in new[] { "gamedata/xt/audio.bin", "gamedata/xt/audioentities.bin" }) if (f.TryGetValue(n, out var d)) boot.Add(new(n, d));
+            if (boot.Count > 0) { Pak.ReplaceFiles(Paths.BootOriginal, Paths.BootOut, boot); log($"boot pack: {Paths.BootOut} (the sound tables of the own sounds)"); }
+            else File.Copy(Paths.BootOriginal, Paths.BootOut, true);
+        }
         if (!opt.NoRoot) BuildRoot(wld, opt);
     }
 }

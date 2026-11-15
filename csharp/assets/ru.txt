@@ -1048,3 +1048,88 @@ Advanced layout: all the options ||| Полный вид: все настрой�
 Simple layout  (icons on the side) ||| Простой вид  (значки сбоку)
 Advanced layout  (all the options) ||| Полный вид  (все настройки)
 Removes everything painted on this map ||| Убирает всю покраску на этой карте
+Sun ||| Солнце
+Sky light ||| Свет неба
+Light on objects ||| Свет на объектах
+Fog ||| Туман
+Sky brightness ||| Яркость неба
+Turn the sky ||| Поворот неба
+Brightness (exposure) ||| Яркость (экспозиция)
+Glow ||| Сияние
+Light on objects from above ||| Свет на объектах сверху
+Baked light (road and ground) ||| Запечённый свет (дорога и земля)
+Lamps and windows glow ||| Свечение фар и окон
+Low fog (near the ground) ||| Низкий туман (у земли)
+Glow threshold (higher = less glow) ||| Порог сияния (выше = меньше)
+Advanced ||| Дополнительно
+changed: {} ||| изменено: {}
+LIGHT ||| СВЕТ
+SKY AND FOG ||| НЕБО И ТУМАН
+CAMERA ||| КАМЕРА
+Sky (ambient) colour + strength: light from all around ||| Небо (цвет и сила): свет со всех сторон
+Light on placed objects (colour + strength): game models you placed ||| Свет на объектах (цвет и сила): поставленные вами модели игры
+Fog colour + distance fog density ||| Цвет тумана и его плотность
+Exposure (middle grey) ||| Экспозиция (средний серый)
+0 = all round, 1 = only from above ||| 0 = со всех сторон, 1 = только сверху
+The darkest the exposure goes ||| Самая тёмная экспозиция
+The brightest the exposure goes ||| Самая яркая экспозиция
+Bloom threshold ||| Порог сияния
+More settings: exposure limits, glow threshold, baked light, lamp glow, low fog ||| Ещё настройки: пределы экспозиции, порог сияния, запечённый свет, свечение фар, низкий туман
+Placed game models look black? This gives them light. ||| Модели игры чёрные? Эта кнопка даёт им свет.
+Forget every change: back to the city's own lighting ||| Забыть все изменения: вернуть освещение города
+Pick the colour ||| Выбрать цвет
+Preview: a car lit like your placed objects, under this sky ||| Вид: машина освещена как ваши объекты, под этим небом
+A rough look: the game draws it a little differently. ||| Примерный вид: в игре будет немного иначе.
+drag to turn ||| тяните, чтобы повернуть
+Drag to turn around the car ||| Тяните, чтобы обойти машину
+A 360 panorama (2:1, .hdr / .png / .jpg): its top half becomes the sky, from straight up down to the horizon. 'Turn the sky' turns it, 'Sky brightness' sets how bright. Needs Build + install. ||| Панорама 360 (2:1, .hdr / .png / .jpg): верхняя половина станет небом, от зенита до горизонта. «Поворот неба» поворачивает её, «Яркость неба» задаёт яркость. Нужна сборка.
+Lighting preview: {} ||| Вид освещения: {}
+☀ Light up placed objects ||| ☀ Осветить объекты
+* Light on objects ||| * Свет на объектах
+bottom half: not used ||| нижняя половина: не используется
+Preview: the Dodge Challenger Tuner in this light ||| Вид: Dodge Challenger Tuner в этом свете
+MAP ||| КАРТА
+CARS ||| МАШИНЫ
+Make your map: the road, the land, the light ||| Создайте карту: дорога, земля, свет
+Your own cars and car paint (for every map) ||| Свои машины и окраска машин (для всех карт)
+Body ||| Кузов
+Sound ||| Звук
+The car's look: body, icons, paint, wheels ||| Вид машины: кузов, значки, краска, колёса
+The car's engine sound ||| Звук мотора машины
+Engine sound of ||| Звук мотора от
+A random car's sound ||| Звук случайной машины
+Body car's sound ||| Звук машины-кузова
+Back to the sound of the body car ||| Вернуть звук машины-кузова
+Same as the body car ({}) ||| Как у машины-кузова ({})
+{} sounds like the {}. ||| {} звучит как {}.
+{} sounds like its body car, the {}. ||| {} звучит как её машина-кузов, {}.
+Your car sounds like the car you pick here: its engine, gear changes, turbo and tyres. The look, the wheels and the handling do not change.\nYou hear it in game after Build + install. ||| Ваша машина звучит как выбранная здесь: мотор, переключения, турбо и шины. Вид, колёса и управление не меняются.\nСлышно в игре после сборки.
+Random ||| Случайный
+ENGINE SOUND ||| ЗВУК МОТОРА
+Listen ||| Слушать
+Play a short rev of this engine (press again to stop) ||| Прослушать, как ревёт этот мотор (нажмите ещё раз, чтобы остановить)
+Pick the car whose engine you want: its engine, exhaust, gear changes and turbo. Press Listen to hear it. You hear it in game after Build + install. ||| Выберите машину, чей мотор вам нужен: мотор, выхлоп, переключения и турбо. Нажмите «Слушать». В игре — после сборки.
+engine: {} ||| мотор: {}
+Playing the engine of the {}... ||| Играет мотор {}...
+Engine of the {} (a short rev up and off the gas) ||| Мотор {} (короткий разгон и сброс газа)
+Cannot play this sound: {} ||| Не удаётся проиграть звук: {}
+MY OWN ENGINE SOUND ||| МОЙ ЗВУК МОТОРА
+Use my own sound ||| Мой звук
+On: your recording replaces the engine, exhaust and intake of the sound above (turbo and gear sounds stay) ||| Вкл.: ваша запись заменит мотор, выхлоп и впуск звука выше (турбо и переключения останутся)
+Import .wav... ||| Загрузить .wav...
+⇩ Import .wav... ||| ⇩ Загрузить .wav...
+A .wav recording of an engine at steady revs (1-3 seconds is enough) ||| Запись мотора на ровных оборотах в .wav (хватит 1-3 секунд)
+(no file yet) ||| (файла пока нет)
+Recorded at (rpm) ||| Записано на (об/мин)
+About how fast the engine was turning in your recording. Higher = your sound plays lower in game ||| Примерные обороты мотора в вашей записи. Больше = в игре звук ниже
+Play a short rev made from your sound (press again to stop) ||| Прослушать разгон из вашего звука (нажмите ещё раз, чтобы остановить)
+Best: 1-3 seconds of an engine at steady revs, no music or talking. The program pitches it to every rev step; the turbo and gear sounds come from the engine chosen above. ||| Лучше всего: 1-3 секунды мотора на ровных оборотах, без музыки и голоса. Программа подстроит звук под все обороты; турбо и переключения берутся от мотора, выбранного выше.
+Recorded at (rpm): how fast the engine was turning in your recording (rpm = engine turns per minute). The game needs your sound at every engine speed, from idle (about 800) to the top (about 6500), and makes them by playing it slower or faster from this number. 3000 is a good start.\nSounds too high in game? Raise it (try 4000-5000). Too low? Lower it (try 2000). Press Listen to hear the change before you build. ||| Записано на (об/мин): как быстро крутился мотор в вашей записи (об/мин = оборотов мотора в минуту). Игре нужен ваш звук на всех оборотах, от холостых (около 800) до максимума (около 6500), и программа делает их, проигрывая звук медленнее или быстрее от этого числа. 3000 — хорошее начало.\nВ игре звук слишком высокий? Увеличьте число (попробуйте 4000-5000). Слишком низкий? Уменьшите (попробуйте 2000). Нажмите «Слушать», чтобы услышать разницу до сборки.
+{} uses your own sound ({}, recorded at {} rpm) on the {}'s engine ||| {} использует ваш звук ({}, записан на {} об/мин) на моторе {}
+Import a .wav first ||| Сначала загрузите .wav
+Making a rev from your sound... ||| Готовлю разгон из вашего звука...
+Your sound as a rev (recorded at {} rpm) ||| Ваш звук в разгоне (записан на {} об/мин)
+This sound can't be used: {} ||| Этот звук не подходит: {}
+Your sound {} is on {}. Press Listen, set the revs it was recorded at, then Build + install. ||| Ваш звук {} стоит на {}. Нажмите «Слушать», укажите обороты записи, затем соберите.
+My own sound: OFF ||| Мой звук: ВЫКЛ
+✔ My own sound: ON ||| ✔ Мой звук: ВКЛ

@@ -86,11 +86,22 @@ public sealed partial class MainForm : Form
         _build.Font = Theme.Bold;
         right.Controls.Add(_build);
         var tabs = _topTabs;
-        foreach (var (val, txt) in new[] { ("2d", "▦ 2D map"), ("3d", "▲ 3D"), ("land", "⛰ Landscape"), ("surface", "▩ Surface"), ("collision", "⚠ Collision"), ("ai", "➿ AI path"), ("light", "☀ Lighting"), ("car", "⛟ Custom car"), ("skins", "🎨 Car skins") })
+        // two separate groups: making the map, and the cars (they do not depend on each other)
+        foreach (var (title, tip, list) in new[]
         {
-            var t = Theme.Toggle(txt, on => { if (on) SetMode(val); });
-            t.Font = Theme.Bold; Look.Tip(t, $"Ctrl+{_tabs.Count + 1}");
-            _tabs[val] = t; tabs.Controls.Add(t);
+            ("MAP", "Make your map: the road, the land, the light", new[] { ("2d", "▦ 2D map"), ("3d", "▲ 3D"), ("land", "⛰ Landscape"), ("surface", "▩ Surface"), ("collision", "⚠ Collision"), ("ai", "➿ AI path"), ("light", "☀ Lighting") }),
+            ("CARS", "Your own cars and car paint (for every map)", new[] { ("car", "⛟ Custom car"), ("skins", "🎨 Car skins") }),
+        })
+        {
+            var g = new TabGroup(title);
+            Look.Tip(g, tip);
+            foreach (var (val, txt) in list)
+            {
+                var t = Theme.Toggle(txt, on => { if (on) SetMode(val); });
+                t.Font = Theme.Bold; Look.Tip(t, $"Ctrl+{_tabs.Count + 1}");
+                _tabs[val] = t; g.Controls.Add(t);
+            }
+            tabs.Controls.Add(g);
         }
         bar.Controls.Add(tabs); bar.Controls.Add(right);
         var bottom = _bottom = new Panel { Dock = DockStyle.Bottom, Height = 30, BackColor = Theme.Panel };
@@ -424,7 +435,7 @@ public sealed partial class MainForm : Form
         if (tabs + right + 8 > W) { _save.Text = "✔"; if (!Building) _build.Text = "▶ Build"; right = _topRight.PreferredSize.Width; }
         bool two = tabs + right + 8 > W;
         _topTabs.WrapContents = tabs > W;                         // a very narrow window: the tabs take two rows too
-        int tabRows = _topTabs.WrapContents ? _topTabs.GetPreferredSize(new Size(W, 0)).Height : 36;
+        int tabRows = Math.Max(36, _topTabs.GetPreferredSize(new Size(_topTabs.WrapContents ? W : 100000, 0)).Height);   // the tab groups' real height
         _topPanel.Height = Math.Max(40, tabRows + 4) + (two ? 36 : 0);
         _topRight.Dock = two ? DockStyle.Bottom : DockStyle.Right; _topRight.Height = 36;
 

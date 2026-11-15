@@ -16,6 +16,9 @@ public static class Setup
         (0xA668F8, Z("cache/gamedata.pak"), Z("rebrn/gamedata.pak")),
         (0xA66628, Z("GAME:\\cache\\gamedata.pak"), Z("GAME:\\rebrn\\gamedata.pak")),
         (0xA66978, Z("cache/root.pak"), Z("rebrn/root.pak")),
+        // the boot pack too: the game reads its sound tables (audio.bin, audioentities.bin) from it while it starts
+        (0xA66660, Z("GAME:\\cache\\gamedata_boot.pak"), Z("GAME:\\rebrn\\gamedata_boot.pak")),
+        (0xA668BC, Z("cache/gamedata_boot.pak"), Z("rebrn/gamedata_boot.pak")),
         (0x72D54A, new byte[] { 0x74, 0x12 }, new byte[] { 0xEB, 0x12 }),
     };
     static byte[] Z(string s) => Encoding.Latin1.GetBytes(s + "\0");
@@ -239,10 +242,10 @@ public static class Setup
         foreach (var (off, _, nw) in ExePatches) nw.CopyTo(d, off);
         if (!(File.Exists(Reborn) && File.ReadAllBytes(Reborn).AsSpan().SequenceEqual(d))) { File.WriteAllBytes(Reborn, d); log("made Blur REBORN.exe (Blur.exe itself is not changed)"); }
         Directory.CreateDirectory(Paths.PackDir);
-        foreach (var (name, src) in new[] { ("gamedata.pak", Paths.GamedataOriginal), ("root.pak", Paths.RootOriginal) })
+        foreach (var (name, src) in new[] { ("gamedata.pak", Paths.GamedataOriginal), ("root.pak", Paths.RootOriginal), ("gamedata_boot.pak", Paths.BootOriginal) })
         {
             string dst = Path.Combine(Paths.PackDir, name);
-            if (File.Exists(dst)) continue;
+            if (File.Exists(dst) || !File.Exists(src)) continue;
             if (!CreateHardLink(dst, src, IntPtr.Zero)) { File.Copy(src, dst + ".part", true); File.Move(dst + ".part", dst, true); }
             log($"rebrn\\{name} = the game's original (until your first build)");
         }

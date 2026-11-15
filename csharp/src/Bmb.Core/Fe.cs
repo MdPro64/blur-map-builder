@@ -3,10 +3,10 @@ namespace Bmb.Core;
 
 public static class Paths
 {
-    public const string Version = "2.3.0";
+    public const string Version = "2.4.0";
     /// game = the player's Blur folder (read only here); data = its "Blur Map Builder" folder; maps / outDir = where maps are read and packs go
     public static string Game = "", Data = "", Base = "", Unpacked = "", GamedataOriginal = "", RootOriginal = "", LevelTemplate = "", Addon = "",
-        Catalog = "", ModelCache = "", Work = "", Tracks = "", Logs = "", Levels = "", PackDir = "", FeWork = "", GamedataOut = "", RootOut = "", WorldFile = "", Cache = "";
+        Catalog = "", ModelCache = "", Work = "", Tracks = "", Logs = "", Levels = "", PackDir = "", FeWork = "", GamedataOut = "", RootOut = "", WorldFile = "", Cache = "", BootOriginal = "", BootOut = "";
 
     public static void Init(string game, string? maps = null, string? work = null, string? packDir = null, string? levels = null)
     {
@@ -14,10 +14,10 @@ public static class Paths
         Unpacked = Path.Combine(Base, "unpacked", "gamedata");
         GamedataOriginal = Path.Combine(Base, "gamedata.pak.original"); RootOriginal = Path.Combine(Base, "root.pak.original");
         LevelTemplate = Path.Combine(Base, "level_template"); Addon = Path.Combine(Base, "addon"); Catalog = Path.Combine(Base, "catalog.json");
-        ModelCache = Path.Combine(Base, "model_cache"); Cache = Path.Combine(game, "cache");
+        ModelCache = Path.Combine(Base, "model_cache"); Cache = Path.Combine(game, "cache"); BootOriginal = Path.Combine(Cache, "gamedata_boot.pak");
         Work = work ?? Path.Combine(Data, "work"); Tracks = maps ?? Path.Combine(Data, "maps"); Logs = Path.Combine(Data, "logs");
         Levels = levels ?? Path.Combine(game, "levels"); PackDir = packDir ?? Path.Combine(game, "rebrn");
-        FeWork = Path.Combine(Work, "flat_earth"); GamedataOut = Path.Combine(Work, "gamedata_track.pak"); RootOut = Path.Combine(Work, "root_track.pak");
+        FeWork = Path.Combine(Work, "flat_earth"); GamedataOut = Path.Combine(Work, "gamedata_track.pak"); RootOut = Path.Combine(Work, "root_track.pak"); BootOut = Path.Combine(Work, "gamedata_boot_track.pak");
         WorldFile = Path.Combine(Tracks, "world.json");
     }
 }

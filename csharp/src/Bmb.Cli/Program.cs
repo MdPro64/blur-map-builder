@@ -91,6 +91,69 @@ switch (cmd)
         Console.WriteLine(Sha(o) + " " + o.Length);
         break;
     }
+    case "soundtest":       // soundtest GAME WORLD.json CAR...: the custom cars made in memory + the sound fields of them and of the given game cars
+    {
+        Paths.Init(args[1]);
+        var files = new Dictionary<string, byte[]>();
+        CarBuild.AddCars(files, (JObj)Json.Load(args[2])!, Console.WriteLine);
+        foreach (var l in CarSound.Dump(new[] { "BMB_*" }.Concat(args.Skip(3)), files["gamedata/xt/amax.bin"])) Console.WriteLine(l);
+        break;
+    }
+    case "pak-names":       // pak-names FILE: every file name + size (no unpacking)
+    {
+        using var pk = new Pak(args[1]);
+        foreach (var e in pk.Files) Console.WriteLine($"{e.Name}	{e.Size}	{(e.Offset == Pak.NoData ? "nodata" : "")}");
+        break;
+    }
+    case "owntest":         // owntest GAME ENGINECAR SOUND.wav RPM OUTDIR: the own-sound copy made in memory + checked (look only)
+    {
+        Paths.Init(args[1]);
+        using var rp = new Pak(Paths.RootOriginal);
+        // 1. the encoder: a game loop through encode + decode
+        var gb = SoundBank.Read(rp.Read(@"\audio\dodge_v10.baf")!);
+        var w0 = gb.Waves.First(w => w.Name == "Viper_Engine_3108"); var x = gb.Decode(w0)!;
+        var enc = OwnSound.EncodeVag(x);
+        var tb = new SoundBank { Data = enc }; var y = tb.Decode(new SoundBank.Wave { Format = 7, Off = 0, Size = enc.Length, Samples = x.Length })!;
+        double se = 0, sx = 0; for (int i = 0; i < x.Length; i++) { se += (x[i] - y[i]) * (x[i] - y[i]); sx += x[i] * x[i]; }
+        Console.WriteLine($"encoder: {enc.Length} bytes (game {w0.Size}), signal/noise {10 * Math.Log10(sx / Math.Max(se, 1e-12)):0.0} dB");
+        // 2. the plan + root files
+        var own = OwnSound.ReadWav(args[3]); double rpm = double.Parse(args[4], System.Globalization.CultureInfo.InvariantCulture);
+        var plan = OwnSound.MakePlan(args[2], 0, rp);
+        Console.WriteLine($"engine {plan.Engine}, bank {plan.Bank} -> {plan.NewBank}, proxy {plan.OldProxy:X8} -> {plan.NewProxy:X8}, entity -> {plan.NewDef:X8}");
+        foreach (var dq in plan.Dats) Console.WriteLine($"   {dq.OldFile} ({dq.OldObj:X8}) -> {dq.NewFile} ({dq.NewObj:X8})");
+        foreach (var (n, d) in OwnSound.RootFiles(plan, rp, own, rpm))
+        {
+            Console.WriteLine($"   root file {n}: {d.Length} bytes");
+            if (n.EndsWith(".baf")) { var nb = SoundBank.Read(d); Console.WriteLine($"      bank '{nb.Name}', {nb.Waves.Count} sounds"); File.WriteAllBytes(Path.Combine(args[5], "own_rev.wav"), CarSoundPreview.RevWav(nb)); File.WriteAllBytes(Path.Combine(args[5], "own_bank.baf"), d); }
+        }
+        // 3. the gamedata entries
+        string xt = Path.Combine(Paths.Unpacked, "xt");
+        var (au, en) = OwnSound.AddEntries(plan, File.ReadAllBytes(Path.Combine(xt, "audio.bin")), File.ReadAllBytes(Path.Combine(xt, "audioentities.bin")));
+        var ka = new Kslf(au); var ke = new Kslf(en);
+        Console.WriteLine($"audio.bin {au.Length} bytes: proxy {ka.Objects.Count} objects; new proxy -> {Json.Dumps(ka.Top(ka.Objects[ka.ObjOf(plan.NewProxy)]), -1)}");
+        foreach (var dq in plan.Dats) Console.WriteLine($"   new object {dq.NewObj:X8}: {Json.Dumps(ka.Top(ka.Objects[ka.ObjOf(dq.NewObj)]), -1)}");
+        var nd = ke.Top(ke.Objects[ke.ObjOf(plan.NewDef)]);
+        Console.WriteLine($"entity copy: name {nd["name"]}, objects {string.Join(" ", OwnSound.AudioObjects(nd).Distinct().Select(u => u.ToString("X8")))}");
+        var od = ke.Objects.Select(o => o.Blocks[0].Name == "AudioEntityDef" ? ke.Top(o) : null).First(t => t != null && t["name"] as string == plan.Engine)!;
+        Console.WriteLine($"entity game: name {od["name"]}, objects {string.Join(" ", OwnSound.AudioObjects(od).Distinct().Select(u => u.ToString("X8")))}");
+        break;
+    }
+    case "revwav":          // revwav GAME OUTDIR CAR...: each car's engine name + its rev preview as OUTDIR\CAR.wav (look only)
+    {
+        Paths.Init(args[1]);
+        var eng = CarSoundPreview.Engines();
+        if (args.Length == 3 && args[2] == "all") { using var rp = new Pak(Paths.RootOriginal); foreach (var e in eng.Values.Distinct().OrderBy(q => q)) Console.WriteLine($"{e} -> {CarSoundPreview.BankOf(e, rp)} {(rp.Find(@"\audio\" + CarSoundPreview.BankOf(e, rp).ToLowerInvariant() + ".baf") != null ? "ok" : "MISSING")}"); break; }
+        Console.WriteLine($"{eng.Count} cars with an engine sound, {eng.Values.Distinct().Count()} engines");
+        foreach (var car in args.Skip(3)) { var w = CarSoundPreview.RevWav(car); File.WriteAllBytes(Path.Combine(args[2], car + ".wav"), w); Console.WriteLine($"{car}: {eng[car]}, {w.Length / 96000.0:0.0} s"); }
+        break;
+    }
+    case "sounddump":       // sounddump GAME GAMEDATA.pak CAR...: the sound fields of cars in a built pack's amax.bin (look only)
+    {
+        Paths.Init(args[1]);
+        using var gp = new Pak(args[2]);
+        foreach (var l in CarSound.Dump(args.Skip(3), gp.Read(@"\gamedata\xt\amax.bin")!)) Console.WriteLine(l);
+        break;
+    }
     case "build":           // build GAME MAPS WORK LEVELS [dry] [nocars] [noroot]
     {
         Paths.Init(args[1], args[2], args[3], Path.Combine(args[3], "rebrn"), args[4]);

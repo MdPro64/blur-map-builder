@@ -134,6 +134,28 @@ public sealed class RoundButton : Button
     protected override void OnMouseUp(MouseEventArgs e) { _down = false; Invalidate(); base.OnMouseUp(e); }
 }
 
+/// a group of top tabs: a rounded box, a little lighter than the bar, its name in small letters at the left
+public sealed class TabGroup : FlowLayoutPanel
+{
+    public TabGroup(string title)
+    {
+        AutoSize = true; AutoSizeMode = AutoSizeMode.GrowAndShrink; WrapContents = false;
+        BackColor = Theme.Panel2; Padding = new Padding(4, 2, 4, 2); Margin = new Padding(0, 0, 14, 0);
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+        Controls.Add(new Label { Text = title, AutoSize = true, UseMnemonic = false, ForeColor = ColorTranslator.FromHtml("#7f9bbb"), BackColor = Theme.Panel2, Font = Theme.Small, Margin = new Padding(4, 10, 4, 0) });
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.Clear(Parent?.BackColor ?? Theme.Panel);
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        using var path = Look.RoundPath(new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f), 9);
+        using var b = new SolidBrush(Theme.Panel2); g.FillPath(b, path);
+        using var pen = new Pen(Theme.Glass); g.DrawPath(pen, path);
+    }
+}
+
 public sealed class RoundToggle : CheckBox
 {
     bool _hot;

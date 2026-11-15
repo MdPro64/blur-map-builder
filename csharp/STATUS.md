@@ -47,6 +47,122 @@ The C# window keeps its own auto-save the same way as Python, and asks before cl
 - **Tab changes:** the window stays still with a small loading bar, and the new tab appears whole. Tabs that open fast show no bar.
 - **Other:** first-start setup, start-up picture, help window, layouts as in Python, crash reports.
 
+## Top tabs in two groups + custom car sound (2026-11-15, nothing committed, sound not tried in game)
+
+- **Top bar:** the tabs sit in two rounded groups, MAP (2D map ... Lighting) and CARS (Custom car, Car skins) (`TabGroup` in
+  Look.cs). The bar's height now follows the groups' real height (the robot's size check failed by 2 px before; the tour
+  now runs that check too: all 4 sizes pass).
+- **Custom car: Body / Sound tabs** at the top (name, class, stats and the 3D view stay for both). Sound tab: "Engine sound
+  of" any game car (or the body car's), 🎲 Random, ↺ Body car's sound. Saved as `car["sound"]` (the Python program ignores it).
+- **Build:** the AmaxVehicle record of a custom car gets the 13 sound fields of the chosen car, byte for byte
+  (`CarSound.Fields`: vehicleAudioEntity + AI / PS3 / boss versions, dry / wet wheel sounds, AudioRPMLimit, AudioGarageID,
+  AudioForcedInduction, AudioEngineType, AudioExhaustType). No sound picked = the build is the same as before.
+  Checked with `bmbcli soundtest GAME WORLD.json CAR...` (the cars made in memory: their sound fields = the chosen car's).
+  **Not heard in game yet.**
+- **Sound tab, second round:** no stats on it any more; the list shows each car with its engine ("Dodge Challenger Tuner (Dodge V8)");
+  **▶ Listen** plays a short rev of the chosen engine (every rev step of its bank, engine + exhaust, cross-faded, then off the gas).
+  `bmbcli revwav GAME OUTDIR CAR...` writes those as WAV; `bmbcli revwav GAME all` = every engine -> its bank (all 33 found).
+- **How the game's car sounds work (found for custom sounds, next step):** car record `vehicleAudioEntity` -> AudioEntityProxy
+  (audio.bin) -> AudioEntityDef (audioentities.bin, e.g. "Dodge_V10", parts Engine / Exhaust / Controller) -> AudioObjects
+  (audio.bin, filename = `\audio\dat\dodge_v10_engine.dat` in root.pak) -> the .dat names its bank and sounds ("Dodge_V10",
+  "Viper_Engine_792" ...) -> `\audio\dodge_v10.baf`. Bank = 'BANK' header (name at +18, wave count at +12), one 'WAVE' header per
+  sound (name +12, data start +44, length +48, rate +64, samples +68), then the data. Car sounds: format 7 = 4-bit ADPCM, VAG
+  style, 33-byte blocks (filter/scale byte + 64 samples), 48 kHz mono (`SoundBank.Decode`). An engine bank: engine loops at
+  6-8 rev steps + off the gas, exhaust the same, induction, turbo spool / air / blow-off. Tyre / drift sounds are one shared
+  entity for all cars (Wheel_dry, wheel_dry.baf). Own sounds need: a VAG encoder, a copy of the bank with a new name, copies of
+  the .dat files naming it, new AudioObjects + a copy of the entity + a new proxy, and the car pointing at it.
+
+- **Own engine sound (built 2026-11-15, NOT heard in game yet):** Sound tab > MY OWN ENGINE SOUND: Use my own sound, Import .wav
+  (copied to `maps\cars\sounds\`; PCM 8/16/24/32 bit or float, any rate, mixed to mono 48 kHz), Recorded at (rpm), Listen.
+  Saved as `car["sound_own"]` (file, empty = off), `sound_own_file` (kept when turned off), `sound_rpm`.
+  The build (`OwnSound.cs`, `CarBuild.SoundFiles` / `SoundAliases` / AddCars): for custom car i on the engine of its sound car
+  (else body car): a copy of that engine's bank named `zb<i>` + the rest of its name (same length), its engine + exhaust loops
+  (+ off the gas) = the player's sound pitched to each rev step (rev / recorded rev), looped without a click, as loud as the game
+  sound it replaces, encoded to the game's 4-bit ADPCM (encoder: 45 dB on a game loop); copies of the .dat files that name the
+  bank (their own name + the bank name swapped, same length); in audio.bin new AudioObjects (uids BA500000 + 16 i + k) for those
+  .dat files and a new AudioEntityProxy (+9) pointing at a copy of the entity (audioentities.bin, +8, references moved to the new
+  objects); the car's vehicleAudioEntity -> the new proxy. Root pack: the new names are aliases of the game files, then filled.
+  `bmbcli owntest GAME ENGINECAR SOUND.wav RPM OUTDIR` checks it all in memory; a dry build on the scratch copy made the files.
+  **First in-game test (2026-11-15): still the game sound.** Cause: Blur REBORN mounts cache\gamedata_boot.pak while it starts
+  and reads the sound tables (audio.bin, audioentities.bin) from it then (the car records are read later, from rebrn\gamedata.pak).
+  **Fix:** two more Blur REBORN.exe patches (0xA66660 "GAME:\cache\gamedata_boot.pak", 0xA668BC "cache/gamedata_boot.pak" ->
+  rebrn\, same length); setup links rebrn\gamedata_boot.pak to the game's own; the build writes work\gamedata_boot_track.pak =
+  the game's boot pack + the two sound tables when a car has its own sound (else an unchanged copy), installed into rebrn\.
+  The game's cache\ is not changed. The map builder remakes Blur REBORN.exe on its next start (setup runs once more).
+  **Second in-game test: game-car engine swap works, own sound still not heard.** Installed data was right (the car -> BA500009).
+  Missing piece: `\audio\datbanklists.wbl` (root pack, read once at start) lists the banks each .dat needs ("Toyota_i6_engine.dat,
+  Toyota_i6.baf,Car_Common.baf,;"); the copies were not in it, so their bank never loaded. The build now writes that file with a
+  line per .dat copy (the game line, its bank swapped for the copy's).
+  Still unknown until heard: whether two banks may hold sounds with the same names.
+  **Third in-game test: still the game car's sound.** Two faults in the bank copy: (1) the Exhaust sounds are stereo (byte +75 of
+  the wave header = 2; the 33-byte ADPCM blocks take turns left, right ...) and the copy wrote mono data into them; (2) the
+  Induction layer (also one sound per rpm step, as loud as the engine) was kept, so the game car still came through.
+  **Fix:** Engine + Exhaust + Induction steps are replaced; stereo waves get each block twice (same sound both sides); the copy's
+  bank is now exactly as long as the game's. `SoundBank.Decode` reads the left side of stereo waves. The car's
+  aiVehicleAudioEntity also points at the copy (in case the game uses that one for the player). Turbo / supercharger extras stay.
+  **Fourth in-game test: no engine sound at all.** Reading: the game plays the full entity only for the focus car (vehicle 0 in a
+  one-screen race); every other car, likely the player in the LAN quick race too, plays aiVehicleAudioEntity. The AI player code
+  can't drive the full entity, so the car went quiet. **Fix:** `OwnSound.MakePlans` makes a second copy from the AI entity
+  ("VW_flat4_AI" -> "zb0flat4_AI": its .dats, its bank with the own sound, uids +10..+15 of the car's 16); the car's
+  aiVehicleAudioEntity points at that one. The AI banks are 36 kHz: the loop's speed now uses each wave's own rate.
+  Dry build checked (both copies, wbl lines, sizes). **Fifth in-game test (2026-11-15): WORKS - the siren is heard on the custom car.**
+  (The BMB_SOUND_PROXY_TEST switch is removed.) The app exe still has the switch until its next build (it does nothing unless set).
+
+## Lighting tab: car preview + simpler controls (2026-11-11, nothing committed, not tried in game)
+
+- **Preview** (`LightPreview.cs`): a car built in code (smooth body, cabin with windows and pillars, 4 wheels with rims;
+  2704 triangles) on a ground plane, drawn by a small software rasterizer (no GL). Clear-coat paint with fresnel mirrors
+  the sky picture (yours or the preset's, read at 1024 x 256 from the same files the build uses); sun, sky light, light on
+  objects, baked light (ground), lamp glow (emissive), fog + low fog, exposure (middle grey / min / max on the picture's
+  average) and bloom follow the sliders. Soft shadow under the car, sun shadow when the sun is on. Drag = turn the camera.
+  16-45 ms while dragging, 40-60 ms for the sharp picture (2x2 samples) that follows.
+  Second pass, closer to how the game draws: exposure = middle grey / average brightness (centre weighted), kept between
+  exposure min and max, then a straight gamma 2.2 (no film curve); soft bloom (x / (2 + x) above the threshold); distance fog
+  exp(-distance x density) + a height-fog layer under 5 m; sky = picture x sky brightness, sky rotation = part of a full turn.
+  The car is lit only by the light on objects x the baked colour (so with light on objects at 0 it is dark, like placed
+  models), plus reflections that grow toward its edges and a rim light. Sun and sky light light the ground.
+- **Third pass (after the user's in-game test: "does not look like the preview"):** the preview car is now the game's own
+  **Dodge Challenger Tuner** (`GameCar.cs`): read from `root.pak.original` (a lower detail level, 9045 triangles, no
+  interior), its blue body picture `aotexture_blue` on the parts with the picture, its main blue on the plain-paint parts,
+  lamps / glass / tyres / rims by material. Made once into `Blur Map Builder\light_preview_car.bin` (about 1 MB) in the
+  background at start-up, again when root.pak.original or the car format changes (so after an update too); loads in
+  ~15 ms; the code car is the fallback if the game files cannot be read. Also: the ground is lit by the baked light (the
+  user's pink sun / sky colours did not tint the ground in game), the sky = picture x alpha x alpha x brightness (as the
+  game draws it), the sky's own fog colour + curve, depth-fog scale, height-fog height / falloff / scale and the 4 glow
+  levels are read from the preset's record (the tab does not show them), glow = 4 blur sizes, a wider camera lens.
+  Mount Haruna's height-fog scale is 0, so "Low fog" does nothing there. 20-25 ms while dragging, about 45 ms sharp.
+  `BMB_ONLY=lightcar` (+ `BMB_WORLD=...world.json`) renders a world's lighting from behind the car;
+  `BMB_ONLY=carinfo` lists a car model's parts and saves its pictures.
+- **Fourth pass (second in-game test: white sky, pink ground, silver car):** the far ground now goes fully into the fog colour
+  (no blend into the sky picture any more); the car's reflections are x the exposure (the game reflects a live picture of the
+  scene that already has the exposure in it, then exposes again: that is why the paint looks silvery). The sky picture itself is
+  not fogged in the game (only its own thin horizon fog), so the white sky in the test is most likely the map's 66 placed skyline
+  objects far away, fully pink-fogged; the preview has no placed objects. Check: Fog density 0 -> the sky picture should show.
+  **Confirmed in game (2026-11-11):** with Fog density 0 the city shows again: the white came from the fogged placed objects.
+- **Fifth pass, the ground:** the game's asphalt picture (tarmacplain02, the Surface tab's tarmac) tiled every 3 m (mip levels,
+  no flicker far away), its brightness set to the old plain ground's; wet patches (~20 %, placed by the game's cloudy mask
+  uv_distort_04, 30 m) are darker and mirror the sky and the car (the car is drawn a second time upside down under the ground).
+  30-40 ms while dragging, 70-80 ms sharp.
+- **Sixth pass, a city ring:** simple blocks 250-700 m around the car (3-degree slices, some gaps), concrete lit by the baked
+  light, about 1 in 5 windows glowing with the emissive colour ("Lamps and windows glow"); they take the distance fog colour
+  like placed objects in game (with the user's pink fog 0.0054 they turn pink-white, as in the in-game test). The car and the
+  wet patches reflect them. `BMB_FOG=0.0054` adds a lightcar picture of the world with that fog. 30-40 ms dragging, 65-100 ms sharp.
+- **Seventh pass, every slider checked** (`BMB_SLIDERS=1` + `BMB_WORLD`: each slider 0 -> max, how much the picture
+  changes). User: Sun, Sky light and Glow work in game. Now: Sun and Sky light = colour x strength (fits the old in-game test:
+  sun 20 made everything far too bright; every city has strength 0) and light the ground and the buildings (the car stays lit
+  by the light on objects x baked). Fixed a bug of this round that had set Baked + Lamps glow to 0 in the preview. Glow works
+  but only shows on parts brighter than the glow threshold after the exposure (lamps; more with a brighter exposure).
+  Still no effect in the preview: the strength of Baked and of Lamps glow (cities with strength 0 still look lit in game),
+  and Sun when its colour is black (black x strength = 0).
+- **Open question (the line below is OUT OF DATE for Sun / Sky light, see the seventh pass):** the game seems to use only the RGB of the Sun / Sky light / Baked / Emissive colours, not
+  their 4th number (what our "strength" sliders change). So those 4 sliders may do nothing in game; the preview ignores them
+  too. Check in game; if true, those sliders should scale the colour instead.
+- **Controls** (`Panels.cs`, LightBuild): 8 main rows with plain names in 3 groups (Light / Sky and fog / Camera), the other 7
+  under a folded **Advanced** button that says how many of them you changed. Fog = colour + density on one row. Tooltips
+  give the old technical names. `*` still marks changed values; saved values and keys are unchanged.
+- Self-test: `BMB_ONLY=lightcar` = car pictures for 5 presets + timings (`scratch\ui\lightcar_*.png`); the tour also takes
+  `tour_light_more` (Advanced open) and `tour_light_other_layout`. Tour passed in English and Russian; full robot NOT run.
+
 ## UI / UX round (2026-11-08, test build publish_new14, nothing committed)
 
 - One slim top bar: tabs on the left; ⚙ menu, Undo / Redo icons, Save, Play, Build on the right. Labels shorten (Save = ✔,
@@ -124,7 +240,7 @@ oot.pak` (and the game's picture back for skins turned off); Build + install kee
 oot.pak` = the original + the skins;
   turned off (or Uninstall all), the original comes back byte for byte. Car models are only in root.pak (root_streaming.pak has none). **Seen in normal Blur too (2026-11-03): the Corvette C3 Rat skin shows.**
 - **Panels:** the small arrow at the top corner of Locations, Object library, Objects in this map and the Map panel folds it to a thin strip; the arrow brings it back. It is kept with the layout.
-- **Release:** version 2.3.0 (2.0.0 on 2026-10-31, 2.1.0 with Car skins on 2026-11-03, 2.2.0 plain-paint skins, 2.3.0 Landscape / Simple layout on 2026-11-10), file name `Blur Map Builder.exe`, the name the Python updater looks for. It updates itself from GitHub releases like Python did; the last version stays beside it as `.old`. `Blur Map Tester.exe` stays the small Python one (it uses the same files). Released 2026-10-31 as v2.0.0; the source is in the `csharp` folder of the GitHub repo.
+- **Release:** version 2.4.0 (2.0.0 on 2026-10-31, 2.1.0 with Car skins on 2026-11-03, 2.2.0 plain-paint skins, 2.3.0 Landscape / Simple layout on 2026-11-10, 2.4.0 Lighting preview + car sounds on 2026-11-15; full robot 252/252), file name `Blur Map Builder.exe`, the name the Python updater looks for. It updates itself from GitHub releases like Python did; the last version stays beside it as `.old`. `Blur Map Tester.exe` stays the small Python one (it uses the same files). Released 2026-10-31 as v2.0.0; the source is in the `csharp` folder of the GitHub repo.
 - **Language:** English or Russian. The first start asks once; the box at the bottom right changes it (the program restarts). The build log and names from the game stay in English. The choice is kept in `%LOCALAPPDATA%\BlurMapBuilderCS\language.txt`, not in the game folder.
 - **Look:** the old icon, rounded buttons, dark lists and scroll bars, short help on every tab and window (Help, F1 or the ? button; All keys opens the long list).
 - **Window size:** tested at 960x600, 1100x680, 1280x720 and 1920x1040. Narrow windows get shorter names, two rows on top; the 3D tab drops the object list and map panel below 1240 wide. Lighting and Custom car no longer show the map panels.

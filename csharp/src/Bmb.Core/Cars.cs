@@ -1157,6 +1157,8 @@ public static partial class CarBuild
         if (cars.Count == 0) return;
         byte[] Rd(string n) => files.TryGetValue("gamedata/xt/" + n, out var d) ? d : File.ReadAllBytes(Path.Combine(new[] { Paths.Unpacked, "xt" }.Concat(n.Split('/')).ToArray()));
         byte[] amaxD = Rd("amax.bin"), rpD = Rd("racingphysics.bin"), vehD = Rd("vehicles.bin"), mpD = Rd("multiplayer.bin"), vloc = Rd("loc/vehicles.loc");
+        byte[]? audD = null, entD = null;          // audio.bin / audioentities.bin, once a car has its own sound
+        Pak? rootSrc = null;
         var names = InternalNames(cars);
         var added = new List<uint>();
         for (int i = 0; i < cars.Count; i++)
@@ -1207,7 +1209,7 @@ public static partial class CarBuild
             amax = new Db(amaxD);
             bi = amax.Cars()[bas];
             int wi = amax.Cars().GetValueOrDefault(wheels, bi);
-            int dynRow = amax.RowOfUid(dynUid), paintRow = amax.RowOfUid(paintUid);
+            int dynRow = amax.RowOfUid(dynUid), paintRow = amax.RowOfUid(paintUid);   // (read again below when an own sound adds a row)
             var sets = new Dictionary<string, double>(carVals);
             foreach (var f in new[] { "wheelScaleFront", "wheelScaleRear", "wheelDepthFront", "wheelDepthRear" }) sets[f] = amax.Get(wi, f);
             sets["wheelModel"] = amax.RowOfUid(wheelUid);
@@ -1216,20 +1218,79 @@ public static partial class CarBuild
             sets["LocString"] = Loc0 + (uint)i; sets["dynamics"] = dynRow; sets["UiSpeed"] = s2.Int("speed"); sets["UiAcceleration"] = s2.Int("acceleration"); sets["UiDrift"] = s2.Int("drift");
             sets["UiGrip"] = s2.Int("grip"); sets["UiStrength"] = s2.Int("strength"); sets["UiMaxSpeed"] = mph; sets["GameplayTopSpeed"] = mph; sets["BossAbilitySlot"] = 0; sets["class"] = car.Int("class");
             if (car.Truthy("body_glb")) sets["DriverOffset.vy"] = amax.Get(bi, "DriverOffset.vy") - DriverDown;
+            // the sound: another game car's engine + wheel sound fields, copied byte for byte (references, numbers, flags)
+            string? sound = car.Truthy("sound") ? car.Str("sound") : null;
+            int si = sound != null && sound != bas && amax.Cars().TryGetValue(sound, out int sIdx) ? sIdx : -1;
+            var soundBytes = new List<(int Off, byte[] Bytes)>();
+            if (si >= 0)
+                foreach (var f in CarSound.Fields)
+                {
+                    try
+                    {
+                        var (off, tn) = amax.Field(vt, f);
+                        int size = tn is "bool" or "u8" ? 1 : tn is "u16" or "i16" ? 2 : 4, a = amax.K.Objects[si].Blocks[0].Offset + off;
+                        if (a + size <= amax.Data.Length) soundBytes.Add((off, amax.Data.AsSpan(a, size).ToArray()));
+                    }
+                    catch (InvalidOperationException) { }     // a field this game's record does not have
+                }
+            // its own engine sound: copies of the engine's sound entries (the root pack gets the bank + .dat copies), the car points at it
+            int ownRow = -1, aiRow = -1;
+            if (OwnSoundFile(car) != null)
+            {
+                try
+                {
+                    rootSrc ??= new Pak(Paths.RootOriginal);
+                    var plans = OwnSound.MakePlans(EngineCar(car), i, rootSrc);
+                    int baseRow = (int)amax.Get(bi, "vehicleAudioEntity");
+                    string ptype = amax.K.Types[amax.K.Refs[baseRow].Type].Name;
+                    foreach (var plan in plans)
+                    {
+                        (audD, entD) = OwnSound.AddEntries(plan, audD ?? Rd("audio.bin"), entD ?? Rd("audioentities.bin"));
+                        amaxD = KslfWrite.InsertUid(amaxD, plan.NewProxy, ptype, out _);
+                    }
+                    amax = new Db(amaxD); bi = amax.Cars()[bas];
+                    ownRow = amax.RowOfUid(plans[0].NewProxy);
+                    // the AI version: its own copy when the engine has one, else the full copy
+                    aiRow = plans.Count > 1 ? amax.RowOfUid(plans[1].NewProxy) : ownRow;
+                    // the rows of the copied sound fields may have moved with the new row: read them again
+                    if (si >= 0)
+                    {
+                        si = amax.Cars()[sound!]; soundBytes.Clear();
+                        foreach (var f in CarSound.Fields)
+                        {
+                            try
+                            {
+                                var (off, tn) = amax.Field(vt, f);
+                                int size = tn is "bool" or "u8" ? 1 : tn is "u16" or "i16" ? 2 : 4, a = amax.K.Objects[si].Blocks[0].Offset + off;
+                                if (a + size <= amax.Data.Length) soundBytes.Add((off, amax.Data.AsSpan(a, size).ToArray()));
+                            }
+                            catch (InvalidOperationException) { }
+                        }
+                    }
+                    sets["dynamics"] = amax.RowOfUid(dynUid); sets["wheelModel"] = amax.RowOfUid(wheelUid); paintRow = amax.RowOfUid(paintUid);
+                }
+                catch (Exception e) when (e is IOException or InvalidDataException or InvalidOperationException or KeyNotFoundException) { log($"   own sound not used ({e.Message})"); ownRow = aiRow = -1; }
+            }
             int iconOff = amax.Field(vt, "UiIconName").Off;
             var amaxNow = amax;
             amaxD = KslfWrite.CloneObjectAny(amaxD, bi, name, carUid, (data, pool, blocks) =>
             {
                 foreach (var (f, v) in sets) amaxNow.Set(data, blocks[0], vt, f, v);
+                foreach (var (off, bytes) in soundBytes) for (int k = 0; k < bytes.Length; k++) data[blocks[0] + off + k] = bytes[k];
+                if (ownRow >= 0) { amaxNow.Set(data, blocks[0], vt, "vehicleAudioEntity", ownRow); amaxNow.Set(data, blocks[0], vt, "aiVehicleAudioEntity", aiRow); }
                 data.Put(blocks[0] + iconOff, (uint)pool.Len); pool.AddSz(name);
                 int a0 = blocks[0] + pOff, pb = B.U16(data.A, a0), pf = B.U16(data.A, a0 + 2);
                 data.Put(blocks[pb] + 4 * pf, (uint)paintRow);
                 data.Put(a0 + 4, 1u);
             });
             added.Add(carUid);
-            log($"custom car {car.Str("name")} ({name}, class {"ABCD"[(int)car.Int("class")]}, body {bas}, wheels {wheels}): {mph} mph");
+            log($"custom car {car.Str("name")} ({name}, class {"ABCD"[(int)car.Int("class")]}, body {bas}, wheels {wheels}, sound {(si >= 0 ? sound : bas)}): {mph} mph");
+            if (sound != null && sound != bas && si < 0) log($"   the sound car {sound} was not found - the body car's sound stays");
             if (car.Truthy("body_glb")) log($"   (imported body {car.Str("body_glb")} on the wheels of {bas} - written with the root pack)");
         }
+        rootSrc?.Dispose();
+        if (audD != null) files["gamedata/xt/audio.bin"] = audD;
+        if (entD != null) files["gamedata/xt/audioentities.bin"] = entD;
         files["gamedata/xt/racingphysics.bin"] = rpD;
         files["gamedata/xt/vehicles.bin"] = vehD;
         files["gamedata/xt/amax.bin"] = amaxD;
@@ -1343,6 +1404,64 @@ public static partial class CarBuild
         return o;
     }
 
+    /// the game car whose engine a custom car's sound is made from (its sound car, else its body car of its class)
+    static string EngineCar(JObj car)
+    {
+        var picks = CarsData.ClassCars((int)car.Int("class")).Select(x => x.Name).ToList();
+        string bas = picks.Contains(car.Str("base")!) ? car.Str("base")! : picks[0];
+        return car.Truthy("sound") ? car.Str("sound")! : bas;
+    }
+
+    static string? OwnSoundFile(JObj car) => car.Truthy("sound_own") && File.Exists(OwnSound.FilePath(car.Str("sound_own")!)) ? OwnSound.FilePath(car.Str("sound_own")!) : null;
+
+    /// the new names of the own-sound files, each first made as a copy of the game file it is made from (filled in later)
+    public static IEnumerable<KeyValuePair<string, string>> SoundAliases(JObj wld, Pak src)
+    {
+        var cars = WorldCars(wld);
+        var o = new List<KeyValuePair<string, string>>();
+        for (int i = 0; i < cars.Count; i++)
+        {
+            if (OwnSoundFile(cars[i]) == null) continue;
+            try
+            {
+                foreach (var plan in OwnSound.MakePlans(EngineCar(cars[i]), i, src))
+                {
+                    o.Add(new(@"\audio\" + plan.NewBank.ToLowerInvariant() + ".baf", @"\audio\" + plan.Bank.ToLowerInvariant() + ".baf"));
+                    foreach (var d in plan.Dats) o.Add(new(@"\audio\dat\" + d.NewFile.ToLowerInvariant(), @"\audio\dat\" + d.OldFile.ToLowerInvariant()));
+                }
+            }
+            catch (Exception e) when (e is IOException or InvalidDataException or InvalidOperationException or KeyNotFoundException) { }
+        }
+        return o;
+    }
+
+    /// the root pack's files of the custom cars with their own engine sound: a bank copy with the player's sound + its .dat copies
+    public static IEnumerable<KeyValuePair<string, byte[]>> SoundFiles(JObj wld, Pak src, Action<string> log)
+    {
+        var cars = WorldCars(wld);
+        var o = new List<KeyValuePair<string, byte[]>>();
+        string? list = null;            // the game's bank list, with the copies' lines added
+        for (int i = 0; i < cars.Count; i++)
+        {
+            var car = cars[i];
+            if (OwnSoundFile(car) is not { } file) { if (car.Truthy("sound_own")) log($"custom car {car.Str("name")}: its sound file {car.Str("sound_own")} is missing - the game sound stays"); continue; }
+            try
+            {
+                var wav = OwnSound.ReadWav(file);
+                foreach (var plan in OwnSound.MakePlans(EngineCar(car), i, src))
+                {
+                    var made = OwnSound.RootFiles(plan, src, wav, car.Num("sound_rpm", OwnSound.DefaultRpm)).ToList();
+                    list = OwnSound.AddToBankList(list ?? B.Latin1.GetString(src.Read(OwnSound.BankList) ?? throw new FileNotFoundException(OwnSound.BankList)), plan);
+                    o.AddRange(made);
+                    log($"custom car {car.Str("name")}: own engine sound {car.Str("sound_own")} on the {plan.Engine} engine (bank {plan.NewBank})");
+                }
+            }
+            catch (Exception e) when (e is IOException or InvalidDataException or InvalidOperationException or KeyNotFoundException) { log($"custom car {car.Str("name")}: own sound not made ({e.Message}) - the game sound stays"); }
+        }
+        if (list != null) o.Add(new(OwnSound.BankList, B.Latin1.GetBytes(list)));
+        return o;
+    }
+
     public static IEnumerable<KeyValuePair<string, byte[]>> IconFiles(JObj wld, Pak src, Action<string> log)
     {
         var cars = WorldCars(wld);
@@ -1354,5 +1473,257 @@ public static partial class CarBuild
         var cars = WorldCars(wld); var names = InternalNames(cars);
         for (int i = 0; i < cars.Count; i++) frontend = Bpr.AliasPicture(frontend, names[i], cars[i].Str("icon")!);
         return frontend;
+    }
+}
+
+/// a custom car's sound: the engine + wheel sound of another game car (the sound fields of its AmaxVehicle record)
+public static class CarSound
+{
+    public static readonly string[] Fields =
+    {
+        "vehicleAudioEntity", "aiVehicleAudioEntity", "aiVehicleAudioEntity_PS3", "aiBossBattleVehicleAudioEntity_PS3",
+        "dryWheelAudioEntity", "wetWheelAudioEntity", "aiDryWheelAudioEntity", "aiWetWheelAudioEntity",
+        "AudioRPMLimit", "AudioGarageID", "AudioForcedInduction", "AudioEngineType", "AudioExhaustType",
+    };
+
+    /// (look only) the sound fields of some cars: type, value, and for a reference what it points at
+    public static List<string> Dump(IEnumerable<string> cars, byte[]? amax = null)
+    {
+        var o = new List<string>();
+        var db = new Db(amax ?? File.ReadAllBytes(Path.Combine(Paths.Unpacked, "xt", "amax.bin")));
+        var all = db.Cars();
+        cars = cars.SelectMany(c => c.EndsWith("*") ? all.Keys.Where(k => k.StartsWith(c[..^1], StringComparison.Ordinal)) : new[] { c }).ToList();
+        foreach (var c in cars)
+        {
+            if (!all.TryGetValue(c, out int i)) { o.Add(c + ": not found"); continue; }
+            int t = db.K.Objects[i].Blocks[0].Type;
+            o.Add(c + ":");
+            foreach (var f in Fields.Concat(new[] { "sharedAudioEntity", "aiSharedAudioEntity", "dynamics", "wheelModel" }))
+            {
+                try
+                {
+                    var (off, tn) = db.Field(t, f);
+                    double v = db.Get(i, f);
+                    string extra = "";
+                    if (tn != "f32" && tn != "i32" && tn != "u8" && tn != "u16" && tn != "i16" && tn != "u32" && v >= 0 && v < db.K.Refs.Length)
+                    {
+                        var r = db.K.Refs[(int)v];
+                        extra = r.Obj >= 0 && r.Obj < db.K.Objects.Count ? $" -> {db.TName(r.Obj)} {db.Name(r.Obj)}" : $" -> uid {r.Uid:X8}";
+                    }
+                    o.Add($"   {f} [{tn}] = {v}{extra}");
+                }
+                catch (Exception e) { o.Add($"   {f}: {e.GetType().Name}"); }
+            }
+        }
+        return o;
+    }
+}
+
+/// the game's sound banks (\audio\NAME.baf): a 'BANK' header, one 'WAVE' header per sound, then the sound data.
+/// The car sounds are 4-bit ADPCM (VAG style: 33-byte blocks = a filter/scale byte + 64 samples), 48 kHz mono.
+public sealed class SoundBank
+{
+    public sealed class Wave { public string Name = ""; public int Off, Size, Rate, Samples, Format, Channels = 1; }
+    public string Name = "";
+    public readonly List<Wave> Waves = new();
+    public byte[] Data = Array.Empty<byte>();
+
+    public static SoundBank Read(byte[] d)
+    {
+        if (d.Length < 52 || B.Latin1.GetString(d, 0, 4) != "BANK") throw new InvalidDataException("not a sound bank");
+        var o = new SoundBank { Data = d, Name = B.Sz(d, 18) };
+        int at = (int)B.U32(d, 4), n = (int)B.U32(d, 12);
+        for (int i = 0; i < n && at + 12 <= d.Length; i++)
+        {
+            if (B.Latin1.GetString(d, at, 4) != "WAVE") break;
+            int size = (int)B.U32(d, at + 4);
+            var w = new Wave { Format = (int)B.U32(d, at + 8), Name = B.Sz(d, at + 12), Off = (int)B.U32(d, at + 44), Size = (int)B.U32(d, at + 48) };
+            if (w.Format == 7) { w.Rate = (int)B.U32(d, at + 64); w.Samples = (int)B.U32(d, at + 68); w.Channels = Math.Max(1, (int)d[at + 75]); }   // +60 = ADPCM header size, +64 rate, +68 samples, +75 channels
+            o.Waves.Add(w);
+            at += size;
+        }
+        return o;
+    }
+
+    static readonly float[,] F = { { 0, 0 }, { 60 / 64f, 0 }, { 115 / 64f, -52 / 64f }, { 98 / 64f, -55 / 64f }, { 122 / 64f, -60 / 64f } };
+
+    /// a sound as floats (-1..1); null if its format is not the 4-bit ADPCM
+    public float[]? Decode(Wave w)
+    {
+        if (w.Format != 7 || w.Off + w.Size > Data.Length) return null;
+        var o = new float[w.Samples]; int k = 0; float p1 = 0, p2 = 0;
+        for (int b = w.Off; b + 33 <= w.Off + w.Size && k < o.Length; b += 33 * w.Channels)
+        {
+            int h = Data[b], fi = Math.Min(h >> 4, 4); float sc = MathF.Pow(2, -(15 + (h & 15))) * 4096f, a = F[fi, 0], c = F[fi, 1];
+            for (int i = 1; i <= 32 && k < o.Length; i++)
+            {
+                int by = Data[b + i];
+                foreach (int nib in new[] { by & 15, by >> 4 })
+                {
+                    float s = (nib >= 8 ? nib - 16 : nib) * sc + p1 * a + p2 * c;
+                    p2 = p1; p1 = s;
+                    if (k < o.Length) o[k++] = s;
+                }
+            }
+        }
+        return o;
+    }
+}
+
+public static partial class CarSoundPreview
+{
+    static Dictionary<string, string>? _engine;
+    static readonly object _lock = new();
+
+    /// every game car -> its engine sound's name (Dodge_V10, BMW_i6 ...), read from amax / audio / audioentities
+    public static Dictionary<string, string> Engines()
+    {
+        lock (_lock)
+        {
+            if (_engine != null) return _engine;
+            var o = new Dictionary<string, string>();
+            string xt = Path.Combine(Paths.Unpacked, "xt");
+            var amax = new Db(File.ReadAllBytes(Path.Combine(xt, "amax.bin")));
+            var au = new Db(File.ReadAllBytes(Path.Combine(xt, "audio.bin")));
+            var en = new Db(File.ReadAllBytes(Path.Combine(xt, "audioentities.bin")));
+            foreach (var (car, i) in amax.Cars())
+            {
+                try
+                {
+                    uint proxy = amax.RefUid(i, "vehicleAudioEntity");
+                    int pi = au.ObjOfUid(proxy);
+                    uint def = au.RefUid(pi, "EntityDef");
+                    int di = en.ObjOfUid(def);
+                    var b = en.K.Objects[di].Blocks[0];
+                    int off = en.Field(b.Type, "name").Off;
+                    o[car] = B.Sz(en.K.Objects[di].Pool, (int)B.U32(en.Data, b.Offset + off));
+                }
+                catch (Exception e) when (e is InvalidOperationException or IndexOutOfRangeException or ArgumentException) { }
+            }
+            return _engine = o;
+        }
+    }
+
+    /// the uid of a game car's sound entry (its vehicleAudioEntity)
+    public static uint ProxyOf(string car, string field = "vehicleAudioEntity")
+    {
+        var amax = new Db(File.ReadAllBytes(Path.Combine(Paths.Unpacked, "xt", "amax.bin")));
+        return amax.RefUid(amax.Cars()[car], field);
+    }
+
+    static readonly Dictionary<string, string> _bank = new();
+
+    /// the bank an engine sound plays from: its entity (audioentities.bin) points at audio objects (audio.bin), each names a .dat
+    /// file (\audio\dat\), and the engine's .dat names its bank (\audio\NAME.baf) before its sounds
+    public static string BankOf(string engine, Pak root)
+    {
+        lock (_bank)
+        {
+            if (_bank.TryGetValue(engine, out var hit)) return hit;
+            string bank = engine;
+            try
+            {
+                string xt = Path.Combine(Paths.Unpacked, "xt");
+                var en = new Kslf(File.ReadAllBytes(Path.Combine(xt, "audioentities.bin")));
+                var au = new Kslf(File.ReadAllBytes(Path.Combine(xt, "audio.bin")));
+                Dictionary<string, object?>? def = null;
+                foreach (var o in en.Objects)
+                {
+                    if (o.Blocks[0].Name != "AudioEntityDef") continue;
+                    var top = en.Top(o);
+                    if (top.TryGetValue("name", out var n) && n as string == engine) { def = top; break; }
+                }
+                var uids = new List<uint>();
+                void Walk(object? v)
+                {
+                    switch (v)
+                    {
+                        case Dictionary<string, object?> d:
+                            if (d.TryGetValue("type", out var t) && t as string == "AudioObject" && d.TryGetValue("uid", out var u) && u is string us) uids.Add(Convert.ToUInt32(us, 16));
+                            foreach (var x in d.Values) Walk(x);
+                            break;
+                        case System.Collections.IEnumerable e when v is not string:
+                            foreach (var x in e) Walk(x);
+                            break;
+                    }
+                }
+                if (def != null) Walk(def);
+                var files = new List<string>();
+                foreach (uint u in uids.Distinct())
+                {
+                    try { if (au.Top(au.Objects[au.ObjOf(u)]).TryGetValue("filename", out var f) && f is string fs) files.Add(fs); }
+                    catch (Exception x) when (x is InvalidOperationException or ArgumentException or IndexOutOfRangeException) { }
+                }
+                foreach (var file in files.OrderBy(f => f.Contains("_engine", StringComparison.OrdinalIgnoreCase) ? 0 : 1))
+                {
+                    byte[]? dat;
+                    try { dat = root.Read(@"\audio\dat\" + file.ToLowerInvariant()); }
+                    catch (Exception x) when (x is IOException or ArgumentException) { continue; }
+                    if (dat == null) continue;
+                    string self = Path.GetFileNameWithoutExtension(file);
+                    var m = System.Text.RegularExpressions.Regex.Matches(B.Latin1.GetString(dat), "[A-Za-z0-9_]{4,}").Select(q => q.Value)
+                        .FirstOrDefault(q => !q.Equals(self, StringComparison.OrdinalIgnoreCase) && !q.Equals("Car_Common", StringComparison.OrdinalIgnoreCase) && root.Find(@"\audio\" + q.ToLowerInvariant() + ".baf") != null);
+                    if (m != null) { bank = m; break; }
+                }
+            }
+            catch (Exception x) when (x is IOException or InvalidOperationException or IndexOutOfRangeException or ArgumentException or FormatException) { }
+            return _bank[engine] = bank;
+        }
+    }
+
+    public static string Nice(string engine) => engine.Replace("_AI", "").Replace("_", " ").Replace(" BB", " big block").Replace(" i", " inline-").Replace("Race ", "race ");
+
+    /// a short rev-up of a car's engine: every rev step of the bank (engine + exhaust) for a moment, cross-faded, then off the gas.
+    /// A 16-bit 48 kHz mono WAV file.
+    /// the rev preview of the player's own sound on a game car's engine (what the build will make)
+    public static byte[] OwnRevWav(string engineCar, string wav, double rpm)
+    {
+        string engine = Engines().TryGetValue(engineCar, out var e) ? e : throw new InvalidDataException("no engine sound for " + engineCar);
+        using var root = new Pak(Paths.RootOriginal);
+        var bank = root.Read(@"\audio\" + BankOf(engine, root).ToLowerInvariant() + ".baf") ?? throw new FileNotFoundException(engine);
+        return RevWav(SoundBank.Read(OwnSound.MakeBank(bank, "preview", OwnSound.ReadWav(wav), rpm)));
+    }
+
+    public static byte[] RevWav(string car)
+    {
+        string engine = Engines().TryGetValue(car, out var e) ? e : throw new InvalidDataException("no engine sound for " + car);
+        SoundBank bank;
+        using (var root = new Pak(Paths.RootOriginal)) bank = SoundBank.Read(root.Read(@"\audio\" + BankOf(engine, root).ToLowerInvariant() + ".baf") ?? throw new FileNotFoundException(engine));
+        return RevWav(bank);
+    }
+
+    /// the rev preview of a bank (a game bank or a custom one)
+    public static byte[] RevWav(SoundBank bank)
+    {
+        var rx = new System.Text.RegularExpressions.Regex(@"_(Engine|Exhaust)_(\d+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var steps = bank.Waves.Select(w => (W: w, M: rx.Match(w.Name))).Where(q => q.M.Success)
+            .GroupBy(q => int.Parse(q.M.Groups[2].Value)).OrderBy(g => g.Key).ToList();
+        int rate = 48000, seg = rate * 45 / 100, fade = rate * 6 / 100;
+        var outp = new List<float>();
+        float[] Loop(float[] s, int n) { var r = new float[n]; for (int i = 0; i < n; i++) r[i] = s.Length > 0 ? s[i % s.Length] : 0; return r; }
+        void Add(float[] s)
+        {
+            int start = Math.Max(0, outp.Count - fade);
+            for (int i = 0; i < s.Length; i++)
+            {
+                if (start + i < outp.Count) { float t = (float)i / fade; outp[start + i] = outp[start + i] * (1 - t) + s[i] * t; }
+                else outp.Add(s[i]);
+            }
+        }
+        foreach (var g in steps)
+        {
+            var mix = new float[seg + fade];
+            foreach (var (w, _) in g) { var s = bank.Decode(w); if (s == null) continue; var l = Loop(s, mix.Length); for (int i = 0; i < mix.Length; i++) mix[i] += l[i]; }
+            Add(mix);
+        }
+        foreach (var w in bank.Waves.Where(w => w.Name.EndsWith("_decel", StringComparison.OrdinalIgnoreCase)))
+            if (bank.Decode(w) is { } s) { var l = Loop(s, rate); for (int i = 0; i < l.Length; i++) l[i] *= 1 - (float)i / l.Length; Add(l); break; }
+        float peak = Math.Max(1e-4f, outp.Count == 0 ? 0 : outp.Max(MathF.Abs)), k = 0.8f / peak;
+        using var ms = new MemoryStream(); using var bw = new BinaryWriter(ms);
+        bw.Write(B.Latin1.GetBytes("RIFF")); bw.Write(36 + outp.Count * 2); bw.Write(B.Latin1.GetBytes("WAVEfmt ")); bw.Write(16); bw.Write((short)1); bw.Write((short)1);
+        bw.Write(rate); bw.Write(rate * 2); bw.Write((short)2); bw.Write((short)16); bw.Write(B.Latin1.GetBytes("data")); bw.Write(outp.Count * 2);
+        foreach (var v in outp) bw.Write((short)Math.Clamp(v * k * 32767, -32768, 32767));
+        bw.Flush();
+        return ms.ToArray();
     }
 }

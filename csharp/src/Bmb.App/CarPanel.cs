@@ -11,7 +11,20 @@ public sealed class CarPanel : Panel
     readonly ListBox _list = new() { Dock = DockStyle.Fill, BackColor = Theme.Field, ForeColor = Theme.Text, BorderStyle = BorderStyle.None, IntegralHeight = false, Font = new Font("Segoe UI", 10f) };
     readonly TextBox _name = new() { Width = 200, BackColor = Theme.Field, ForeColor = Theme.Text, BorderStyle = BorderStyle.FixedSingle, Font = new Font("Segoe UI", 11f), MaxLength = 24 };
     readonly RadioButton[] _cls = new RadioButton[4];
-    readonly ComboBox _base = Theme.Combo(240), _icon = Theme.Combo(220), _mini = Theme.Combo(220), _wheels = Theme.Combo(240);
+    readonly ComboBox _base = Theme.Combo(240), _icon = Theme.Combo(220), _mini = Theme.Combo(220), _wheels = Theme.Combo(240), _sound = Theme.Combo(300);
+    // the two small tabs at the top: the body (look, paint, wheels) and the sound; name, class and stats are for both
+    readonly FlowLayoutPanel _bodyPage = new() { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Theme.Bg, Margin = new Padding(0) };
+    readonly FlowLayoutPanel _soundPage = new() { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Theme.Bg, Margin = new Padding(0), Visible = false };
+    readonly RadioButton _tabBody, _tabSound;
+    readonly Label _soundNow = new() { AutoSize = true, ForeColor = Theme.Text, Margin = new Padding(0, 10, 0, 0), Font = Theme.Bold };
+    static bool _soundTab;
+    const string SameSound = "Same as the body car";
+    readonly List<string?> _soundCars = new();          // the sound list's cars (null = the body car's sound)
+    List<Control> _statsCtrls = new();                  // the stats: shown on the Body tab only
+    System.Media.SoundPlayer? _player;
+    Button? _playing;                                       // the Listen button whose sound plays now (it shows Stop)
+    readonly System.Windows.Forms.Timer _playEnd = new();
+    CheckBox _ownOn = null!; Label _ownFile = null!; Spin _ownRpm = null!; Control _ownRow = null!;
     readonly PictureBox _miniPic = new() { Width = 150, Height = 48, BackColor = Theme.Bg };
     readonly Panel[] _paint = { new() { Width = 34, Height = 22, BorderStyle = BorderStyle.FixedSingle, Cursor = Cursors.Hand }, new() { Width = 34, Height = 22, BorderStyle = BorderStyle.FixedSingle, Cursor = Cursors.Hand } };
     readonly Button[] _paintB = new Button[2];
@@ -60,14 +73,59 @@ public sealed class CarPanel : Panel
         var cls = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Theme.Bg, Margin = new Padding(0) };
         for (int i = 0; i < 4; i++) { int k = i; _cls[i] = Theme.Radio($" {CarUi.Classes[i]} ", null, () => ClassChanged(k)); _cls[i].Font = new Font("Segoe UI", 10f, FontStyle.Bold); cls.Controls.Add(_cls[i]); }
         top.Controls.Add(Col("Class", cls));
-        _base.SelectionChangeCommitted += (_, _) => BaseChanged();
-        top.Controls.Add(Col("Body (a game car of this class)", _base));
-        _icon.SelectionChangeCommitted += (_, _) => Set("icon", _icon.SelectedItem as string);
-        top.Controls.Add(Col("Menu icon", _icon));
-        _mini.SelectionChangeCommitted += (_, _) => Set("mini_icon", (string)_mini.SelectedItem! == MiniAuto ? CarIcon.Auto : _mini.SelectedItem as string);
-        top.Controls.Add(Col("Mini icon (car list)", _mini));
-        top.Controls.Add(_miniPic);
+        var tabs = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Theme.Bg, Margin = new Padding(30, 16, 0, 0) };
+        _tabBody = Theme.Radio("⛟  Body", null, () => ShowPage(false));
+        _tabSound = Theme.Radio("🔊  Sound", null, () => ShowPage(true));
+        foreach (var t in new[] { _tabBody, _tabSound }) { t.Font = Theme.Bold; t.MinimumSize = new Size(110, 30); t.TextAlign = ContentAlignment.MiddleCenter; tabs.Controls.Add(t); }
+        Look.Tip(_tabBody, "The car's look: body, icons, paint, wheels");
+        Look.Tip(_tabSound, "The car's engine sound");
+        top.Controls.Add(tabs);
         _controls.Controls.Add(top); _wide.Add(top);
+        _controls.Controls.Add(new Label { AutoSize = false, Height = 1, Width = 1100, BackColor = Theme.Glass, Margin = new Padding(0, 6, 0, 8) });
+        var look = new FlowLayoutPanel { AutoSize = true, WrapContents = true, BackColor = Theme.Bg, MaximumSize = new Size(1100, 0) };
+        _base.SelectionChangeCommitted += (_, _) => BaseChanged();
+        look.Controls.Add(Col("Body (a game car of this class)", _base));
+        _icon.SelectionChangeCommitted += (_, _) => Set("icon", _icon.SelectedItem as string);
+        look.Controls.Add(Col("Menu icon", _icon));
+        _mini.SelectionChangeCommitted += (_, _) => Set("mini_icon", (string)_mini.SelectedItem! == MiniAuto ? CarIcon.Auto : _mini.SelectedItem as string);
+        look.Controls.Add(Col("Mini icon (car list)", _mini));
+        look.Controls.Add(_miniPic);
+        _bodyPage.Controls.Add(look); _wide.Add(look);
+        // the sound page
+        _soundPage.Controls.Add(new Label { Text = "ENGINE SOUND", AutoSize = true, ForeColor = Theme.Head, Font = Theme.Bold, Margin = new Padding(0, 2, 0, 4) });
+        var sRow = new FlowLayoutPanel { AutoSize = true, WrapContents = true, BackColor = Theme.Bg, MaximumSize = new Size(1100, 0) };
+        _sound.Width = 380;
+        _sound.SelectionChangeCommitted += (_, _) => { int i = _sound.SelectedIndex; Set("sound", i >= 0 && i < _soundCars.Count ? _soundCars[i] : null); ShowSound(); };
+        sRow.Controls.Add(_sound);
+        Button listen = null!; listen = Theme.Btn("▶ Listen", () => Listen(listen), Theme.Blue);
+        Look.Tip(listen, "Play a short rev of this engine (press again to stop)");
+        sRow.Controls.Add(listen);
+        sRow.Controls.Add(Look.Tip(Theme.Btn("🎲 Random", RandomSound), "A random car's sound"));
+        sRow.Controls.Add(Look.Tip(Theme.Btn("↺ Body car's sound", () => { Set("sound", null); Load2(); }), "Back to the sound of the body car"));
+        _soundPage.Controls.Add(sRow); _wide.Add(sRow);
+        _soundPage.Controls.Add(new Label { Text = "Pick the car whose engine you want: its engine, exhaust, gear changes and turbo. Press Listen to hear it. You hear it in game after Build + install.", AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = ColorTranslator.FromHtml("#9aa8b8"), Margin = new Padding(0, 4, 0, 0) });
+        // my own sound: one recording of an engine at steady revs; the build makes every rev step of the engine above from it
+        _soundPage.Controls.Add(new Label { Text = "MY OWN ENGINE SOUND", AutoSize = true, ForeColor = Theme.Head, Font = Theme.Bold, Margin = new Padding(0, 16, 0, 4) });
+        var oRow = new FlowLayoutPanel { AutoSize = true, WrapContents = true, BackColor = Theme.Bg, MaximumSize = new Size(1100, 0) };
+        _ownOn = Theme.Toggle("My own sound: OFF", OwnToggle);
+        _ownOn.CheckedChanged += (_, _) => _ownOn.Text = _ownOn.Checked ? "✔ My own sound: ON" : "My own sound: OFF";
+        Look.Tip(_ownOn, "On: your recording replaces the engine, exhaust and intake of the sound above (turbo and gear sounds stay)");
+        oRow.Controls.Add(_ownOn);
+        oRow.Controls.Add(Look.Tip(Theme.Btn("⇩ Import .wav...", ImportSound), "A .wav recording of an engine at steady revs (1-3 seconds is enough)"));
+        _ownFile = new Label { AutoSize = true, ForeColor = Theme.Text, Margin = new Padding(6, 8, 10, 0), UseMnemonic = false };
+        oRow.Controls.Add(_ownFile);
+        _ownRpm = new Spin("Recorded at (rpm)", OwnSound.DefaultRpm, 250, 500, 12000, "0").Tight();
+        _ownRpm.Set += v => { Set("sound_rpm", v); ShowSound(); };
+        Look.Tip(_ownRpm, "About how fast the engine was turning in your recording. Higher = your sound plays lower in game");
+        oRow.Controls.Add(_ownRpm);
+        Button listenOwn = null!; listenOwn = Theme.Btn("▶ Listen", () => ListenOwn(listenOwn), Theme.Blue);
+        oRow.Controls.Add(Look.Tip(listenOwn, "Play a short rev made from your sound (press again to stop)"));
+        _ownRow = oRow;
+        _soundPage.Controls.Add(oRow); _wide.Add(oRow);
+        _soundPage.Controls.Add(new Label { Text = "Best: 1-3 seconds of an engine at steady revs, no music or talking. The program pitches it to every rev step; the turbo and gear sounds come from the engine chosen above.", AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = ColorTranslator.FromHtml("#9aa8b8"), Margin = new Padding(0, 4, 0, 10) });
+        _soundPage.Controls.Add(new Label { Text = "Recorded at (rpm): how fast the engine was turning in your recording (rpm = engine turns per minute). The game needs your sound at every engine speed, from idle (about 800) to the top (about 6500), and makes them by playing it slower or faster from this number. 3000 is a good start.\nSounds too high in game? Raise it (try 4000-5000). Too low? Lower it (try 2000). Press Listen to hear the change before you build.", AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = ColorTranslator.FromHtml("#9aa8b8"), Margin = new Padding(0, 0, 0, 10) });
+        _soundPage.Controls.Add(_soundNow);
+        _controls.Controls.Add(_bodyPage); _controls.Controls.Add(_soundPage);
         var paint = new FlowLayoutPanel { AutoSize = true, WrapContents = true, BackColor = Theme.Bg, Margin = new Padding(0, 10, 0, 0), MaximumSize = new Size(1100, 0) };
         paint.Controls.Add(Theme.Lbl("Paint"));
         for (int i = 0; i < 2; i++)
@@ -84,7 +142,7 @@ public sealed class CarPanel : Panel
         paint.Controls.Add(_wheels);
         paint.Controls.Add(Theme.Btn("⇩ Import body (.glb)", ImportBody));
         paint.Controls.Add(_bodyBtn);
-        _controls.Controls.Add(paint); _wide.Add(paint); _wide.Add(_fitRow);
+        _bodyPage.Controls.Add(paint); _wide.Add(paint); _wide.Add(_fitRow);
         _fitRow.Controls.Add(new Label { Text = "Fit the body on the wheels:", AutoSize = true, ForeColor = Theme.Head, Margin = new Padding(0, 6, 8, 0) });
         foreach (var (label, key, step) in new[] { ("Size", "size", 0.02), ("Forward", "fwd", 0.03), ("Up", "up", 0.02), ("Wheels side to side", "track", 0.02), ("front to back", "wb", 0.02) })
         {
@@ -92,7 +150,7 @@ public sealed class CarPanel : Panel
             _fitRow.Controls.Add(Theme.Lbl(label)); _fitRow.Controls.Add(Theme.Btn("−", () => Fit(k, -s))); _fitRow.Controls.Add(Theme.Btn("+", () => Fit(k, s)));
         }
         _fitRow.Controls.Add(Theme.Btn("↻ Turn 90°", () => Fit("turn", 90))); _fitRow.Controls.Add(Theme.Btn("Reset", () => Fit(null, 0)));
-        _controls.Controls.Add(_fitRow); _controls.Controls.Add(_fitLabel); _controls.Controls.Add(_roomLabel);
+        _bodyPage.Controls.Add(_fitRow); _bodyPage.Controls.Add(_fitLabel); _bodyPage.Controls.Add(_roomLabel);
         _controls.Controls.Add(new Label { Text = "STATS  (each one stays inside the class's range; all together inside its point budget)", AutoSize = true, ForeColor = Theme.Head, Font = Theme.Bold, Margin = new Padding(0, 14, 0, 2) });
         _controls.Controls.Add(_points);
         var body = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Theme.Bg };
@@ -130,11 +188,153 @@ public sealed class CarPanel : Panel
         Controls.Add(right); Controls.Add(ls); Controls.Add(_left);
         right.BringToFront();
         _controls.Resize += (_, _) => { foreach (var c in _wide) c.MaximumSize = new Size(Math.Max(_controls.ClientSize.Width - 30, 300), 0); };
-        foreach (var c in new Control[] { _name, _base, _icon, _mini, _wheels, paint, _chart }) _needCar.Add(c);
+        foreach (var c in new Control[] { _name, _base, _icon, _mini, _wheels, paint, _chart, _sound, sRow, oRow }) _needCar.Add(c);
+        _statsCtrls = _controls.Controls.Cast<Control>().SkipWhile(c => c != _soundPage).Skip(1).ToList();
+        ShowPage(_soundTab);
         foreach (var r in _cls) _needCar.Add(r);
     }
 
     readonly List<Control> _wide = new();
+
+    public void Page(bool sound) => ShowPage(sound);
+
+    void ShowPage(bool sound)
+    {
+        _soundTab = sound;
+        _tabBody.Checked = !sound; _tabSound.Checked = sound;
+        _controls.SuspendLayout();
+        _bodyPage.Visible = !sound; _soundPage.Visible = sound;
+        foreach (var c in _statsCtrls) c.Visible = !sound;
+        _controls.ResumeLayout();
+    }
+
+    void ShowSound()
+    {
+        var c = Car();
+        if (c == null) { _soundNow.Text = ""; return; }
+        bool own = c.Truthy("sound") && c.Str("sound") != c.Str("base");
+        var engines = SafeEngines();
+        string car = own ? c.Str("sound")! : c.Str("base")!;
+        string eng = engines.TryGetValue(car, out var e) ? $"  -  engine: {CarSoundPreview.Nice(e)}" : "";
+        _soundNow.Text = (own ? $"🔊  {c.Str("name")} sounds like the {Skins.Nice(car)}." : $"🔊  {c.Str("name")} sounds like its body car, the {Skins.Nice(car)}.") + eng;
+        if (c.Truthy("sound_own")) _soundNow.Text = $"🔊  {c.Str("name")} uses your own sound ({c.Str("sound_own")}, recorded at {c.Num("sound_rpm", OwnSound.DefaultRpm):0} rpm) on the {Skins.Nice(car)}'s engine" + eng;
+        _soundNow.ForeColor = own ? Theme.Good : Theme.Text;
+    }
+
+    static Dictionary<string, string> SafeEngines()
+    {
+        try { return CarSoundPreview.Engines(); }
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException) { return new(); }
+    }
+
+    /// a short rev of the chosen engine (made on another thread, then played)
+    /// stops the sound that plays (if any) and puts its button back to Listen
+    void StopSound()
+    {
+        _playEnd.Stop();
+        _player?.Stop(); _player?.Dispose(); _player = null;
+        if (_playing != null && !_playing.IsDisposed) _playing.Text = "▶ Listen";
+        _playing = null;
+    }
+
+    /// plays a .wav; its button shows Stop until the sound ends or is pressed again
+    void PlaySound(Button b, byte[] wav)
+    {
+        StopSound();
+        _player = new System.Media.SoundPlayer(new MemoryStream(wav));
+        _player.Play();
+        _playing = b; b.Text = "■ Stop";
+        // how long it plays: the data size / bytes per second (byte rate at +28 of the .wav header)
+        int rate = wav.Length >= 44 ? BitConverter.ToInt32(wav, 28) : 0;
+        int ms = rate > 0 ? (int)((wav.Length - 44) * 1000L / rate) + 200 : 3000;
+        _playEnd.Interval = Math.Max(100, ms);
+        _playEnd.Tick -= PlayEnded; _playEnd.Tick += PlayEnded;
+        _playEnd.Start();
+    }
+
+    void PlayEnded(object? s, EventArgs e) => StopSound();
+
+    void Listen(Button b)
+    {
+        if (_playing == b) { StopSound(); return; }
+        var c = Car();
+        if (c == null) return;
+        string car = c.Truthy("sound") ? c.Str("sound")! : c.Str("base")!;
+        _f.Say($"Playing the engine of the {Skins.Nice(car)}...");
+        Task.Run(() =>
+        {
+            try { return (CarSoundPreview.RevWav(car), (string?)null); }
+            catch (Exception e) when (e is not OutOfMemoryException) { return (Array.Empty<byte>(), e.Message); }
+        }).ContinueWith(t =>
+        {
+            var (wav, err) = t.Result;
+            if (err != null) { _f.Say("Cannot play this sound: " + err, Theme.Bad); return; }
+            PlaySound(b, wav);
+            _f.Say($"Engine of the {Skins.Nice(car)} (a short rev up and off the gas)", Theme.Good);
+        }, TaskScheduler.FromCurrentSynchronizationContext());
+    }
+
+    string EngineCar(JObj c) => c.Truthy("sound") ? c.Str("sound")! : c.Str("base")!;
+
+    void OwnToggle(bool on)
+    {
+        var c = Car();
+        if (c == null || _loading) return;
+        if (!on) { Set("sound_own", null); ShowSound(); return; }
+        string? file = c.Truthy("sound_own_file") ? c.Str("sound_own_file") : null;
+        if (file != null && File.Exists(OwnSound.FilePath(file))) { Set("sound_own", file); ShowSound(); }
+        else { ImportSound(); if (!c.Truthy("sound_own")) { _loading = true; _ownOn.Checked = false; _loading = false; } }
+    }
+
+    /// a .wav into maps\cars\sounds\ (checked first), then this car uses it
+    void ImportSound()
+    {
+        var c = Car();
+        if (c == null) return;
+        string? path = _f.PickFile("Engine sound (.wav)", "Wave sound|*.wav");
+        if (path == null) return;
+        try { OwnSound.ReadWav(path); }
+        catch (Exception e) when (e is IOException or InvalidDataException) { _f.Say("This sound can't be used: " + e.Message, Theme.Bad); return; }
+        string folder = Path.Combine(Paths.Tracks, "cars", OwnSound.Folder);
+        Directory.CreateDirectory(folder);
+        string name = Path.GetFileName(path), dst = Path.Combine(folder, name);
+        if (!string.Equals(Path.GetFullPath(path), Path.GetFullPath(dst), StringComparison.OrdinalIgnoreCase)) File.Copy(path, dst, true);
+        Edit(q => { q["sound_own"] = name; q["sound_own_file"] = name; if (!q.ContainsKey("sound_rpm")) q["sound_rpm"] = OwnSound.DefaultRpm; });
+        Load2();
+        _f.Say($"Your sound {name} is on {c.Str("name")}. Press Listen, set the revs it was recorded at, then Build + install.", Theme.Good);
+    }
+
+    void ListenOwn(Button b)
+    {
+        if (_playing == b) { StopSound(); return; }
+        var c = Car();
+        if (c == null) return;
+        string? file = c.Truthy("sound_own") ? c.Str("sound_own") : c.Truthy("sound_own_file") ? c.Str("sound_own_file") : null;
+        if (file == null || !File.Exists(OwnSound.FilePath(file))) { _f.Say("Import a .wav first", Theme.Warn); return; }
+        string car = EngineCar(c); double rpm = c.Num("sound_rpm", OwnSound.DefaultRpm);
+        _f.Say("Making a rev from your sound...");
+        Task.Run(() =>
+        {
+            try { return (CarSoundPreview.OwnRevWav(car, OwnSound.FilePath(file), rpm), (string?)null); }
+            catch (Exception e) when (e is not OutOfMemoryException) { return (Array.Empty<byte>(), e.Message); }
+        }).ContinueWith(t =>
+        {
+            var (wav, err) = t.Result;
+            if (err != null) { _f.Say("Cannot play this sound: " + err, Theme.Bad); return; }
+            PlaySound(b, wav);
+            _f.Say($"Your sound as a rev (recorded at {rpm:0} rpm)", Theme.Good);
+        }, TaskScheduler.FromCurrentSynchronizationContext());
+    }
+
+    void RandomSound()
+    {
+        var c = Car();
+        if (c == null) return;
+        var all = CarUi.Pickable().Select(x => x.Name).Where(n => n != c.Str("sound") && n != c.Str("base")).ToList();
+        if (all.Count == 0) return;
+        Set("sound", all[Random.Shared.Next(all.Count)]);
+        Load2();
+    }
 
     // ---- the Wheels menu: a picture of the wheel under the mouse
     sealed class WheelPop : QuietPop
@@ -293,6 +493,19 @@ public sealed class CarPanel : Panel
         _icon.SelectedItem = c.Str("icon");
         if (_wheels.Items.Count == 0) foreach (var x in CarUi.Pickable()) _wheels.Items.Add(x.Name);
         _wheels.SelectedItem = c.Truthy("wheels") ? c.Str("wheels") : c.Str("base");
+        var engines = SafeEngines();
+        string Eng(string car) => engines.TryGetValue(car, out var e) ? $"   ({CarSoundPreview.Nice(e)})" : "";
+        _sound.Items.Clear(); _soundCars.Clear();
+        _sound.Items.Add($"{SameSound} ({Skins.Nice(c.Str("base")!)}){Eng(c.Str("base")!)}"); _soundCars.Add(null);
+        foreach (var x in CarUi.Pickable().Select(x => x.Name).OrderBy(n => n, StringComparer.OrdinalIgnoreCase)) { _sound.Items.Add(Skins.Nice(x) + Eng(x)); _soundCars.Add(x); }
+        if (c.Truthy("sound") && !_soundCars.Contains(c.Str("sound"))) c["sound"] = null;
+        _sound.SelectedIndex = c.Truthy("sound") ? _soundCars.IndexOf(c.Str("sound")) : 0;
+        string? own = c.Truthy("sound_own") ? c.Str("sound_own") : c.Truthy("sound_own_file") ? c.Str("sound_own_file") : null;
+        _ownOn.Checked = c.Truthy("sound_own");
+        _ownFile.Text = own == null ? "(no file yet)" : File.Exists(OwnSound.FilePath(own)) ? own : own + "  (missing!)";
+        _ownFile.ForeColor = own != null && !File.Exists(OwnSound.FilePath(own)) ? Theme.Bad : Theme.Text;
+        _ownRpm.Value = c.Num("sound_rpm", OwnSound.DefaultRpm);
+        ShowSound();
         bool glb = c.Truthy("body_glb");
         _bodyBtn.Enabled = glb; _base.Enabled = !glb;
         foreach (var b in _paintB) b.Enabled = !glb;

@@ -35,6 +35,114 @@ public sealed partial class MainForm
         bool Press(Keys k) { var m = new Message(); return ProcessCmdKey(ref m, k); }
         await Pump(400);
         Refresh2(); await Pump(100);
+        if (Environment.GetEnvironmentVariable("BMB_ONLY") == "carsound")
+        {
+            rep.AddRange(CarSound.Dump(new[] { "Dodge_Challenger_Tuner", "Bowler_Nemesis_Stock", "BMW_M3E92_Drift", "Ford_GT_Race", "Nissan_Navara_Rat", "Opel_AstraExtreme_Stock" }));
+            File.WriteAllLines(Path.Combine(outDir, "ui_timing.txt"), rep);
+            return;
+        }
+        if (Environment.GetEnvironmentVariable("BMB_ONLY") == "carinfo")
+        {
+            // what is inside a game car model (for the Lighting preview's car)
+            string carName = Environment.GetEnvironmentVariable("BMB_CAR") ?? "dodge_challenger_tuner";
+            var data = Skins.ModelBytes(carName); var M = CpModel.Read(data);
+            rep.Add($"{carName}: {data.Length} bytes, fx {string.Join(", ", M.FxFiles)}");
+            foreach (var t in M.TexList) rep.Add($"  tex {t.Name} {t.W}x{t.H} mips {t.Mips} {(t.Dxt == 0x35545844 ? "DXT5" : t.Dxt == 0x31545844 ? "DXT1" : t.Dxt.ToString("X"))}");
+            for (int i = 0; i < M.AllElements.Count; i++) { var e = M.AllElements[i]; rep.Add($"  el {i} {e.Name} parent {e.Parent} model {e.ModelIndex} M {string.Join(" ", e.M.Select(v => v.ToString("0.###")))}"); }
+            foreach (var fs in M.FStreams) rep.Add($"  fstream count {fs.Count}");
+            for (int i = 0; i < M.MeshInfos.Count; i++)
+            {
+                var m = M.MeshInfos[i];
+                int fc = m.Data1.Count > 0 ? m.Data1[0].FaceCount : 0;
+                rep.Add($"  mesh {i} obj {m.Object} ({(m.Object >= 0 && m.Object < M.AllElements.Count ? M.AllElements[m.Object].Name : "?")}) fx {(m.Material >= 0 && m.Material < M.FxFiles.Count ? M.FxFiles[m.Material] : "?")} def {m.Definition} [{string.Join(",", M.VertDefs[m.Definition].Select(d => d.Prefix + ":" + d.Type))}] faceType {m.FaceType} faces {fc} parts {m.Data1.Count}");
+                rep.Add($"     lods {string.Join(" | ", m.Data1.Select(q => $"fo {q.FaceOff} fc {q.FaceCount} vo {q.VOff} vc {q.VCount}"))}   streams {string.Join(" ", m.VStream)} voff {string.Join(" ", m.VOffset)} fstream {m.FaceStream}");
+            }
+            foreach (var v in M.VStreams) rep.Add($"  vstream bytes {v.Bytes} count {v.Count} def {string.Join(",", v.Def.Select(d => $"{d.Type}/{d.Channel}/{d.Sub}"))}");
+            foreach (var pic in (Environment.GetEnvironmentVariable("BMB_PICS") ?? "aotexture_blue,dodge_tuner_scratch,dodge_tuner_decals,dodge_lights,dodge_interior").Split(','))
+                try
+                {
+                    var im = Skins.Picture(carName, pic);
+                    using var bmp = new Bitmap(im.W, im.H, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                    for (int y = 0; y < im.H; y++) for (int x = 0; x < im.W; x++) { int qq = 4 * (y * im.W + x); bmp.SetPixel(x, y, Color.FromArgb(255, im.Px[qq], im.Px[qq + 1], im.Px[qq + 2])); }
+                    bmp.Save(Path.Combine(outDir, "carpic_" + pic + ".png"));
+                    long a = 0; for (int i = 3; i < im.Px.Length; i += 4) a += im.Px[i];
+                    rep.Add($"  pic {pic} {im.W}x{im.H} mean alpha {a / (im.Px.Length / 4)}");
+                }
+                catch (Exception e) { rep.Add($"  pic {pic}: {e.Message}"); }
+            File.WriteAllLines(Path.Combine(outDir, "carinfo.txt"), rep);
+            File.WriteAllLines(Path.Combine(outDir, "ui_timing.txt"), rep);
+            return;
+        }
+        if (Environment.GetEnvironmentVariable("BMB_ONLY") == "lightcar")
+        {
+            // the Lighting preview alone: the car under a few presets and angles, with the time of each picture.
+            // BMB_WORLD = a world.json: its first location's lighting too, also from behind the car (like the game's camera)
+            var sw0 = Stopwatch.StartNew(); var pcar = CarMesh.Get(); CarRender.Prof = new();
+            rep.Add($"car: {(pcar.Game ? "game" : "code")} {pcar.Triangles} triangles, ready in {sw0.ElapsedMilliseconds} ms {CarMesh.LastError}");
+            int i = 0;
+            void Shoot(string name, SkyEnv env, Dictionary<string, double[]> v, string? pre, (float, float)[] views)
+            {
+                foreach (var (yaw, pitch) in views)
+                {
+                    CarRender.Yaw = yaw; CarRender.Pitch = pitch;
+                    using var fast = CarRender.Render(640, 384, 1, env, LightLook.From(v, pre), pcar, out double ms1);
+                    using var pic1 = CarRender.Render(640, 384, 2, env, LightLook.From(v, pre), pcar, out double ms2);
+                    pic1.Save(Path.Combine(outDir, $"lightcar_{i++}.png"));
+                    rep.Add($"lightcar_{i - 1}: {name} yaw {yaw}: fast {ms1:0} ms, sharp {ms2:0} ms");
+                    if (CarRender.Prof != null) { rep.Add("   " + string.Join(", ", CarRender.Prof)); CarRender.Prof.Clear(); }
+                }
+            }
+            if (Environment.GetEnvironmentVariable("BMB_WORLD") is { } wpath)
+            {
+                var loc = ((JObj)Json.Load(wpath)!).Objs("locations").First();
+                var (pre, _) = Lighting.Effective(loc);
+                var v = Lighting.Fields.Keys.Concat(LightUi.SampleFields.Keys).ToDictionary(k => k, k => LightUi.Value(loc, k));
+                string? own = loc.Obj("lighting")?.Str("sky_image");
+                var env = own != null ? SkyEnv.Get("file|" + own, () => SkyEnv.FromFile(Path.Combine(Path.GetDirectoryName(wpath)!, own))) : SkyEnv.Get("preset|" + pre, () => SkyEnv.FromPreset(pre));
+                rep.Add($"preset {pre}: " + string.Join(" ", LightUi.Preset(pre).Select(kv => kv.Key + "=" + string.Join(",", kv.Value.Select(q => q.ToString("0.###"))))) + "  unpacked " + Paths.Unpacked + "  hidden " + string.Join(",", (LightHidden.Of(pre) ?? new float[0]).Take(16).Select(q => q.ToString("0.###"))));
+                { var LL = LightLook.From(v, pre); rep.Add($"look: sun {LL.Sun} sky {LL.SkyAmb} obj {LL.ObjAll} up {LL.ObjUp} baked {LL.Baked} mg {LL.MiddleGrey} exp {LL.ExpMin}-{LL.ExpMax} bloom {LL.Bloom} thr {LL.BloomThr} levels {string.Join(",", LL.BloomLevels)} paint {pcar.PaintColour}"); }
+                Shoot("world " + loc.Str("name"), env, v, pre, new[] { (MathF.PI, 0.10f), (-0.75f, 0.18f) });
+                if (Environment.GetEnvironmentVariable("BMB_FOG") is { } fog) { var v2 = v.ToDictionary(kv => kv.Key, kv => (double[])kv.Value.Clone()); v2["fog_density"] = new[] { double.Parse(fog, System.Globalization.CultureInfo.InvariantCulture) }; Shoot("world + fog " + fog, env, v2, pre, new[] { (MathF.PI, 0.10f) }); }
+            }
+            if (Environment.GetEnvironmentVariable("BMB_SLIDERS") != null && Environment.GetEnvironmentVariable("BMB_WORLD") is { } wp2)
+            {
+                // every slider from its lowest to its highest: how much does the preview change? (0 = the slider does nothing here)
+                var loc = ((JObj)Json.Load(wp2)!).Objs("locations").First();
+                var (pre, _) = Lighting.Effective(loc);
+                var v = Lighting.Fields.Keys.Concat(LightUi.SampleFields.Keys).ToDictionary(k => k, k => LightUi.Value(loc, k));
+                string? own = loc.Obj("lighting")?.Str("sky_image");
+                var env = own != null ? SkyEnv.Get("file|" + own, () => SkyEnv.FromFile(Path.Combine(Path.GetDirectoryName(wp2)!, own))) : SkyEnv.Get("preset|" + pre, () => SkyEnv.FromPreset(pre));
+                CarRender.Yaw = -0.75f; CarRender.Pitch = 0.18f;
+                byte[] Px(Dictionary<string, double[]> vv)
+                {
+                    using var b0 = CarRender.Render(320, 192, 1, env, LightLook.From(vv, pre), pcar, out _);
+                    using var b1 = CarRender.Render(320, 192, 1, env, LightLook.From(vv, pre), pcar, out _);   // twice: the exposure settles
+                    var o = new byte[320 * 192 * 3]; int k = 0;
+                    for (int y = 0; y < 192; y++) for (int x = 0; x < 320; x++) { var c = b1.GetPixel(x, y); o[k++] = c.R; o[k++] = c.G; o[k++] = c.B; }
+                    return o;
+                }
+                foreach (var skey in v.Keys)
+                {
+                    int idx = v[skey].Length == 4 ? 3 : 0;
+                    double smax = LightUi.SampleFields.TryGetValue(skey, out var sf) ? sf.Max : Lighting.Fields[skey].Max;
+                    var lo = v.ToDictionary(kv => kv.Key, kv => (double[])kv.Value.Clone()); lo[skey][idx] = 0;
+                    var hi = v.ToDictionary(kv => kv.Key, kv => (double[])kv.Value.Clone()); hi[skey][idx] = smax;
+                    var a = Px(lo); var c2 = Px(hi);
+                    double diff = 0; for (int qi = 0; qi < a.Length; qi++) diff += Math.Abs(a[qi] - c2[qi]);
+                    rep.Add($"slider {skey}[{idx}] 0 -> {smax}: picture changes {diff / a.Length:0.00} (of 255)");
+                }
+                File.WriteAllLines(Path.Combine(outDir, "ui_timing.txt"), rep);
+                return;
+            }
+            foreach (var pre in new[] { "Mount Haruna", "Amboy (desert day)", "Barcelona Gracia (night)" })
+            {
+                var v = LightUi.Preset(pre).ToDictionary(kv => kv.Key, kv => (double[])kv.Value.Clone());
+                v["object_light"] = new[] { 1.0, .97, .92, .14 };
+                Shoot(pre, SkyEnv.Get("preset|" + pre, () => SkyEnv.FromPreset(pre)), v, pre, new[] { (-0.75f, 0.18f) });
+            }
+            File.WriteAllLines(Path.Combine(outDir, "ui_timing.txt"), rep);
+            return;
+        }
         if (Environment.GetEnvironmentVariable("BMB_ONLY") == "tour")
         {
             // pictures of every tab only (for looking at the UI); nothing is changed or built
@@ -44,6 +152,23 @@ public sealed partial class MainForm
                 if (m == "2d") { Map2.Fit(); await Pump(100); }
                 Shot("tour_" + m);
             }
+            // Lighting: Advanced open, then the other layout (Simple / Advanced)
+            SetMode("car"); _car.Page(true); await Pump(250); Shot("tour_car_sound"); _car.Page(false);
+            // the top bar at the robot's window sizes (the same check as the full robot test)
+            var was = Size;
+            foreach (var (w, h) in new[] { (960, 600), (1100, 680), (1280, 720), (1920, 1040) })
+            {
+                WindowState = FormWindowState.Normal; Size = new Size(w, h); await Pump(150);
+                var right = _topRight.RectangleToScreen(_topRight.ClientRectangle);
+                var last = _topTabs.Controls[_topTabs.Controls.Count - 1];
+                var tabsR = last.RectangleToScreen(last.ClientRectangle);
+                bool fits = right.Right <= RectangleToScreen(ClientRectangle).Right && (right.Top >= tabsR.Bottom - 2 || tabsR.Right <= right.Left) && tabsR.Right <= RectangleToScreen(ClientRectangle).Right;
+                rep.Add($"{(fits && Centre.Width >= 300 && Centre.Height >= 180 ? "PASS" : "FAIL")} top bar at {w}x{h} (tabs bottom {tabsR.Bottom}, buttons top {right.Top})");
+                if (w == 1280) Shot("tour_size_1280");
+            }
+            Size = was; await Pump(150);
+            SetMode("light"); _lightAdv = true; LightBuild(); await Pump(250); Shot("tour_light_more"); _lightAdv = false;
+            SetSimple(!Simple); SetMode("light"); await Pump(300); Shot("tour_light_other_layout"); SetSimple(!Simple); await Pump(200);
             SetMode("2d"); Map2.Sel = 4; RefreshProps(); await Pump(150); Shot("tour_2d_point");
             SetMode("3d"); V3.Select("obj:0"); await Pump(200); Shot("tour_3d_selected"); V3.Select(null);
             void ShotOf(Form? f, string name)

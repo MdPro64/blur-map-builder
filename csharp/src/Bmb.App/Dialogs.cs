@@ -86,6 +86,7 @@ VIEW
     void Startup()
     {
         if (_test) return;
+        CarMesh.Prepare();      // the Lighting preview's car: made once from the game's files (again after an update)
         WriteQuickstart(false);
         CheckUpdates(true);
     }
@@ -240,9 +241,10 @@ VIEW
                 try { File.WriteAllText(BuildTimeFile, took.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)); } catch (IOException) { }
                 lines.Enqueue("Installing the packs for Blur REBORN (rebrn\\)...");
                 Directory.CreateDirectory(Paths.PackDir);
-                foreach (var (src, name) in new[] { (Paths.GamedataOut, "gamedata.pak"), (Paths.RootOut, "root.pak") })
+                foreach (var (src, name) in new[] { (Paths.GamedataOut, "gamedata.pak"), (Paths.RootOut, "root.pak"), (Paths.BootOut, "gamedata_boot.pak") })
                 {
                     string dst = Path.Combine(Paths.PackDir, name);
+                    if (!File.Exists(src)) continue;
                     File.Copy(src, dst + ".new", true);
                     File.Move(dst + ".new", dst, true);
                 }
