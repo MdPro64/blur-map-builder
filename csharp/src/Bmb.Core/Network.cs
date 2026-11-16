@@ -403,6 +403,7 @@ public sealed class Network
 
     public List<List<double[]>> WallRuns(Road road, int side, bool heights = false)
     {
+        if (road.Kind != "divider" && !Layout.RoadWalls(M)) return new();
         var edge0 = road.Edge(side, 1.0);
         var edge = new List<double[]>(edge0.Count);
         for (int i = 0; i < edge0.Count; i++)
@@ -462,6 +463,8 @@ public sealed class Network
         if (_masks.TryGetValue(road, out var m0)) return m0;
         int n = road.Count;
         var mask = new[] { new bool[n], new bool[n] };
+        // road side walls off: no wall anywhere (the seen wall of the road model and its hit box go together)
+        if (road.Kind != "divider" && !Layout.RoadWalls(M)) { Array.Fill(mask[0], true); Array.Fill(mask[1], true); return _masks[road] = mask; }
         if (road.Kind != "divider" && Branches.Count > 0)
         {
             var (_, done) = Junctions();
@@ -755,7 +758,7 @@ public sealed class Network
 
     public static Network Get(JObj m, Road main)
     {
-        string sig = Json.Dumps(m["branches"], -1) + Json.Dumps(m["splits"], -1);
+        string sig = Json.Dumps(m["branches"], -1) + Json.Dumps(m["splits"], -1) + (Layout.RoadWalls(m) ? "" : "|nowalls");
         lock (Cache)
         {
             if (Cache.TryGetValue(main, out var c) && c.M == m && c.Sig == sig) return c;

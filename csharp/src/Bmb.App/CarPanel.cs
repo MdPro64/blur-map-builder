@@ -20,6 +20,10 @@ public sealed class CarPanel : Panel
     static bool _soundTab;
     const string SameSound = "Same as the body car";
     readonly List<string?> _soundCars = new();          // the sound list's cars (null = the body car's sound)
+    readonly ComboBox _replace = Theme.Combo(330);
+    readonly List<string?> _replaceCars = new();        // the replace list's cars (null = a new car)
+    readonly Label _replaceNote = new() { AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = ColorTranslator.FromHtml("#9aa8b8"), Margin = new Padding(0, 0, 0, 8) };
+    const string NoReplace = "No - add it as a new car";
     List<Control> _statsCtrls = new();                  // the stats: shown on the Body tab only
     System.Media.SoundPlayer? _player;
     Button? _playing;                                       // the Listen button whose sound plays now (it shows Stop)
@@ -36,10 +40,19 @@ public sealed class CarPanel : Panel
     readonly Panel _chart = new() { Width = 520, Height = 46 * 5, BackColor = Theme.Bg, Cursor = Cursors.Hand };
     readonly PictureBox _view = new() { Dock = DockStyle.Fill, BackColor = ColorTranslator.FromHtml("#060a14"), SizeMode = PictureBoxSizeMode.CenterImage, Cursor = Cursors.SizeWE };
     readonly Label _hint = new() { Dock = DockStyle.Bottom, Height = 18, Text = "drag = turn the car", ForeColor = ColorTranslator.FromHtml("#7f8a96"), BackColor = Theme.Bg };
-    readonly Panel _left = new() { Dock = DockStyle.Left, Width = 240, BackColor = Theme.Panel }, _viewBox = new() { Dock = DockStyle.Bottom, Height = 300, BackColor = Theme.Bg };
+    readonly Panel _left = new() { Dock = DockStyle.Left, Width = 240, BackColor = Theme.Panel }, _viewBox = new() { Dock = DockStyle.Right, Width = 460, BackColor = Theme.Bg };
     readonly FlowLayoutPanel _controls = new() { Dock = DockStyle.Fill, AutoScroll = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Theme.Bg, Padding = new Padding(10) };
     readonly List<Control> _needCar = new();
-    double _yaw = -0.7; int _dragX; bool _dragging;
+    double _yaw = -0.7, _pitch = -0.35; int _dragX; bool _dragging;
+    // the preview's camera buttons: top / side / front, and orbit (turns by itself)
+    readonly System.Windows.Forms.Timer _orbit = new() { Interval = 40 };
+    Button? _orbitBtn;
+    // the wheel handles (imported bodies): drag a wheel to set "wheels side to side" / "front to back"
+    CarUi.ViewInfo? _viewInfo; List<(double X, double Y, double Z, int Side, int End)> _wheelsAt = new();
+    int _wheelDrag = -1; Point _wheelFrom; double _dTrack, _dWb;
+    // the body handles: index 100 = move (up / forward), 101 = size
+    const int BodyHandle = 100, SizeHandle = 101;
+    double[]? _bodyLo, _bodyHi; double _dUp, _dFwd, _kSize = 1;
     CarUi.Parts? _parts; string _partsKey = "";
     int _job;
     const int RowH = 46;
@@ -49,7 +62,7 @@ public sealed class CarPanel : Panel
         _f = f; BackColor = Theme.Bg;
         Look.DarkScroll(_controls, _list);
         RoundList.Dress(_list, 26);
-        _bodyBtn = Theme.Btn("Use the game body", () => Set("body_glb", null));
+        _bodyBtn = Theme.Btn("Use the game body", GameBody);
         // left: the list
         var head = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, BackColor = Theme.Panel, Padding = new Padding(8) };
         head.Controls.Add(new Label { Text = "MY CARS", AutoSize = true, ForeColor = Theme.Head, Font = Theme.Bold });
@@ -91,6 +104,13 @@ public sealed class CarPanel : Panel
         look.Controls.Add(Col("Mini icon (car list)", _mini));
         look.Controls.Add(_miniPic);
         _bodyPage.Controls.Add(look); _wide.Add(look);
+        // a car replacer: this car's look and sound on a game car, instead of a new car
+        var rRow = new FlowLayoutPanel { AutoSize = true, WrapContents = true, BackColor = Theme.Bg, MaximumSize = new Size(1100, 0) };
+        _replace.SelectionChangeCommitted += (_, _) => { int i = _replace.SelectedIndex; ReplacePicked(i > 0 && i < _replaceCars.Count ? _replaceCars[i] : null); };
+        Look.Tip(_replace, "Pick a game car: in game it gets this car's body, wheels and sound (online too, on your screen). Its handling and stats stay the game car's.");
+        rRow.Controls.Add(Col("Replace a game car (see your car online too)", _replace));
+        _bodyPage.Controls.Add(rRow); _wide.Add(rRow);
+        _bodyPage.Controls.Add(_replaceNote);
         // the sound page
         _soundPage.Controls.Add(new Label { Text = "ENGINE SOUND", AutoSize = true, ForeColor = Theme.Head, Font = Theme.Bold, Margin = new Padding(0, 2, 0, 4) });
         var sRow = new FlowLayoutPanel { AutoSize = true, WrapContents = true, BackColor = Theme.Bg, MaximumSize = new Size(1100, 0) };
@@ -147,7 +167,9 @@ public sealed class CarPanel : Panel
         foreach (var (label, key, step) in new[] { ("Size", "size", 0.02), ("Forward", "fwd", 0.03), ("Up", "up", 0.02), ("Wheels side to side", "track", 0.02), ("front to back", "wb", 0.02) })
         {
             string k = key; double s = step;
-            _fitRow.Controls.Add(Theme.Lbl(label)); _fitRow.Controls.Add(Theme.Btn("−", () => Fit(k, -s))); _fitRow.Controls.Add(Theme.Btn("+", () => Fit(k, s)));
+            var trio = new Control[] { Theme.Lbl(label), Theme.Btn("−", () => Fit(k, -s)), Theme.Btn("+", () => Fit(k, s)) };
+            _fitRow.Controls.AddRange(trio);
+            if (k is "track" or "wb") _spacing.AddRange(trio);
         }
         _fitRow.Controls.Add(Theme.Btn("↻ Turn 90°", () => Fit("turn", 90))); _fitRow.Controls.Add(Theme.Btn("Reset", () => Fit(null, 0)));
         _bodyPage.Controls.Add(_fitRow); _bodyPage.Controls.Add(_fitLabel); _bodyPage.Controls.Add(_roomLabel);
@@ -175,13 +197,39 @@ public sealed class CarPanel : Panel
         _controls.Controls.Add(new Label { Text = "grey ticks = the class's cars,  blue line = class average,  box = class range,  orange = yours  (click or drag on a bar)", AutoSize = true, ForeColor = ColorTranslator.FromHtml("#9aa8b8") });
         _controls.Controls.Add(_top);
         _controls.Controls.Add(new Label { Text = "Build + install puts your cars in the game (car select: their class).  The game finds a car's 3D model by its body car.", AutoSize = true, ForeColor = ColorTranslator.FromHtml("#9aa8b8"), Margin = new Padding(0, 14, 0, 0) });
-        _viewBox.Controls.Add(_view); _viewBox.Controls.Add(_hint);
-        _view.MouseDown += (_, e) => { _dragX = e.X; _dragging = true; };
-        _view.MouseMove += (_, e) => { if (_dragging && e.Button == MouseButtons.Left) { _yaw += (e.X - _dragX) * 0.012; _dragX = e.X; Draw(false); } };
-        _view.MouseUp += (_, _) => { _dragging = false; Draw(true); };
+        _viewBox.Controls.Add(_view);
+        var cams = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, WrapContents = false, BackColor = Theme.Bg, Padding = new Padding(6, 2, 0, 2) };
+        void Cam(string text, string tip, double yaw, double pitch) => cams.Controls.Add(Look.Tip(Theme.Btn(text, () => { OrbitStop(); _yaw = yaw; _pitch = pitch; Draw(true); }), tip));
+        Cam("⬒ Top", "Look down on the car", 0, -1.5);
+        Cam("◧ Side", "The car from its side", Math.PI / 2, -0.08);
+        Cam("◉ Front", "The car from the front", 0, -0.12);
+        _orbitBtn = Look.Tip(Theme.Btn("⟳ Orbit", OrbitToggle), "Turn around the car by itself (press again to stop)");
+        cams.Controls.Add(_orbitBtn);
+        cams.Controls.Add(Look.Tip(Theme.Btn("↺", () => { OrbitStop(); _yaw = -0.7; _pitch = -0.35; Draw(true); }), "Back to the normal view"));
+        _orbit.Tick += (_, _) => { _yaw += 0.035; Draw(false); };
+        _viewBox.Controls.Add(cams); _viewBox.Controls.Add(_hint);
+        _view.MouseDown += (_, e) =>
+        {
+            int w = WheelAt(e.Location);
+            if (w >= 0 && e.Button == MouseButtons.Left) { _wheelDrag = w; _wheelFrom = e.Location; _dTrack = _dWb = _dUp = _dFwd = 0; _kSize = 1; return; }
+            OrbitStop();
+            _dragX = e.X; _dragging = true;
+        };
+        _view.MouseMove += (_, e) =>
+        {
+            if (_wheelDrag >= 0) { WheelDragTo(e.Location); return; }
+            if (_dragging && e.Button == MouseButtons.Left) { _yaw += (e.X - _dragX) * 0.012; _dragX = e.X; Draw(false); return; }
+            _view.Cursor = WheelAt(e.Location) >= 0 ? Cursors.SizeAll : Cursors.SizeWE;
+        };
+        _view.MouseUp += (_, _) =>
+        {
+            if (_wheelDrag >= 0) { WheelDragDone(); return; }
+            _dragging = false; Draw(true);
+        };
+        _view.Paint += (_, e) => WheelHandles(e.Graphics);
         _view.Resize += (_, _) => Draw(true);
         var right = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Bg };
-        var vs = f.PanelSash(DockStyle.Bottom, "car_view", _viewBox, 300, true);
+        var vs = f.PanelSash(DockStyle.Right, "car_view_side", _viewBox, 460);
         right.Controls.Add(_controls); right.Controls.Add(vs); right.Controls.Add(_viewBox);
         _controls.BringToFront();
         var ls = f.PanelSash(DockStyle.Left, "car_list", _left, 240);
@@ -204,7 +252,8 @@ public sealed class CarPanel : Panel
         _tabBody.Checked = !sound; _tabSound.Checked = sound;
         _controls.SuspendLayout();
         _bodyPage.Visible = !sound; _soundPage.Visible = sound;
-        foreach (var c in _statsCtrls) c.Visible = !sound;
+        bool replacing = Car()?.Truthy("replace") == true;     // a replaced game car keeps its own handling: no stats to set
+        foreach (var c in _statsCtrls) c.Visible = !sound && !replacing;
         _controls.ResumeLayout();
     }
 
@@ -493,6 +542,17 @@ public sealed class CarPanel : Panel
         _icon.SelectedItem = c.Str("icon");
         if (_wheels.Items.Count == 0) foreach (var x in CarUi.Pickable()) _wheels.Items.Add(x.Name);
         _wheels.SelectedItem = c.Truthy("wheels") ? c.Str("wheels") : c.Str("base");
+        // the list again each time: a game car another of your cars already replaces says so (one car each)
+        _replace.Items.Clear(); _replaceCars.Clear();
+        _replace.Items.Add(NoReplace); _replaceCars.Add(null);
+        foreach (var x in CarUi.Pickable().OrderBy(x => x.Class).ThenBy(x => Skins.Nice(x.Name), StringComparer.OrdinalIgnoreCase))
+        {
+            string? by = ReplacedBy(x.Name, c);
+            _replace.Items.Add($"[{CarUi.Classes[x.Class]}]  {Skins.Nice(x.Name)}{(by != null ? $"   (already replaced by {by})" : "")}"); _replaceCars.Add(x.Name);
+        }
+        if (c.Truthy("replace") && !_replaceCars.Contains(c.Str("replace"))) c["replace"] = null;
+        _replace.SelectedIndex = c.Truthy("replace") ? _replaceCars.IndexOf(c.Str("replace")) : 0;
+        ReplaceNote();
         var engines = SafeEngines();
         string Eng(string car) => engines.TryGetValue(car, out var e) ? $"   ({CarSoundPreview.Nice(e)})" : "";
         _sound.Items.Clear(); _soundCars.Clear();
@@ -507,8 +567,11 @@ public sealed class CarPanel : Panel
         _ownRpm.Value = c.Num("sound_rpm", OwnSound.DefaultRpm);
         ShowSound();
         bool glb = c.Truthy("body_glb");
-        _bodyBtn.Enabled = glb; _base.Enabled = !glb;
-        foreach (var b in _paintB) b.Enabled = !glb;
+        bool rep = c.Truthy("replace");
+        _bodyBtn.Enabled = glb || rep; _base.Enabled = !glb;
+        foreach (var r in _cls) r.Enabled = !rep;     // a replaced car keeps its game class
+
+        foreach (var b in _paintB) b.Enabled = !glb && !rep;     // a replaced car keeps its game paints (you pick them in game)
         _fitRow.Visible = _fitLabel.Visible = _roomLabel.Visible = glb;
         if (glb)
         {
@@ -525,16 +588,34 @@ public sealed class CarPanel : Panel
 
     string GlbPath(JObj c) => Path.Combine(Paths.Tracks, "cars", c.Str("body_glb")!);
 
+    void ReplaceNote()
+    {
+        var c = Car();
+        if (c == null) return;
+        if (c.Truthy("replace"))
+        {
+            string n = Skins.Nice(c.Str("replace")!);
+            _replaceNote.Text = $"In game the {n} gets this car's body, wheels and sound - online too, on your screen (other players see the normal {n}). Its wheels sit where yours do; the rest of its handling, its stats and class stay the {n}'s. It is not added as a new car. You see it after Build + install.";
+            _replaceNote.ForeColor = ColorTranslator.FromHtml("#ffd27a");
+        }
+        else
+        {
+            _replaceNote.Text = "Off: your car is added to the game as a new car, with the stats you give it.";
+            _replaceNote.ForeColor = ColorTranslator.FromHtml("#9aa8b8");
+        }
+        if (_statsCtrls.Count > 0) ShowPage(_soundTab);
+    }
+
     void RoomText(JObj c)
     {
         try
         {
             string glb = GlbPath(c);
-            var (p, t) = CarUi.Need(glb); var (v, _) = CarUi.Room(c.Str("base")!);
-            if (CarUi.Fits(c.Str("base")!, glb)) { _roomLabel.Text = $"✔ The body fits {c.Str("base")} ({p} of its {v} points of room used)."; _roomLabel.ForeColor = Theme.Good; }
+            var (p, t) = CarUi.Need(glb); var (v, _) = CarUi.Room(CarGlb.Container);
+            if (CarUi.Fits(CarGlb.Container, glb)) { _roomLabel.Text = $"✔ The body fits ({p} of {v} points of room used)."; _roomLabel.ForeColor = Theme.Good; }
             else
             {
-                _roomLabel.Text = $"⚠ Class {CarUi.Classes[(int)c.Int("class")]}'s body car ({c.Str("base")!.Replace('_', ' ')}) has room for only {100 * v / Math.Max(p, 1)}% of this body ({v} of {p} points): in game parts of it will be MISSING. Make the .glb smaller (Blender: Decimate) - to about {(int)(t * (double)v / Math.Max(p, 1) * 0.95)} triangles.";
+                _roomLabel.Text = $"⚠ The body model has room for only {100 * v / Math.Max(p, 1)}% of this body ({v} of {p} points): in game parts of it will be MISSING. Make the .glb smaller (Blender: Decimate) - to about {(int)(t * (double)v / Math.Max(p, 1) * 0.95)} triangles.";
                 _roomLabel.ForeColor = ColorTranslator.FromHtml("#ffb020");
             }
         }
@@ -564,6 +645,50 @@ public sealed class CarPanel : Panel
         Edit(q => { q["class"] = (long)cls; q["base"] = bas.Name; q["stats"] = CarUi.StatsOf(bas); CarUi.Fair(q); });
         _loading = true; _list.Items[Sel] = Label(Car()!); _loading = false;
         Load2();
+    }
+
+    /// "Use the game body": no imported body. When this car replaces a game car: back to that car exactly as it is (its body, its wheels)
+    void GameBody()
+    {
+        var c = Car();
+        if (c == null) return;
+        var t = c.Truthy("replace") ? CarsData.Cars().FirstOrDefault(x => x.Name == c.Str("replace")) : null;
+        if (t == null) { Set("body_glb", null); return; }
+        Edit(q => { q["body_glb"] = null; q["class"] = (long)t.Class; q["base"] = t.Name; q["icon"] = t.Icon; q["wheels"] = null; q["stats"] = CarUi.StatsOf(t); CarUi.Fair(q); });
+        _loading = true; _list.Items[Sel] = Label(Car()!); _loading = false;
+        Load2();
+        _f.Say($"Back to the {Skins.Nice(t.Name)} as it is: its own body and wheels. Pick another body or wheels to change it.", Theme.Good);
+    }
+
+    /// a game car to replace: start from that car as it is (its class, body and wheels), so only what you change is different
+    void ReplacePicked(string? target)
+    {
+        var c = Car();
+        if (c == null) return;
+        var t = target == null ? null : CarsData.Cars().FirstOrDefault(x => x.Name == target);
+        if (t == null) { Set("replace", null); ReplaceNote(); return; }
+        if (ReplacedBy(t.Name, c) is { } other)
+        {
+            _f.Say($"The {Skins.Nice(t.Name)} is already replaced by your car \"{other}\" - a game car can be replaced by one of your cars only. Pick another, or change \"{other}\" first.", Theme.Warn);
+            Load2(); return;
+        }
+        Edit(q =>
+        {
+            q["replace"] = t.Name; q["class"] = (long)t.Class;
+            if (!q.Truthy("body_glb")) { q["base"] = t.Name; q["icon"] = t.Icon; q["wheels"] = null; }
+            else q["base"] = CarGlb.GlbBody[t.Class];
+            q["stats"] = CarUi.StatsOf(t); CarUi.Fair(q);
+        });
+        _loading = true; _list.Items[Sel] = Label(Car()!); _loading = false;
+        Load2();
+    }
+
+    /// the name of your other car that already replaces this game car (or null)
+    string? ReplacedBy(string gameCar, JObj me)
+    {
+        foreach (var o in Cars().OfType<JObj>())
+            if (!ReferenceEquals(o, me) && string.Equals(o.Str("replace"), gameCar, StringComparison.OrdinalIgnoreCase)) return o.Str("name");
+        return null;
     }
 
     void BaseChanged()
@@ -664,7 +789,7 @@ public sealed class CarPanel : Panel
         Set("body_glb", name);
         var c = Car()!;
         string msg = $"Body imported: {name} ({n} triangles), on {c.Str("base")!.Replace('_', ' ')}";
-        if (!CarUi.Fits(c.Str("base")!, GlbPath(c))) msg += " - TOO BIG for it: see the warning under the fit buttons";
+        if (!CarUi.Fits(CarGlb.Container, GlbPath(c))) msg +=" - TOO BIG for it: see the warning under the fit buttons";
         _f.Say(msg);
     }
 
@@ -687,7 +812,8 @@ public sealed class CarPanel : Panel
         string key = Json.Dumps(new List<object?> { c["base"], c["wheels"], c["body_glb"], c["glb_fit"] }, -1);
         var col = ColorTranslator.FromHtml((string)c.Arr("paint")![0]!);
         byte[] paint = { col.R, col.G, col.B };
-        int job = ++_job, size = Math.Max(60, Math.Min(w, h)); double yaw = _yaw;
+        int job = ++_job, size = Math.Max(60, Math.Min(w, h)); double yaw = _yaw, pitch = _pitch;
+        var info = new CarUi.ViewInfo();
         var car = Share.Copy(c);
         var known = _parts; string pk = _partsKey;
         Task.Run(() =>
@@ -696,7 +822,7 @@ public sealed class CarPanel : Panel
             try
             {
                 if (key != pk) parts = CarUi.CarParts(car);
-                if (job == _job) bm = CarUi.Picture(parts!, paint, size, yaw, full);
+                if (job == _job) bm = CarUi.Picture(parts!, paint, size, yaw, full, pitch, info);
             }
             catch (Exception e) { err = "This car can't be shown: " + e.Message; }
             if (IsHandleCreated && !IsDisposed)
@@ -707,10 +833,180 @@ public sealed class CarPanel : Panel
                     if (job != _job || bm == null) { bm?.Dispose(); return; }
                     _hint.Text = "drag = turn the car";
                     var old = _view.Image; _view.Image = bm; old?.Dispose();
+                    _viewInfo = info; _wheelsAt = parts != null ? CarUi.Wheels(parts) : new();
+                    _bodyLo = _bodyHi = null;
+                    if (parts != null && parts.Kinds.TryGetValue("glb", out var gt) && gt.Length >= 3)
+                    {
+                        _bodyLo = new double[] { 1e30, 1e30, 1e30 }; _bodyHi = new double[] { -1e30, -1e30, -1e30 };
+                        for (int i = 0; i < gt.Length; i++) { _bodyLo[i % 3] = Math.Min(_bodyLo[i % 3], gt[i]); _bodyHi[i % 3] = Math.Max(_bodyHi[i % 3], gt[i]); }
+                    }
+                    _hint.Text = Car()?.Truthy("body_glb") == true ? "drag = turn the car,  blue circles = wheels,  orange = move the body,  diamond = its size" : "drag = turn the car";
                     PictureDone?.Invoke();
                 });
         });
     }
 
     public event Action? PictureDone;
+
+    void OrbitToggle() { if (_orbit.Enabled) OrbitStop(); else { if (_pitch < -1.2) _pitch = -0.35; _orbit.Start(); if (_orbitBtn != null) _orbitBtn.Text = "■ Stop"; } }
+
+    void OrbitStop()
+    {
+        if (!_orbit.Enabled) return;
+        _orbit.Stop();
+        if (_orbitBtn != null) _orbitBtn.Text = "⟳ Orbit";
+        Draw(true);
+    }
+
+    // ---- wheel handles: only for an imported body (its fit moves the wheels)
+    bool WheelHandlesOn => Car()?.Truthy("body_glb") == true && _viewInfo != null && _view.Image != null && _wheelsAt.Count > 0;
+    bool WheelsFixed => false;      // (a replaced car takes this car's wheel spots too)
+    readonly List<Control> _spacing = new();                   // the wheel spacing buttons (hidden for a replaced car)
+
+    /// a wheel's middle on the preview control (the picture is centred in it)
+    PointF WheelPoint(int i, double dSide = 0, double dEnd = 0)
+    {
+        var w = _wheelsAt[i];
+        var (x, y) = CarUi.Project(_viewInfo!, w.X + w.Side * dSide, w.Y, w.Z + w.End * dEnd);
+        float ox = (_view.Width - _view.Image!.Width) / 2f, oy = (_view.Height - _view.Image.Height) / 2f;
+        return new PointF(x + ox, y + oy);
+    }
+
+    /// a car-space point on the preview control
+    PointF ViewPoint(double x, double y, double z)
+    {
+        var (px, py) = CarUi.Project(_viewInfo!, x, y, z);
+        return new PointF(px + (_view.Width - _view.Image!.Width) / 2f, py + (_view.Height - _view.Image.Height) / 2f);
+    }
+
+    /// the body handles: on top of the body (move), and the middle of its nose (size); with the drag so far
+    PointF BodyPoint(int which)
+    {
+        var lo = _bodyLo!; var hi = _bodyHi!;
+        double cx = (lo[0] + hi[0]) / 2, cz = (lo[2] + hi[2]) / 2;
+        if (which == BodyHandle) return ViewPoint(cx, hi[1] + 0.15 + _dUp, cz + _dFwd);
+        // size grows from the bottom middle: the corner moves away from it
+        return ViewPoint(cx, lo[1] + _dUp + (hi[1] - lo[1]) * 0.45 * _kSize, cz + _dFwd + (hi[2] - cz) * _kSize);     // the middle of its nose
+    }
+
+    PointF BodyBase() { var lo = _bodyLo!; var hi = _bodyHi!; return ViewPoint((lo[0] + hi[0]) / 2, lo[1], (lo[2] + hi[2]) / 2); }
+
+    int WheelAt(Point p)
+    {
+        if (!WheelHandlesOn) return -1;
+        if (_bodyLo != null)
+            foreach (int b in new[] { SizeHandle, BodyHandle }) { var q = BodyPoint(b); if (Math.Abs(q.X - p.X) < 14 && Math.Abs(q.Y - p.Y) < 14) return b; }
+        if (WheelsFixed) return -1;
+        for (int i = 0; i < _wheelsAt.Count; i++) { var q = WheelPoint(i); if (Math.Abs(q.X - p.X) < 16 && Math.Abs(q.Y - p.Y) < 16) return i; }
+        return -1;
+    }
+
+    /// screen move -> car-space move along two of the car's axes (a = along the first, b = along the second)
+    (double A, double B) Split(Point p, double[] at, double[] e1, double[] e2)
+    {
+        var o = CarUi.Project(_viewInfo!, at[0], at[1], at[2]);
+        var a1 = CarUi.Project(_viewInfo!, at[0] + e1[0], at[1] + e1[1], at[2] + e1[2]); var a2 = CarUi.Project(_viewInfo!, at[0] + e2[0], at[1] + e2[1], at[2] + e2[2]);
+        double ux = a1.X - o.X, uy = a1.Y - o.Y, vx = a2.X - o.X, vy = a2.Y - o.Y, det = ux * vy - uy * vx;
+        double dx = p.X - _wheelFrom.X, dy = p.Y - _wheelFrom.Y;
+        if (Math.Abs(det) < 1e-3)
+        {
+            bool first = Math.Abs(ux) + Math.Abs(uy) > Math.Abs(vx) + Math.Abs(vy);
+            return first ? ((dx * ux + dy * uy) / (ux * ux + uy * uy + 1e-9), 0) : (0, (dx * vx + dy * vy) / (vx * vx + vy * vy + 1e-9));
+        }
+        return ((dx * vy - dy * vx) / det, (ux * dy - uy * dx) / det);
+    }
+
+    /// the mouse moved on screen -> metres sideways / along the car (from how the car's own axes show on screen)
+    void WheelDragTo(Point p)
+    {
+        var fit0 = Car()?.Obj("glb_fit");
+        if (_wheelDrag == BodyHandle && _bodyLo != null)
+        {
+            double[] at = { (_bodyLo[0] + _bodyHi![0]) / 2, _bodyHi[1], (_bodyLo[2] + _bodyHi[2]) / 2 };
+            var (up, fwd) = Split(p, at, new double[] { 0, 1, 0 }, new double[] { 0, 0, 1 });
+            _dUp = Math.Round(up, 2); _dFwd = Math.Round(fwd, 2);
+            _f.Say($"Body up {(fit0?.Num("up") ?? 0) + _dUp:+0.00;-0.00;+0.00} m,  forward {(fit0?.Num("fwd") ?? 0) + _dFwd:+0.00;-0.00;+0.00} m  (let go to keep it)");
+            _view.Invalidate(); return;
+        }
+        if (_wheelDrag == SizeHandle && _bodyLo != null)
+        {
+            var b0 = BodyBase(); double k0 = _kSize; _kSize = 1; var c0 = BodyPoint(SizeHandle); _kSize = k0;
+            double d0 = Math.Sqrt(Math.Pow(c0.X - b0.X, 2) + Math.Pow(c0.Y - b0.Y, 2));
+            double d1 = Math.Sqrt(Math.Pow(c0.X + p.X - _wheelFrom.X - b0.X, 2) + Math.Pow(c0.Y + p.Y - _wheelFrom.Y - b0.Y, 2));
+            _kSize = Math.Clamp(Math.Round(d1 / Math.Max(1, d0), 3), 0.5, 2.0);
+            _f.Say($"Body size x{(fit0?.Num("size", 1.0) ?? 1.0) * _kSize:0.00}  (let go to keep it)");
+            _view.Invalidate(); return;
+        }
+        var w = _wheelsAt[_wheelDrag];
+        var o = CarUi.Project(_viewInfo!, w.X, w.Y, w.Z); var ax = CarUi.Project(_viewInfo!, w.X + 1, w.Y, w.Z); var az = CarUi.Project(_viewInfo!, w.X, w.Y, w.Z + 1);
+        double ux = ax.X - o.X, uy = ax.Y - o.Y, vx = az.X - o.X, vy = az.Y - o.Y, det = ux * vy - uy * vx;
+        double dx = p.X - _wheelFrom.X, dy = p.Y - _wheelFrom.Y, a, b;
+        if (Math.Abs(det) < 1e-3) { a = Math.Abs(ux) + Math.Abs(uy) > Math.Abs(vx) + Math.Abs(vy) ? (dx * ux + dy * uy) / (ux * ux + uy * uy + 1e-9) : 0; b = a == 0 ? (dx * vx + dy * vy) / (vx * vx + vy * vy + 1e-9) : 0; }
+        else { a = (dx * vy - dy * vx) / det; b = (ux * dy - uy * dx) / det; }
+        // outward from the car's middle = wider; both sides move together, so the whole width changes twice as much
+        _dTrack = Math.Round(2 * a * w.Side, 2); _dWb = Math.Round(2 * b * w.End, 2);
+        var q = Car()?.Obj("glb_fit");
+        _f.Say($"Wheels side to side {(q?.Num("track") ?? 0) + _dTrack:+0.00;-0.00;+0.00} m,  front to back {(q?.Num("wb") ?? 0) + _dWb:+0.00;-0.00;+0.00} m  (let go to keep it)");
+        _view.Invalidate();
+    }
+
+    void WheelDragDone()
+    {
+        int i = _wheelDrag; _wheelDrag = -1;
+        if (i < 0 || (_dTrack == 0 && _dWb == 0 && _dUp == 0 && _dFwd == 0 && _kSize == 1)) { _view.Invalidate(); return; }
+        var c = Car();
+        var q = c?.Obj("glb_fit") != null ? Share.Copy(c.Obj("glb_fit")!) : new JObj();
+        if (i == BodyHandle) { q["up"] = Py.RoundN(q.Num("up") + _dUp, 3); q["fwd"] = Py.RoundN(q.Num("fwd") + _dFwd, 3); }
+        else if (i == SizeHandle) q["size"] = Py.RoundN(q.Num("size", 1.0) * _kSize, 3);
+        else { q["track"] = Py.RoundN(q.Num("track") + _dTrack, 3); q["wb"] = Py.RoundN(q.Num("wb") + _dWb, 3); }
+        _dTrack = _dWb = _dUp = _dFwd = 0; _kSize = 1;
+        Set("glb_fit", q);
+    }
+
+    void WheelHandles(Graphics g)
+    {
+        if (!WheelHandlesOn || _dragging) return;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        var blue = Color.FromArgb(255, 80, 180, 255);
+        for (int i = 0; i < (WheelsFixed ? 0 : _wheelsAt.Count); i++)
+        {
+            var at = WheelPoint(i);
+            bool on = i == _wheelDrag;
+            using (var ring = new Pen(Color.FromArgb(on ? 120 : 200, blue), 2f)) g.DrawEllipse(ring, at.X - 11, at.Y - 11, 22, 22);
+            if (!on) { using var dot = new SolidBrush(blue); g.FillEllipse(dot, at.X - 3, at.Y - 3, 6, 6); }
+        }
+        if (_bodyLo != null)
+        {
+            var orange = Color.FromArgb(255, 255, 150, 60);
+            var mv = BodyPoint(BodyHandle); var sz = BodyPoint(SizeHandle);
+            if (_wheelDrag is BodyHandle or SizeHandle)
+            {
+                // the body's outline where it goes
+                var lo = _bodyLo; var hi = _bodyHi!; double cx = (lo[0] + hi[0]) / 2, cz = (lo[2] + hi[2]) / 2;
+                PointF C(int ix, int iy, int iz)
+                {
+                    double x = ix == 0 ? lo[0] : hi[0], y = iy == 0 ? lo[1] : hi[1], z = iz == 0 ? lo[2] : hi[2];
+                    return ViewPoint(cx + (x - cx) * _kSize, lo[1] + _dUp + (y - lo[1]) * _kSize, cz + _dFwd + (z - cz) * _kSize);
+                }
+                using var box = new Pen(Color.FromArgb(170, 255, 210, 90), 1.3f) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash };
+                foreach (var (a, b) in new[] { ((0, 0, 0), (1, 0, 0)), ((0, 0, 1), (1, 0, 1)), ((0, 1, 0), (1, 1, 0)), ((0, 1, 1), (1, 1, 1)), ((0, 0, 0), (0, 0, 1)), ((1, 0, 0), (1, 0, 1)), ((0, 1, 0), (0, 1, 1)), ((1, 1, 0), (1, 1, 1)), ((0, 0, 0), (0, 1, 0)), ((1, 0, 0), (1, 1, 0)), ((0, 0, 1), (0, 1, 1)), ((1, 0, 1), (1, 1, 1)) })
+                    g.DrawLine(box, C(a.Item1, a.Item2, a.Item3), C(b.Item1, b.Item2, b.Item3));
+            }
+            using (var fill = new SolidBrush(orange)) g.FillEllipse(fill, mv.X - 7, mv.Y - 7, 14, 14);
+            using (var ring = new Pen(Color.White, 1.5f)) g.DrawEllipse(ring, mv.X - 7, mv.Y - 7, 14, 14);
+            using (var arrows = new Pen(Color.FromArgb(30, 20, 10), 1.5f)) { g.DrawLine(arrows, mv.X, mv.Y - 4, mv.X, mv.Y + 4); g.DrawLine(arrows, mv.X - 4, mv.Y, mv.X + 4, mv.Y); }
+            var dia = new[] { new PointF(sz.X, sz.Y - 8), new PointF(sz.X + 8, sz.Y), new PointF(sz.X, sz.Y + 8), new PointF(sz.X - 8, sz.Y) };
+            using (var fill = new SolidBrush(Color.FromArgb(255, 255, 210, 90))) g.FillPolygon(fill, dia);
+            using (var ring = new Pen(Color.White, 1.5f)) g.DrawPolygon(ring, dia);
+        }
+        if (_wheelDrag < 0 || _wheelDrag >= BodyHandle) return;
+        // where the dragged wheel goes, and the other three with it
+        for (int i = 0; i < _wheelsAt.Count; i++)
+        {
+            var from = WheelPoint(i); var to = WheelPoint(i, _dTrack / 2, _dWb / 2);
+            using var line = new Pen(Color.FromArgb(160, 255, 210, 90), 1.5f) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash };
+            g.DrawLine(line, from, to);
+            using var hit = new SolidBrush(Color.FromArgb(230, 255, 210, 90)); g.FillEllipse(hit, to.X - 7, to.Y - 7, 14, 14);
+        }
+    }
 }

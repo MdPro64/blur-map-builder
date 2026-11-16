@@ -17,6 +17,8 @@
     <EmbeddedResource Include="..\..\assets\splash.png" LogicalName="splash.png" />
     <EmbeddedResource Include="..\..\assets\icon.ico" LogicalName="icon.ico" />
     <EmbeddedResource Include="..\..\assets\ru.txt" LogicalName="ru.txt" />
+    <EmbeddedResource Include="..\..\assets\startup.wav" LogicalName="startup.wav" />
+    <EmbeddedResource Include="..\..\assets\build_done.wav" LogicalName="build_done.wav" />
     <EmbeddedResource Include="..\..\assets\ru_keys.txt" LogicalName="ru_keys.txt" />
   </ItemGroup>
   <ItemGroup>

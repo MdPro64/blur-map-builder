@@ -147,6 +147,29 @@ switch (cmd)
         foreach (var car in args.Skip(3)) { var w = CarSoundPreview.RevWav(car); File.WriteAllBytes(Path.Combine(args[2], car + ".wav"), w); Console.WriteLine($"{car}: {eng[car]}, {w.Length / 96000.0:0.0} s"); }
         break;
     }
+    case "wheelof":         // wheelof GAMEDATA.pak CAR...: each car's wheel model file in a built pack (look only)
+    {
+        using var gp = new Pak(args[1]);
+        var am = gp.Read(@"\gamedata\xt\amax.bin")!;
+        foreach (var c in args.Skip(2)) Console.WriteLine($"{c}: wheels {CarBuild.WheelFileIn(am, c)}");
+        break;
+    }
+    case "wheelpic":        // wheelpic GAME OUTDIR CAR...: each game car's wheel as a picture (look only)
+    {
+        Paths.Init(args[1]);
+        foreach (var c in args.Skip(3)) CarUi.WheelPicture(c, 360)?.Save(Path.Combine(args[2], "wheel_" + c + ".png"));
+        break;
+    }
+    case "glbroom":         // glbroom GAME: how much room each game car's model has for an imported body (look only)
+    {
+        Paths.Init(args[1]);
+        foreach (var gc in CarUi.Pickable().OrderBy(g => g.Class))
+        {
+            try { var (v, i) = CarUi.Room(gc.Name); Console.WriteLine($"{"ABCD"[gc.Class]} {gc.Name,-40} points {v,6}  indices {i,6}  ~triangles {Math.Min(v / 1.1, i / 2.3):0}"); }
+            catch (Exception e) { Console.WriteLine($"{gc.Name}: {e.Message}"); }
+        }
+        break;
+    }
     case "sounddump":       // sounddump GAME GAMEDATA.pak CAR...: the sound fields of cars in a built pack's amax.bin (look only)
     {
         Paths.Init(args[1]);

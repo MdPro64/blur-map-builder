@@ -253,13 +253,14 @@ public static class CarUi
     {
         string bas = car.Str("base")!, wheels = car.Truthy("wheels") ? car.Str("wheels")! : bas;
         var body = Game(bas); var whl = wheels != bas ? Game(wheels) : null;
-        var fit = car.Obj("glb_fit") ?? new JObj();
+        var fit = CarModel.FitOf(car);
+        var refCar = car.Truthy("body_glb") ? Game(CarModel.FitCar(car)) : body;     // where the wheels are (an imported body: its container's)
         var outp = new Dictionary<string, List<float[]>>(); var p = new Parts();
         void Add(string k, float[] t) { if (!outp.TryGetValue(k, out var l)) outp[k] = l = new(); l.Add(t); }
         if (car.Truthy("body_glb"))
         {
             string glb = Path.Combine(Paths.Tracks, "cars", car.Str("body_glb")!);
-            Add("glb", CarModel.FitGlb(CarModel.ReadGlbBody(glb), body, fit));
+            Add("glb", CarModel.FitGlb(CarModel.ReadGlbBody(glb), refCar, fit));
             p.GlbRgb = GlbColours(glb);
         }
         else foreach (var (k, l) in body.Tris)
@@ -268,7 +269,7 @@ public static class CarUi
         var src = whl ?? body;
         foreach (var c in new[] { "frontleft", "frontright", "backleft", "backright" })
         {
-            if (!body.Centre.TryGetValue(c, out var at) || !src.Centre.TryGetValue(c, out var frm)) continue;
+            if (!refCar.Centre.TryGetValue(c, out var at) || !src.Centre.TryGetValue(c, out var frm)) continue;
             double[] to = { at[0] + Math.Sign(at[0]) * fit.Num("track") / 2, at[1], at[2] + Math.Sign(at[2]) * fit.Num("wb") / 2 };
             foreach (var kind in new[] { "tyre", "rim" })
                 if (src.Tris.TryGetValue(kind + "|" + c, out var l))
@@ -408,7 +409,38 @@ public static class CarUi
     }
 
     /// car_model.picture, with a depth buffer instead of the painter's sort
-    public static unsafe Bitmap Picture(Parts parts, byte[] paint, int size, double yaw, bool smooth, double pitch = -0.35)
+    /// how a picture was made: enough to put a car-space point on it (for the wheel handles)
+    public sealed class ViewInfo { public double Scale, Mx, My, Cy, Sy, Cp, Sp; public int Size; }
+
+    /// a car-space point on a picture made with this view (picture pixels)
+    public static (float X, float Y) Project(ViewInfo v, double x, double y, double z)
+    {
+        double ax = x * v.Cy - z * v.Sy, az = x * v.Sy + z * v.Cy, yy = y * v.Cp + az * v.Sp;
+        return ((float)((ax - v.Mx) * v.Scale + v.Size / 2.0), (float)(v.Size / 2.0 - (yy - v.My) * v.Scale));
+    }
+
+    /// the 4 wheels' middles in car space: (x, y, z, side -1/+1, end -1 rear / +1 front)
+    public static List<(double X, double Y, double Z, int Side, int End)> Wheels(Parts parts)
+    {
+        var o = new List<(double, double, double, int, int)>();
+        var pts = new List<float>();
+        foreach (var n in new[] { "tyre", "rim" }) if (parts.Kinds.TryGetValue(n, out var a)) pts.AddRange(a);
+        if (pts.Count < 9) return o;
+        double cx = 0, cz = 0; int n0 = pts.Count / 3;
+        for (int i = 0; i < pts.Count; i += 3) { cx += pts[i]; cz += pts[i + 2]; }
+        cx /= n0; cz /= n0;
+        foreach (int side in new[] { -1, 1 })
+            foreach (int end in new[] { -1, 1 })
+            {
+                double sx = 0, sy = 0, sz = 0; int c = 0;
+                for (int i = 0; i < pts.Count; i += 3)
+                    if (Math.Sign(pts[i] - cx) == side && Math.Sign(pts[i + 2] - cz) == end) { sx += pts[i]; sy += pts[i + 1]; sz += pts[i + 2]; c++; }
+                if (c > 0) o.Add((sx / c, sy / c, sz / c, side, end));
+            }
+        return o;
+    }
+
+    public static unsafe Bitmap Picture(Parts parts, byte[] paint, int size, double yaw, bool smooth, double pitch = -0.35, ViewInfo? info = null)
     {
         int k = smooth ? 2 : 1, S = size * k;
         var kinds = parts.Kinds.Keys.OrderBy(s => s, StringComparer.Ordinal).ToList();
@@ -448,7 +480,15 @@ public static class CarUi
             a2[i] = (ax, arr[i][1] * cp + az * sp, az);
             lo0 = Math.Min(lo0, a2[i].X); hi0 = Math.Max(hi0, a2[i].X); lo1 = Math.Min(lo1, a2[i].Y); hi1 = Math.Max(hi1, a2[i].Y);
         }
-        double scale = 0.9 * S / Math.Max(hi0 - lo0, hi1 - lo1), mx = (lo0 + hi0) / 2, my = (lo1 + hi1) / 2;
+        // the same size at every turn: fit the circle the car (and its arrow) sweeps when turned, not this view's outline
+        double bhiy = double.MinValue; for (int i = 1; i < tris.Length; i += 3) bhiy = Math.Max(bhiy, tris[i]);
+        double ccx = (blox + bhix) / 2, ccz = (bloz + bhiz + 0.3 * L) / 2, ccy = (bloy + bhiy) / 2, rad = 0;
+        for (int i = 0; i < tris.Length; i += 3) rad = Math.Max(rad, Math.Sqrt((tris[i] - ccx) * (tris[i] - ccx) + (tris[i + 2] - ccz) * (tris[i + 2] - ccz)));
+        foreach (var q in arr) rad = Math.Max(rad, Math.Sqrt((q[0] - ccx) * (q[0] - ccx) + (q[2] - ccz) * (q[2] - ccz)));
+        double spanX = 2 * rad, spanY = (bhiy - bloy) * Math.Abs(cp) + 2 * rad * Math.Abs(sp);
+        double scale = 0.9 * S / Math.Max(spanX, spanY);
+        double ccxr = ccx * cy - ccz * sy, cczr = ccx * sy + ccz * cy, mx = ccxr, my = ccy * cp + cczr * sp;
+        if (info != null) { info.Scale = scale / k; info.Mx = mx; info.My = my; info.Cy = cy; info.Sy = sy; info.Cp = cp; info.Sp = sp; info.Size = size; }
         double lx = 0.35, ly = 0.75, lz = -0.55, ll = Math.Sqrt(lx * lx + ly * ly + lz * lz); lx /= ll; ly /= ll; lz /= ll;
         var env = Env();
         var buf = new int[S * S]; var zb = new float[S * S];
@@ -495,17 +535,65 @@ public static class CarUi
         {
             g.Clear(Color.FromArgb(6, 10, 20));
             g.SmoothingMode = SmoothingMode.AntiAlias;
-            PointF A(int i) => new((float)((a2[i].X - mx) * scale + S / 2.0), (float)(S / 2.0 - (a2[i].Y - my) * scale));
+            // a point on the ground (car space x, z) as the picture shows it
+            PointF G(double x, double z) { double ax = x * cy - z * sy, az = x * sy + z * cy, yy = bloy * cp + az * sp; return new((float)((ax - mx) * scale + S / 2.0), (float)(S / 2.0 - (yy - my) * scale)); }
             void Front()
             {
-                using var pen = new Pen(Color.FromArgb(255, 70, 60), Math.Max(2, S / 110)) { LineJoin = LineJoin.Round };
-                g.DrawLine(pen, A(0), A(1)); g.DrawLines(pen, new[] { A(2), A(1), A(3) });
-                using var f = new Font("Segoe UI", Math.Max(10, S / 28), FontStyle.Bold, GraphicsUnit.Pixel);
-                using var br = new SolidBrush(Color.FromArgb(255, 70, 60));
-                var c = new PointF((A(0).X + A(1).X) / 2, (A(0).Y + A(1).Y) / 2 - S * 0.04f);
+                // a flat arrow lying on the ground in front of the car: a slim shaft, a wide head, soft edge
+                double z0 = fz, zTip = bhiz + 0.3 * L, zHead = bhiz + 0.14 * L, sw = 0.045 * W, hw = 0.2 * W;
+                var poly = new[] { G(-sw, z0), G(-sw, zHead), G(-hw, zHead), G(0, zTip), G(hw, zHead), G(sw, zHead), G(sw, z0) };
+                using var path = new GraphicsPath(); path.AddPolygon(poly);
+                using (var glow = new Pen(Color.FromArgb(70, 255, 120, 80), Math.Max(4, S / 45f)) { LineJoin = LineJoin.Round }) g.DrawPath(glow, path);
+                using (var fill = new LinearGradientBrush(G(0, z0), G(0, zTip), Color.FromArgb(60, 255, 110, 70), Color.FromArgb(235, 255, 95, 60))) g.FillPath(fill, path);
+                using (var edge = new Pen(Color.FromArgb(255, 255, 170, 140), Math.Max(1, S / 300f)) { LineJoin = LineJoin.Round }) g.DrawPath(edge, path);
+                // the word in a small dark pill beside the head
+                using var f = new Font("Segoe UI Semibold", Math.Max(9, S / 34), FontStyle.Regular, GraphicsUnit.Pixel);
+                var tip = G(0, zTip); var mid = G(0, (z0 + zHead) / 2);
                 var sz = g.MeasureString("FRONT", f);
+                float dx = tip.X - mid.X, dy = tip.Y - mid.Y, dl = Math.Max(1f, (float)Math.Sqrt(dx * dx + dy * dy));
+                var c = new PointF(tip.X + dx / dl * (sz.Width * 0.75f), tip.Y + dy / dl * (sz.Height * 0.9f));
+                var box = new RectangleF(c.X - sz.Width / 2 - 6, c.Y - sz.Height / 2 - 1, sz.Width + 12, sz.Height + 2);
+                using (var pill = new GraphicsPath())
+                {
+                    float r = box.Height / 2;
+                    pill.AddArc(box.X, box.Y, 2 * r, 2 * r, 90, 180); pill.AddArc(box.Right - 2 * r, box.Y, 2 * r, 2 * r, 270, 180); pill.CloseFigure();
+                    using var pb = new SolidBrush(Color.FromArgb(190, 20, 10, 12)); g.FillPath(pb, pill);
+                    using var pp = new Pen(Color.FromArgb(200, 255, 110, 80), 1.2f); g.DrawPath(pp, pill);
+                }
+                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+                using var br = new SolidBrush(Color.FromArgb(255, 255, 225, 215));
                 g.DrawString("FRONT", f, br, c.X - sz.Width / 2, c.Y - sz.Height / 2);
             }
+            // the ground: a soft glow under the car and a small grid that fades out (drawn first: the car covers it)
+            void Ground()
+            {
+                double R = rad * 1.5, cx0 = ccx, cz0 = (bloz + bhiz) / 2;
+                var ring = new PointF[48];
+                for (int i = 0; i < ring.Length; i++) { double t = 2 * Math.PI * i / ring.Length; ring[i] = G(cx0 + Math.Cos(t) * R * 0.75, cz0 + Math.Sin(t) * R * 0.75); }
+                using (var glowPath = new GraphicsPath())
+                {
+                    glowPath.AddPolygon(ring);
+                    using var glow = new PathGradientBrush(glowPath) { CenterPoint = G(cx0, cz0), CenterColor = Color.FromArgb(95, 60, 150, 255), SurroundColors = new[] { Color.FromArgb(0, 60, 150, 255) } };
+                    g.FillPath(glow, glowPath);
+                }
+                double step = 0.8; int n = (int)Math.Ceiling(R / step);
+                float lw = Math.Max(1f, S / 500f);
+                for (int i = -n; i <= n; i++)
+                    for (int j = -n; j < n; j++)
+                    {
+                        // a short piece of each grid line, fainter away from the middle
+                        foreach (bool alongZ in new[] { true, false })
+                        {
+                            double x0 = cx0 + (alongZ ? i : j) * step, z0 = cz0 + (alongZ ? j : i) * step, x1 = alongZ ? x0 : x0 + step, z1 = alongZ ? z0 + step : z0;
+                            double d = Math.Sqrt(Math.Pow((x0 + x1) / 2 - cx0, 2) + Math.Pow((z0 + z1) / 2 - cz0, 2)) / R;
+                            if (d >= 1) continue;
+                            int al = (int)(170 * (1 - d) * (1 - d));
+                            using var pen = new Pen(Color.FromArgb(al, 90, 170, 255), lw);
+                            g.DrawLine(pen, G(x0, z0), G(x1, z1));
+                        }
+                    }
+            }
+            Ground();
             bool towards = a2[1].Z > a2[0].Z;
             if (!towards) Front();
             var d = bm.LockBits(new Rectangle(0, 0, S, S), ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);

@@ -176,6 +176,10 @@ public sealed partial class View3D
     {
         var m = D.Map; var info = D.Info()!;
         var (pieces, decks) = Layout.CollisionPieces(road, info, m);
+        // the landscape too (hills, bumps, ramps): its drivable ground + its solid sides, as the build writes them
+        Terrain.Result? ter = null;
+        try { var net = Network.Get(m, road); ter = Terrain.Make(m, net, Terrain.Budget(m, road, net)); pieces = pieces.Concat(ter.Walls).ToList(); }
+        catch (Exception e) when (e is not OutOfMemoryException) { }
         double g = Fe.GroundY;
         var (x0, x1, z0, z1) = road.Bounds(1500);
         M.Quad(V(x0, g, z0), V(x1, g, z0), V(x1, g, z1), V(x0, g, z1), V(.1, .35, .15), shade: false);
@@ -196,10 +200,12 @@ public sealed partial class View3D
             }
         }
         foreach (var p in decks) foreach (var f in p.Faces) M.Tri(p.Corners[f.A], p.Corners[f.B], p.Corners[f.C], V(1, .85, .15), 0.8);
+        int land = 0;
+        if (ter != null) foreach (var (p, _) in ter.Decks) { land++; foreach (var f in p.Faces) M.Tri(p.Corners[f.A], p.Corners[f.B], p.Corners[f.C], V(.35, .85, .45), 0.75); }
         for (int i = 0; i < road.Count; i += 2) _path.Add((road.Centre[i].X, g + road.Height[i], road.Centre[i].Z, road.Heading[i]));
         _bounds = road.Bounds(0);
         Ground = g;
-        Stats = $"COLLISION of {m.Str("name") ?? "map"}: green = drivable ground, red = solid ({walls} wall pieces, {boxes} boxes; white ticks = the side that pushes cars away), yellow = bridge decks ({decks.Count})";
+        Stats = $"COLLISION of {m.Str("name") ?? "map"}: green = drivable ground, red = solid ({walls} wall pieces, {boxes} boxes; white ticks = the side that pushes cars away), yellow = bridge decks ({decks.Count}){(land > 0 ? $", light green = landscape ground ({land} pieces)" : "")}";
     }
 
     void AddChunk(Mesh M, Chunk c, double[] col)
@@ -573,12 +579,28 @@ public sealed partial class View3D
         return _tex[t.Key] = id;
     }
 
+    // each map keeps its own camera: switching maps puts back where you were in that map (a new one starts fitted)
+    readonly Dictionary<string, (double[] T, double D, double Y, double P, bool O)> _cams = new();
+    string? _camMap;
+    string CamKey => $"{D.Loc.Str("id")}/{D.Map.Str("id")}";
+
+    void CamForMap()
+    {
+        var m = CamKey;
+        if (m == _camMap) return;
+        if (_camMap != null) _cams[_camMap] = (Target.ToArray(), Dist, Yaw, Pitch, Ortho);
+        _camMap = m;
+        if (_cams.TryGetValue(m, out var c)) { (Target, Dist, Yaw, Pitch, Ortho) = (c.T.ToArray(), c.D, c.Y, c.P, c.O); DriveT = null; CamAnim = null; G.Invalidate(); }
+        else Reset();
+    }
+
     void AfterScene()
     {
         var nobj = D.Map.Arr("objects")?.Count ?? 0;
         MultiSel = MultiSel.Where(k => (k.StartsWith("obj:") && int.Parse(k[4..]) < nobj) || PickOf(k) != null).ToList();
         FillOutliner();
-        if (!_placed && Active) { Reset(); _placed = true; }
+        if (!_placed && Active) { Reset(); _placed = true; _camMap = CamKey; }
+        else if (Active) CamForMap();
         Info(_sceneError != null ? Stats : RealShapes && Previews.Waiting ? "Reading the game's models... (once - then they are fast)" : $"{Stats}   ({Tris:N0} triangles)", _sceneError != null ? Theme.Bad : RealShapes && Previews.Waiting ? YellowInfo : null);
         if (PickOf(Sel) == null) Select(null, true); else Select(Sel, true);
     }
@@ -1093,6 +1115,7 @@ public sealed partial class View3D
             GL.glEnable(GL.DEPTH_TEST);
         }
         ScatterDraw();
+        WallsDraw();
         var movable = sel is { Multi: true } ? Members().Select(q => q.Key).ToHashSet() : new HashSet<string>();
         foreach (var k in MultiSel)
         {
@@ -1165,7 +1188,8 @@ public sealed partial class View3D
         if (LandMode) { if (e.Button is MouseButtons.Left or MouseButtons.Right) LandDown(e, e.Button == MouseButtons.Right); return; }
         if (e.Button == MouseButtons.Right)
         {
-            if (ScatterDrawing) ScatterDrawToggle(false);
+            if (WallDrawing) WallDone();
+            else if (ScatterDrawing) ScatterDrawToggle(false);
             else if (Placing != null) StopPlacing();
             else CancelOp();
             return;
@@ -1188,6 +1212,7 @@ public sealed partial class View3D
 
     public void LeftPress(int x, int y, bool shift = false)
     {
+        if (WallDrawing && SceneMode == "3d") { WallClick(x, y); return; }
         if (ScatterDrawing && SceneMode == "3d") { ScatterClick(x, y); return; }
         if (Placing != null && SceneMode == "3d" && Oper == null) { PlaceAt(x, y); return; }
         if (Oper != null) { ConfirmOp(); return; }
@@ -1361,7 +1386,8 @@ public sealed partial class View3D
 
     void Esc()
     {
-        if (ScatterDrawing) ScatterDrawToggle(false);
+        if (WallDrawing) WallCancel();
+        else if (ScatterDrawing) ScatterDrawToggle(false);
         else if (Placing != null) StopPlacing();
         else if (Oper != null) CancelOp();
         else if (SoloKey != null) SoloOff();
@@ -1429,6 +1455,7 @@ public sealed partial class View3D
 
     void ConfirmOp()
     {
+        if (WallDrawing && Oper == null) { WallDone(); return; }
         if (ScatterDrawing && Oper == null) { ScatterDrawToggle(false); return; }
         var op = Oper; string? key = Sel;
         if (op == null || key == null) return;
@@ -1771,7 +1798,7 @@ public sealed partial class View3D
             case Keys.Delete: DeleteSelection(); return true;
             case Keys.Enter: ConfirmOp(); return true;
             case Keys.Divide: case Keys.OemQuestion: ToggleSolo(); return true;
-            case Keys.Back: if (ScatterDrawing) ScatterPop(); return true;
+            case Keys.Back: if (WallDrawing) WallPop(); else if (ScatterDrawing) ScatterPop(); return true;
         }
         return false;
     }

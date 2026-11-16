@@ -1133,3 +1133,47 @@ This sound can't be used: {} ||| Этот звук не подходит: {}
 Your sound {} is on {}. Press Listen, set the revs it was recorded at, then Build + install. ||| Ваш звук {} стоит на {}. Нажмите «Слушать», укажите обороты записи, затем соберите.
 My own sound: OFF ||| Мой звук: ВЫКЛ
 ✔ My own sound: ON ||| ✔ Мой звук: ВКЛ
+WALLS ||| СТЕНЫ
+Wall ||| Стена
+Draw a solid wall you don't see in game (e.g. around your own map). Erase tool: click a wall to delete it ||| Нарисуйте твёрдую стену, невидимую в игре (например, вокруг своей карты). Инструмент «Стереть»: клик по стене удаляет её
+click points for a solid wall (you don't see it in game); Enter or right click = done, Backspace = take a point away. The road's own walls: right panel ||| кликайте точки твёрдой стены (в игре её не видно); Enter или правый клик = готово, Backspace = убрать точку. Стены самой дороги: панель справа
+Wall: click the next point ||| Стена: кликните следующую точку
+Wall: {} points  -  Enter / right click = done, Backspace = take one away, Esc = cancel ||| Стена: точек {}  -  Enter / правый клик = готово, Backspace = убрать точку, Esc = отмена
+A wall needs 2 points or more - nothing added ||| Стене нужно 2 точки или больше - ничего не добавлено
+Wall added ({} points). It is solid in game but you don't see it. Erase tool: click it to delete. ||| Стена добавлена (точек: {}). В игре она твёрдая, но невидимая. Инструмент «Стереть»: клик по ней удаляет её.
+Wall deleted ||| Стена удалена
+Wall cancelled ||| Стена отменена
+Road side walls (solid road edges) ||| Стены по краям дороги (твёрдые края)
+On: the road has solid walls on both sides. Off: cars can drive off the road (e.g. onto a map made of your own .glb models). Draw your own walls with the Wall tool (W) ||| Вкл.: у дороги твёрдые стены с обеих сторон. Выкл.: машины могут съехать с дороги (например, на карту из ваших моделей .glb). Свои стены рисуйте инструментом «Стена» (W)
+Draw a wall (solid, not seen in game) ||| Нарисовать стену (твёрдая, в игре не видна)
+Click points on the ground (or on your own models) for a solid wall; Enter / right click = done, Backspace = take a point away, Esc = cancel ||| Кликайте точки на земле (или на своих моделях) для твёрдой стены; Enter / правый клик = готово, Backspace = убрать точку, Esc = отмена
+Remove the last wall ||| Убрать последнюю стену
+Done (Enter) ||| Готово (Enter)
+Wall: click points on the ground or on your models  -  Enter / right click = done, Backspace = take a point away, Esc = cancel ||| Стена: кликайте точки на земле или на своих моделях  -  Enter / правый клик = готово, Backspace = убрать точку, Esc = отмена
+Wall: {} point(s)  -  Enter / right click = done, Backspace = take one away, Esc = cancel ||| Стена: точек {}  -  Enter / правый клик = готово, Backspace = убрать точку, Esc = отмена
+Wall added ({} points, {} m high). Solid in game, not seen. Ctrl+Z undoes. ||| Стена добавлена (точек {}, высота {} м). В игре твёрдая, невидимая. Ctrl+Z отменяет.
+This map has no walls of your own ||| На этой карте нет ваших стен
+Last wall removed ({} left). Ctrl+Z brings it back. ||| Последняя стена убрана (осталось {}). Ctrl+Z вернёт её.
+Replace a game car (see your car online too) ||| Заменить машину игры (видно и в онлайне)
+Pick a game car: in game it gets this car's body, wheels and sound (online too, on your screen). Its handling and stats stay the game car's. ||| Выберите машину игры: в игре она получит кузов, колёса и звук этой машины (и в онлайне, на вашем экране). Управление и характеристики остаются как у машины игры.
+No - add it as a new car ||| Нет - добавить как новую машину
+In game the {} gets this car's body, wheels and sound - online too, on your screen (other players see the normal {}). Its handling, stats and class stay the {}'s, so it is fair. It is not added as a new car. You see it after Build + install. ||| В игре {} получит кузов, колёса и звук этой машины - и в онлайне, на вашем экране (другие игроки видят обычную {}). Управление, характеристики и класс остаются как у {}, так что всё честно. Новая машина не добавляется. Видно после сборки.
+Off: your car is added to the game as a new car, with the stats you give it. ||| Выкл.: ваша машина добавляется в игру как новая, с вашими характеристиками.
+COLLISION of {}: green = drivable ground, red = solid ({} wall pieces, {} boxes; white ticks = the side that pushes cars away), yellow = bridge decks ({}), light green = landscape ground ({} pieces) ||| СТОЛКНОВЕНИЯ {}: зелёный = можно ехать, красный = твёрдое (стен {}, коробок {}; белые метки = сторона, отталкивающая машины), жёлтый = настилы мостов ({}), светло-зелёный = земля ландшафта ({} частей)
+Back to the {} as it is: its own body and wheels. Pick another body or wheels to change it. ||| Снова {} как есть: свой кузов и колёса. Выберите другой кузов или колёса, чтобы изменить.
+drag = turn the car,  drag a wheel (circle) = move the wheels ||| тяните = повернуть машину,  тяните колесо (круг) = сдвинуть колёса
+Wheels side to side {} m,  front to back {} m  (let go to keep it) ||| Колёса по ширине {} м,  вперёд-назад {} м  (отпустите, чтобы оставить)
+drag = turn the car,  blue circles = wheels,  orange = move the body,  diamond = its size ||| тяните = повернуть машину,  синие круги = колёса,  оранжевый = сдвинуть кузов,  ромб = его размер
+Body up {} m,  forward {} m  (let go to keep it) ||| Кузов вверх {} м,  вперёд {} м  (отпустите, чтобы оставить)
+Body size x{}  (let go to keep it) ||| Размер кузова x{}  (отпустите, чтобы оставить)
+Top ||| Сверху
+Front ||| Спереди
+Orbit ||| Облёт
+Look down on the car ||| Смотреть на машину сверху
+The car from its side ||| Машина сбоку
+The car from the front ||| Машина спереди
+Turn around the car by itself (press again to stop) ||| Облетать машину самой (нажмите ещё раз, чтобы остановить)
+Back to the normal view ||| Обычный вид
+already replaced by {} ||| уже заменена машиной {}
+The {} is already replaced by your car "{}" - a game car can be replaced by one of your cars only. Pick another, or change "{}" first. ||| {} уже заменена вашей машиной «{}» - машину игры можно заменить только одной вашей машиной. Выберите другую или сначала измените «{}».
+In game the {} gets this car's body, wheels and sound - online too, on your screen (other players see the normal {}). Its wheels sit where yours do; the rest of its handling, its stats and class stay the {}'s. It is not added as a new car. You see it after Build + install. ||| В игре {} получит кузов, колёса и звук этой машины - и в онлайне, на вашем экране (другие игроки видят обычную {}). Колёса стоят там же, где у вашей; остальное управление, характеристики и класс остаются как у {}. Новая машина не добавляется. Видно после сборки.

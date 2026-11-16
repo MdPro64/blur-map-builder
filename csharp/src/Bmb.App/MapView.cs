@@ -13,7 +13,9 @@ public sealed partial class MapView
     readonly Batch _tri = new(), _top = new();
     (string Kind, int I, int J)? _drag; (int X, int Y)? _pan; (double Ox, double Oz) _panStart;
     bool _stroke; List<(double X, double Z)>? _aiStroke; (int X, int Y) _mouse;
-    public List<(double X, double Z)>? Measure; public bool MeasureDone; (double X, double Z)? _mouseWorld;
+    public List<(double X, double Z)>? Measure; public bool MeasureDone;
+    public List<(double X, double Z)>? WallDraft;          // the wall being drawn with the Wall tool (Enter / right click = done)
+    static readonly Rgba MyWall = Rgba.Hex("#ff7a3c"), MyWallGlow = Rgba.Hex("#5a2a14"); (double X, double Z)? _mouseWorld;
     sealed class NetDraft { public string Kind = ""; public double FromM; public List<JObj> Points = new(); }
     NetDraft? _draft;
     bool _lapSnap, _startHover;
@@ -27,6 +29,7 @@ public sealed partial class MapView
     {
         ["select"] = ("Select", "S"), ["move"] = ("Move", "M"), ["add"] = ("Add point", "A"), ["insert"] = ("Insert", "I"), ["row"] = ("Power-up row", "R"), ["single"] = ("Single power-up", "P"),
         ["erase"] = ("Erase", "E"), ["branch"] = ("Branch", "B"), ["split"] = ("Lane split", "L"), ["measure"] = ("Measure", "D"),
+        ["wall"] = ("Wall", "W"),
     };
     static readonly Dictionary<string, Rgba> TypeCol = new()
     {
@@ -107,6 +110,12 @@ public sealed partial class MapView
                     Polyline(t, pts, 1, Math.Max(6, (int)(4 * Scale) + 6), WallGlow);
                     Polyline(t, pts, 1, Math.Max(2, (int)(1.2 * Scale) + 2), Wall);
                 }
+        foreach (var (wp, _) in Layout.CustomWalls(D.Map))
+        {
+            var pts = wp.Select(p => (p[0], p[2])).ToList();
+            Polyline(t, pts, 1, Math.Max(7, (int)(4 * Scale) + 7), MyWallGlow);
+            Polyline(t, pts, 1, Math.Max(3, (int)(1.5 * Scale) + 3), MyWall);
+        }
         if (hasNet) NetDraw(r, net, labels, clean);
         if (Mode == "surface") { SurfDraw(r, net); BumpDraw(); }
         // the dashed centre line
@@ -227,6 +236,7 @@ public sealed partial class MapView
         }
         if (Mode == "land") LandRing();
         MeasureDraw(labels);
+        WallDraftDraw();
         Flush();
         foreach (var (x, y, s, c) in labels) G.Text(x, y, s, c);
         G.Text(10, 18, $"{D.Loc.Str("name")}  >  {D.Map.Str("name")}      F1 = all keys      grid = {step:0} m", Rgba.Hex("#7f8a96"));
@@ -635,6 +645,7 @@ public sealed partial class MapView
             if (Mode == "surface") { BrushAt(e, true); return; }
             if (Mode == "land") { LandAt(e, true); return; }
             if (Tool == "measure" && Measure != null) { Measure = null; Tell("Measure cleared (right click)"); G.Invalidate(); return; }
+            if (Tool == "wall" && WallDraft != null) { WallFinish(); return; }
             PanStart(e); return;
         }
         if (e.Button != MouseButtons.Left) return;
@@ -650,6 +661,7 @@ public sealed partial class MapView
         var (x, z) = WorldXY(e);
         if (Tool is "branch" or "split") { NetClick(Tool, x, z); return; }
         if (Tool == "measure") { var w = ToWorld(e.X, e.Y); MeasureClick(w.X, w.Z); return; }
+        if (Tool == "wall") { WallClick(x, z); return; }
         int k = HitPoint(e.X, e.Y);
         int pk = k < 0 ? HitPickup(e.X, e.Y) : -1;
         string? line = k < 0 && pk < 0 && Tool is "select" or "move" && k < 0 && pk < 0 ? HitLine(e.X, e.Y) : null;
@@ -708,6 +720,7 @@ public sealed partial class MapView
             case "erase":
                 if (k >= 0) { Sel = k; SelPick = -1; DeleteSelected(); }
                 else if (pk >= 0) { Sel = -1; SelPick = pk; DeleteSelected(); }
+                else if (HitWall(e.X, e.Y) is int wi and >= 0) { D.Snapshot(); D.Map.Arr("walls")!.RemoveAt(wi); if (D.Map.Arr("walls")!.Count == 0) D.Map.Remove("walls"); Tell("Wall deleted"); Commit(); }
                 break;
         }
     }
@@ -929,6 +942,65 @@ public sealed partial class MapView
 
     public void NetLanes(int k) { D.Snapshot(); ((JObj)Splits()[SelSplit]!)["lanes"] = (long)k; Commit(); }
 
+    // ---- custom walls: solid, invisible walls you draw (e.g. around a map made of your own .glb models)
+    void WallClick(double x, double z)
+    {
+        WallDraft ??= new();
+        WallDraft.Add((x, z));
+        _mouseWorld = (x, z);
+        Tell(WallDraft.Count == 1 ? "Wall: click the next point" : $"Wall: {WallDraft.Count} points  -  Enter / right click = done, Backspace = take one away, Esc = cancel", C("#ff7a3c"));
+        G.Invalidate();
+    }
+
+    /// the wall being drawn goes into the map (2 points or more)
+    public bool WallFinish()
+    {
+        if (WallDraft == null) return false;
+        var pts = WallDraft; WallDraft = null;
+        if (pts.Count < 2) { Tell("A wall needs 2 points or more - nothing added"); G.Invalidate(); return true; }
+        D.Snapshot();
+        if (D.Map.Arr("walls") == null) D.Map["walls"] = new List<object?>();
+        D.Map.Arr("walls")!.Add(new JObj { ["points"] = pts.Select(p => (object?)new List<object?> { Py.RoundN(p.X, 2), Py.RoundN(p.Z, 2) }).ToList(), ["h"] = Layout.CustomWallH });
+        Tell($"Wall added ({pts.Count} points). It is solid in game but you don't see it. Erase tool: click it to delete.", C("#ff7a3c"));
+        Commit();
+        return true;
+    }
+
+    bool WallBack()
+    {
+        if (WallDraft == null || WallDraft.Count == 0) return false;
+        WallDraft.RemoveAt(WallDraft.Count - 1);
+        if (WallDraft.Count == 0) WallDraft = null;
+        G.Invalidate();
+        return true;
+    }
+
+    /// the custom wall under the mouse (screen pixels), or -1
+    int HitWall(int mx, int my)
+    {
+        var walls = Layout.CustomWalls(D.Map);
+        int best = -1; double bd = 10;
+        for (int w = 0; w < walls.Count; w++)
+            for (int i = 0; i + 1 < walls[w].Pts.Count; i++)
+            {
+                var (ax, ay) = ToScreen(walls[w].Pts[i][0], walls[w].Pts[i][2]); var (bx, by) = ToScreen(walls[w].Pts[i + 1][0], walls[w].Pts[i + 1][2]);
+                double dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy, t = l2 < 1e-9 ? 0 : Math.Clamp(((mx - ax) * dx + (my - ay) * dy) / l2, 0, 1);
+                double d = Math.Sqrt(Math.Pow(ax + t * dx - mx, 2) + Math.Pow(ay + t * dy - my, 2));
+                if (d < bd) { bd = d; best = w; }
+            }
+        return best;
+    }
+
+    void WallDraftDraw()
+    {
+        if (WallDraft == null || WallDraft.Count == 0) return;
+        var pts = new List<(double X, double Z)>(WallDraft);
+        if (_mouseWorld != null) pts.Add(_mouseWorld.Value);
+        var scr = pts.Select(q => ToScreen(q.X, q.Z)).ToList();
+        for (int i = 0; i + 1 < scr.Count; i++) Dashed(_top, scr[i].X, scr[i].Y, scr[i + 1].X, scr[i + 1].Y, 3, MyWall, 10, 4);
+        foreach (var (x, y) in scr.Take(WallDraft.Count)) { _top.Disc(x, y, 6, Black); _top.Disc(x, y, 5, MyWall); }
+    }
+
     // ---- measure
     void MeasureClick(double x, double z)
     {
@@ -1016,6 +1088,7 @@ public sealed partial class MapView
         if (Mode is "surface" or "land") { G.Invalidate(); return; }
         if (_draft != null) { G.Invalidate(); return; }
         if (Measure != null && !MeasureDone) { _mouseWorld = (x, z); G.Invalidate(); return; }
+        if (WallDraft != null) { _mouseWorld = (x, z); G.Invalidate(); return; }
         bool hover = false;
         if (CanLap() && D.Points.Count > 0)
         {
@@ -1141,6 +1214,7 @@ public sealed partial class MapView
     public void DeleteSelected()
     {
         if (Tool == "measure" && MeasureBack()) return;
+        if (Tool == "wall" && WallBack()) return;
         var pts = D.Points;
         if (Sel < 0 && SelPick < 0 && NetDelete()) return;
         if (Sel >= 0)
@@ -1154,6 +1228,7 @@ public sealed partial class MapView
     public void Escape()
     {
         if (_draft != null) { _draft = null; Tell("Cancelled"); G.Invalidate(); return; }
+        if (WallDraft != null) { WallDraft = null; Tell("Wall cancelled"); G.Invalidate(); return; }
         if (Measure != null) { Measure = null; Tell("Measure cleared"); G.Invalidate(); return; }
         Sel = SelPick = -1; NetClearSel(); Selected?.Invoke(); G.Invalidate();
     }
@@ -1161,6 +1236,7 @@ public sealed partial class MapView
     public void ToolChanged()
     {
         _draft = null;
+        if (Tool != "wall" && WallDraft != null) WallFinish();
         if (Tool != "measure") Measure = null;
     }
 

@@ -750,13 +750,75 @@ public static class Layout
         return decks;
     }
 
+    /// the road's own side walls: on unless the map turns them off (a map of your own, e.g. an imported .glb, may not want them)
+    public static bool RoadWalls(JObj m) => !m.ContainsKey("road_walls") || m.Truthy("road_walls");
+
+    public const double CustomWallH = 6.0, CustomWallStep = 8.0;
+
+    /// the walls drawn with the Wall tool: "walls": [{"points": [[x, z] or [x, y, z] ...], "h": height}]; y = the ground under the
+    /// point (drawn in 3D), else the flat ground
+    public static List<(List<double[]> Pts, double H)> CustomWalls(JObj m)
+    {
+        var o = new List<(List<double[]>, double)>();
+        foreach (var w in m.Objs("walls"))
+        {
+            var pts = new List<double[]>();
+            foreach (var q in w.Arr("points") ?? new List<object?>())
+                if (q is List<object?> l && l.Count >= 2)
+                    pts.Add(l.Count >= 3 ? new[] { Json.D(l[0]), Json.D(l[1]), Json.D(l[2]) } : new[] { Json.D(l[0]), Fe.GroundY, Json.D(l[1]) });
+            if (pts.Count >= 2) o.Add((pts, w.Num("h", CustomWallH)));
+        }
+        return o;
+    }
+
+    /// a custom wall is solid from both sides: a strip facing each way, from a little under the ground up to its height
+    public static List<Piece> CustomWallPieces(JObj m)
+    {
+        var pieces = new List<Piece>();
+        foreach (var (raw, h) in CustomWalls(m))
+        {
+            var pts = new List<double[]> { raw[0] };
+            for (int i = 1; i < raw.Count; i++)
+            {
+                var a = raw[i - 1]; var b = raw[i];
+                double len = Math.Sqrt(Sq(b[0] - a[0]) + Sq(b[2] - a[2]));
+                if (len < 0.05) continue;
+                int n = Math.Max(1, (int)Math.Ceiling(len / CustomWallStep));
+                for (int k = 1; k <= n; k++) { double t = (double)k / n; pts.Add(new[] { a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t }); }
+            }
+            if (pts.Count < 2) continue;
+            var nrm = new List<(double X, double Z)>();
+            for (int i = 0; i < pts.Count; i++)
+            {
+                var a = pts[Math.Max(0, i - 1)]; var b = pts[Math.Min(pts.Count - 1, i + 1)];
+                double dx = b[0] - a[0], dz = b[2] - a[2], l = Math.Max(1e-9, Math.Sqrt(dx * dx + dz * dz));
+                nrm.Add((-dz / l, dx / l));
+            }
+            foreach (int side in new[] { 1, -1 })
+            {
+                var p2 = side > 0 ? pts : Enumerable.Reverse(pts).ToList();
+                var n2 = (side > 0 ? nrm : Enumerable.Reverse(nrm).ToList()).Select(q => (q.X * side, q.Z * side)).ToList();
+                for (int k = 0; k < p2.Count - 1; k += 120)
+                {
+                    int c = Math.Min(121, p2.Count - k);
+                    if (c < 2) continue;
+                    var seg = p2.GetRange(k, c);
+                    pieces.Add(Physics.WallStrip(seg.Select(q => (q[0], q[2])).ToList(), i => seg[i][1] - 1.5, i => seg[i][1] + h, n2.GetRange(k, c)));
+                }
+            }
+        }
+        return pieces;
+    }
+
     public static (List<Piece> Pieces, List<Piece> Decks) CollisionPieces(Road road, AidInfo info, JObj m)
     {
         var net = Network.Get(m, road);
         var pieces = new List<Piece>(); var decks = new List<Piece>();
+        bool sideWalls = RoadWalls(m);
         foreach (var r in net.Roads())
         {
-            if (r.Kind != "divider" && net.Branches.Count > 0) pieces.AddRange(RunWalls(r, net));
+            if (r.Kind != "divider" && !sideWalls) { }
+            else if (r.Kind != "divider" && net.Branches.Count > 0) pieces.AddRange(RunWalls(r, net));
             else pieces.AddRange(Walls(r, net.WallMask(r)));
             if (r.Kind != "divider") decks.AddRange(Decks(r));
         }
@@ -764,6 +826,7 @@ public static class Layout
         foreach (var (cx, cz, a) in BlockSpots(road, info, m))
             pieces.Add(Physics.TurnedBox(cx, cz, Fe.GroundY, Fe.GroundY + H, W / 2, L / 2, a));
         pieces.AddRange(SolidBoxes(road, info, m));
+        pieces.AddRange(CustomWallPieces(m));
         return (pieces, decks);
     }
 

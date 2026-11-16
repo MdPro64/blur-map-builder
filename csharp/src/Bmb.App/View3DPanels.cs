@@ -298,6 +298,9 @@ public sealed partial class View3D
         void Wide(Button b) { b.AutoSize = false; b.Width = 270; b.Height = 28; head.Controls.Add(b); wide.Add(b); }
         Wide(Theme.Btn("⬆ Import 3D model (.glb)...", ImportModel, Theme.Blue));
         Wide(Theme.Colored("〰 Path scatter (objects along a path)...", "#7a3a8a", ScatterOpen));
+        _wallBtn = Theme.Colored("▮ Draw a wall (solid, not seen in game)", "#8a4a1a", WallDrawToggle); Wide(_wallBtn);
+        Look.Tip(_wallBtn, "Click points on the ground (or on your own models) for a solid wall; Enter / right click = done, Backspace = take a point away, Esc = cancel");
+        var lastWall = Theme.Btn("↶ Remove the last wall", WallRemoveLast); Wide(lastWall);
         head.Controls.Add(new Label { Text = "Search:", AutoSize = true, ForeColor = Fg });
         _libSearch = new TextBox { Width = 270, BackColor = ColorTranslator.FromHtml("#1a1e24"), ForeColor = Fg, BorderStyle = BorderStyle.FixedSingle };
         _libSearch.TextChanged += (_, _) => FillLibrary();
@@ -815,6 +818,93 @@ public sealed partial class View3D
         Dist = Math.Min(Dist, Math.Max(hi[0] - lo[0], Math.Max(hi[1] - lo[1], hi[2] - lo[2])) * 4 + 40);
         DriveT = null; CamAnim = null;
         G.Invalidate();
+    }
+
+    // ---- custom walls (drawn here or with the 2D Wall tool): solid in game, not seen
+    Button? _wallBtn;
+    public List<double[]>? Wall3D;
+    public bool WallDrawing => Wall3D != null;
+
+    public void WallDrawToggle()
+    {
+        if (Wall3D != null) { WallDone(); return; }
+        if (SceneMode != "3d") return;
+        StopPlacing(); Select(null);
+        Wall3D = new();
+        G.Cursor = Cursors.Cross;
+        if (_wallBtn != null) { _wallBtn.Text = "✔ Done (Enter)"; }
+        _f.Say("Wall: click points on the ground or on your models  -  Enter / right click = done, Backspace = take a point away, Esc = cancel", ColorTranslator.FromHtml("#ff9a5c"));
+        G.Invalidate();
+    }
+
+    void WallClick(int mx, int my)
+    {
+        var p = PointUnder(mx, my);
+        if (p == null || Wall3D == null) return;
+        Wall3D.Add(p);
+        _f.Say($"Wall: {Wall3D.Count} point(s)  -  Enter / right click = done, Backspace = take one away, Esc = cancel", ColorTranslator.FromHtml("#ff9a5c"));
+        G.Invalidate();
+    }
+
+    void WallPop() { if (Wall3D is { Count: > 0 }) { Wall3D.RemoveAt(Wall3D.Count - 1); G.Invalidate(); } }
+
+    void WallEnd() { Wall3D = null; G.Cursor = Cursors.Default; if (_wallBtn != null) _wallBtn.Text = "▮ Draw a wall (solid, not seen in game)"; G.Invalidate(); }
+
+    public void WallCancel() { WallEnd(); _f.Say("Wall cancelled"); }
+
+    public void WallDone()
+    {
+        var pts = Wall3D;
+        WallEnd();
+        if (pts == null) return;
+        if (pts.Count < 2) { _f.Say("A wall needs 2 points or more - nothing added", Theme.Warn); return; }
+        D.Snapshot();
+        if (D.Map.Arr("walls") == null) D.Map["walls"] = new List<object?>();
+        D.Map.Arr("walls")!.Add(new JObj { ["points"] = pts.Select(p => (object?)new List<object?> { Py.RoundN(p[0], 2), Py.RoundN(p[1], 2), Py.RoundN(p[2], 2) }).ToList(), ["h"] = Layout.CustomWallH });
+        D.Touched(); Dirty(); Edited?.Invoke();
+        _f.Say($"Wall added ({pts.Count} points, {Layout.CustomWallH:0} m high). Solid in game, not seen. Ctrl+Z undoes.", Theme.Good);
+    }
+
+    void WallRemoveLast()
+    {
+        var l = D.Map.Arr("walls");
+        if (l == null || l.Count == 0) { _f.Say("This map has no walls of your own"); return; }
+        D.Snapshot();
+        l.RemoveAt(l.Count - 1);
+        if (l.Count == 0) D.Map.Remove("walls");
+        D.Touched(); Dirty(); Edited?.Invoke();
+        _f.Say($"Last wall removed ({l.Count} left). Ctrl+Z brings it back.");
+    }
+
+    /// the walls as orange fences (bottom, top and posts) + the one being drawn
+    void WallsDraw()
+    {
+        if (SceneMode != "3d" && SceneMode != "collision") return;
+        var col = new Rgba(1, .48f, .24f); var b = new Batch();
+        void Fence(IList<double[]> pts, double h)
+        {
+            for (int i = 0; i < pts.Count; i++)
+            {
+                float x = (float)pts[i][0], y = (float)pts[i][1], z = (float)pts[i][2];
+                b.Add(x, y, z, col); b.Add(x, y + (float)h, z, col);
+                if (i + 1 < pts.Count)
+                {
+                    float x2 = (float)pts[i + 1][0], y2 = (float)pts[i + 1][1], z2 = (float)pts[i + 1][2];
+                    b.Add(x, y + .1f, z, col); b.Add(x2, y2 + .1f, z2, col);
+                    b.Add(x, y + (float)h, z, col); b.Add(x2, y2 + (float)h, z2, col);
+                    b.Add(x, y + (float)h / 2, z, col); b.Add(x2, y2 + (float)h / 2, z2, col);
+                }
+            }
+        }
+        foreach (var (pts, h) in Layout.CustomWalls(D.Map)) Fence(pts, h);
+        if (Wall3D is { Count: > 0 }) Fence(Wall3D, Layout.CustomWallH);
+        GL.glLineWidth(2.5f); b.Draw(GL.LINES); GL.glLineWidth(1);
+        if (Wall3D is { Count: > 0 })
+        {
+            var d = new Batch();
+            foreach (var p in Wall3D) d.Add((float)p[0], (float)(p[1] + .3), (float)p[2], col);
+            GL.glPointSize(9); d.Draw(GL.POINTS); GL.glPointSize(1);
+        }
     }
 
     // ---- Path scatter

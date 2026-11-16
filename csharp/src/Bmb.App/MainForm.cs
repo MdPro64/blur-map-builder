@@ -224,7 +224,7 @@ public sealed partial class MainForm : Form
     CheckBox ToolBtn(string key)
     {
         var (l, hk) = MapView.ToolInfo[key];
-        string icon = key switch { "select" => "⬉", "move" => "✥", "add" => "✚", "insert" => "⤓", "row" => "•••", "single" => "●", "erase" => "✖", "branch" => "↱", "split" => "‖", _ => "⇔" };
+        string icon = key switch { "select" => "⬉", "move" => "✥", "add" => "✚", "insert" => "⤓", "row" => "•••", "single" => "●", "erase" => "✖", "branch" => "↱", "split" => "‖", "wall" => "▮", _ => "⇔" };
         var t = Theme.Toggle($"{icon} {l} ({hk})", on => { if (on && !_settingTool) SetTool(key); });
         if (!_tools.TryGetValue(key, out var lst)) _tools[key] = lst = new();
         lst.Add(t);
@@ -256,6 +256,7 @@ public sealed partial class MainForm : Form
         var g = Group(tb, "ROAD"); foreach (var k in new[] { "select", "move", "add", "insert", "erase" }) g.Controls.Add(ToolBtn(k));
         g = Group(tb, "BRANCHES & LANES"); foreach (var k in new[] { "branch", "split" }) g.Controls.Add(ToolBtn(k));
         g = Group(tb, "MEASURE"); g.Controls.Add(ToolBtn("measure"));
+        g = Group(tb, "WALLS"); g.Controls.Add(Look.Tip(ToolBtn("wall"), "Draw a solid wall you don't see in game (e.g. around your own map). Erase tool: click a wall to delete it"));
         g = Group(tb, "POWER-UPS"); foreach (var k in new[] { "row", "single" }) g.Controls.Add(ToolBtn(k));
         g.Controls.Add(Theme.Lbl("type"));
         foreach (var k in MapView.Types) TypeBox.Items.Add(k);
@@ -571,6 +572,7 @@ public sealed partial class MainForm : Form
             ["single"] = $"click to place one {Map2.PType} power-up (1-8 = type)", ["erase"] = "click a point or power-up to delete it",
             ["branch"] = "click ON the road where the branch leaves, then its points beside the road, then ON the road where it joins again", ["split"] = "click ON the road where the lane split starts, then where it ends",
             ["measure"] = "click A, then B: the straight distance and, on the same road, the driving distance",
+            ["wall"] = "click points for a solid wall (you don't see it in game); Enter or right click = done, Backspace = take a point away. The road's own walls: right panel",
         };
         Say($"{MapView.ToolInfo[Map2.Tool].Label}: {hints[Map2.Tool]}");
     }
@@ -840,14 +842,14 @@ public sealed partial class MainForm : Form
         if (Is3D) return V3.Key(key, ctrl, shift, alt) || base.ProcessCmdKey(ref msg, k);
         if (Mode is "light" or "car" or "skins") return base.ProcessCmdKey(ref msg, k);
         if (alt) return base.ProcessCmdKey(ref msg, k);
-        var tool = key switch { Keys.S => "select", Keys.M => "move", Keys.A => "add", Keys.I => "insert", Keys.E => "erase", Keys.R => "row", Keys.P => "single", Keys.B => "branch", Keys.L => "split", Keys.D => "measure", _ => null };
+        var tool = key switch { Keys.S => "select", Keys.M => "move", Keys.A => "add", Keys.I => "insert", Keys.E => "erase", Keys.R => "row", Keys.P => "single", Keys.B => "branch", Keys.L => "split", Keys.D => "measure", Keys.W => "wall", _ => null };
         if (tool != null) { SetTool(tool); return true; }
         if (key >= Keys.D1 && key <= Keys.D8) { Map2.SetType(MapView.Types[key - Keys.D1]); TypeBox.SelectedItem = Map2.PType; RefreshProps(); return true; }
         double step = shift ? 1 : 5;
         switch (key)
         {
             case Keys.Delete: case Keys.Back: Map2.DeleteSelected(); return true;
-            case Keys.Enter: Map2.MeasureFinish(); return true;
+            case Keys.Enter: if (!Map2.WallFinish()) Map2.MeasureFinish(); return true;
             case Keys.W: Map2.Adj("w", 5); return true;
             case Keys.Q: Map2.Adj("w", -5); return true;
             case Keys.PageUp: Map2.Adj("h", 1); return true;

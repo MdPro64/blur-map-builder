@@ -108,6 +108,47 @@ The C# window keeps its own auto-save the same way as Python, and asks before cl
   Dry build checked (both copies, wbl lines, sizes). **Fifth in-game test (2026-11-15): WORKS - the siren is heard on the custom car.**
   (The BMB_SOUND_PROXY_TEST switch is removed.) The app exe still has the switch until its next build (it does nothing unless set).
 
+## Community wishes (2026-11-15, after 2.4.0; NOT released, NOT tried in game)
+
+- **Road side walls switch:** map panel "Road side walls (solid road edges)", map key `road_walls` (default on). Off: no edge walls
+  in the collision (lane-split dividers stay) and none drawn in 2D (`Layout.RoadWalls`, `Network.WallRuns`).
+- **Custom walls:** 2D Wall tool (W, group WALLS): click points, Enter / right click = done, Backspace / Esc; Erase tool deletes one.
+  3D: library button "Draw a wall" (click on the ground or your own models, so the wall follows their height) + "Remove the last
+  wall"; walls show as orange fences in 3D and in Collision. Map key `walls`: [{"points": [[x,z] or [x,y,z]], "h": 6}].
+  Collision: `Layout.CustomWallPieces` = a strip facing each way (both sides solid), points every 8 m, from 1.5 m under the
+  point to its height; invisible in game. Dry build checked: road walls off -> the collision file 364 KB -> 58 KB, walls in it.
+- **Car replacer:** Custom car > Body: "Replace a game car (see your car online too)", car key `replace` = a game car's name.
+  The build edits that game car's record in place: wheels (model + scales), the sound fields / own sound, DriverOffset for .glb
+  bodies; its name, handling, stats, class and paints stay (fair online). Its own model file \modelsehicles\<car>.model gets this
+  car's body (base model, wheel swap or .glb). Not added as a new car. Dry build checked (Viper ACR gets the Opel body file).
+  Open: a Car skins skin on the same game car writes the same file (whichever is built last wins).
+- **First test round fixes (2026-11-16):** road walls off now also removes the seen wall (the road model's wall mask is all
+  "cut", `Network.WallMask`; the network cache key includes it). Collision tab shows the landscape (hill ground light green,
+  its sides red). The 3D camera is kept per map (`View3D.CamForMap`, key = location id / map id). Custom car: the stats hide
+  when a game car is replaced; the car preview sits on the right (sash "car_view_side") and keeps one size while turning
+  (fits the circle the car sweeps). Replacer wheels: the record already pointed at the chosen wheels (checked with
+  `bmbcli wheelof`); now the replaced car's own wheel file is also overwritten when no other game car uses it. Not tried in game.
+- **Replacer wheels, second try:** in game the Mustang GT-R (record -> BMB_My_car_3 wheels) still showed its own wheels, so the
+  game shows wheels from the car's own wheel file. Now the replacer leaves the record's wheel model alone and always writes the
+  chosen wheels into the replaced car's own wheel file (a Legend / boss version sharing that file gets them too; the log says so).
+  Wheel scale / depth fields still come from the chosen wheels' car. Also new: preview handles (wheels, body move, size), ground
+  grid, camera buttons (Top / Side / Front / Orbit). Not tried in game.
+- **Replacer, third round:** wheels do change in game (Shelby got the Foose rims), but they sit where the replaced car's own
+  handling puts them, while the .glb body was fitted around the body car's wheels. Now an imported body on a replacer is fitted
+  around the replaced car (`CarModel.FitCar` / `FitOf`: preview, side view and the built model), its wheel spacing (track / wb)
+  is ignored and hidden (the replaced car keeps its wheel spots), and the driver seat comes from the replaced car. A game car can
+  be replaced by one custom car only (the list marks taken ones). Not tried in game.
+- **Replacer, fourth round (the user's choice):** fitting the body around the replaced car's wheels did not suit bodies of every
+  shape, so it is back to the body car (as for a new car), and the replaced car takes this car's wheel spots too: the build
+  clones the replaced car's dynamics (CA4000x1 = its handling) with geometry.wheelBase / trackWidthFront / trackWidthRear from
+  the body car + the fit, and the record points at that copy. Body, tyres and their spots are this car's; the rest of the
+  handling and the stats stay the game car's. Dry build checked (Mustang GT-R -> CA400001). Tried in game: works.
+- **Bigger imported bodies (2026-11-16):** the room is the free trim space in a game model (`bmbcli glbroom GAME` lists every
+  car: Bowler Nemesis ~14,600 triangles is the most; Opel ~9,600, Navara Rat ~6,700, Navara OffRoad ~8,800). Now every imported
+  body is written into the Bowler model (`CarGlb.Container`), whatever the class; GlbBody stays the class's start car for a new
+  car's handling. The fit, the preview, the wheel spots (geometry = Bowler's + fit), the driver seat and the wheel swap all use
+  the container. NOT built / tested yet when written (the command checker was down). Later: grow model files for 20,000+.
+
 ## Lighting tab: car preview + simpler controls (2026-11-11, nothing committed, not tried in game)
 
 - **Preview** (`LightPreview.cs`): a car built in code (smooth body, cabin with windows and pillars, 4 wheels with rims;
@@ -297,3 +338,9 @@ its collision is the same, and I still don't know the cause.
 - `.dotnet` (784 MB) is only needed to change the code. The program in `publish` runs without it.
 - `publish\Blur Map Builder.exe` is 59 MB and holds everything it needs.
 - Copy it next to `Blur.exe` and it starts without `--game`.
+
+### Start-up show and sounds (2026-11-16)
+- Start sound (assets/startup.wav) and a "build done" sound (assets/build_done.wav) are built into the exe (converted to 16-bit WAV with ffmpeg from the user's files). A failed build still gives the Windows error sound.
+- The splash is a see-through window over the whole screen, on its own thread, in the light-painting style of the user's reference video: an orange and a green stroke swoop in from the screen edges and each draw half of a rounded neon frame around the picture; the tails fade, the frame stays lit and flashes when it closes, then everything fades. Points every 3 px for smooth lines. A click on the picture ends it sooner. Built; the user checks the look.
+- Splash Lab (`splash_lab.bat` / `--splash-lab`, src/Bmb.App/SplashLab.cs): sliders for speed, stroke count (1-6, the frame is shared out between them, each swoops in from the nearest screen edge), thickness, taper, glow, tail, gap, hold, and a colour per stroke; Play shows the real splash, Replay loops. Save writes `splash_style.json` next to the exe and the start-up reads it. Before a release: bake the user's saved values into SplashStyle's defaults (the json isn't shipped). `reopen.bat` closes and reopens the app on J.
+- 2026-11-16: the user's lab look is baked into SplashStyle's defaults (2 strokes, speed 0.79, thick 1.13, glow 2.16, gap 0.19) and goes out in the next push. The start sound is now a style setting (Sound) too. The Splash Lab stays OURS ONLY: no button or menu, only `--splash-lab`; don't ship or push `splash_lab.bat` / `reopen.bat`, and don't mention the lab in release notes. If the user saves again (e.g. the sound), re-bake from bin/Release/net10.0-windows/splash_style.json.

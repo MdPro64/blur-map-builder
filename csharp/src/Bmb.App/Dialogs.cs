@@ -259,7 +259,7 @@ VIEW
                 string msg = err == null ? $"Built and installed in {sw.Elapsed.TotalSeconds:0.0} s." : err.Message;
                 Say(msg, err == null ? Theme.Good : Theme.Bad);
                 if (!log.IsDisposed) { bar.Value = 100; pctL.Text = err == null ? "100 %" : "FAILED"; pctL.ForeColor = err == null ? Theme.Good : Theme.Bad; stage.Text = err == null ? "Built and installed" : "The build failed (see below)"; }
-                if (!_test) System.Media.SystemSounds.Asterisk.Play();
+                if (!_test) { if (err == null) Sfx.Play("build_done.wav"); else System.Media.SystemSounds.Hand.Play(); }
                 BuildFinished?.Invoke(msg);
                 if (err == null)
                 {
@@ -362,32 +362,456 @@ public static class SetupWindow
     }
 }
 
-/// the start-up picture (road_designer.show_splash)
+/// the program's own sounds (assets/*.wav, built in). One plays at a time; the player is kept so the sound isn't cut off
+public static class Sfx
+{
+    static System.Media.SoundPlayer? _p;
+    public static void Play(string name)
+    {
+        try
+        {
+            using var s = typeof(Sfx).Assembly.GetManifestResourceStream(name);
+            if (s == null) return;
+            var m = new MemoryStream(); s.CopyTo(m); m.Position = 0;
+            _p?.Stop(); _p = new System.Media.SoundPlayer(m); _p.Play();
+        }
+        catch (Exception) { }
+    }
+}
+
+/// the start-up picture (road_designer.show_splash): two light strokes swoop in from the screen's edges and draw a glowing frame
+/// around it (light-painting style). A see-through window over the whole screen, drawn by code; it runs on its own thread so it keeps
+/// moving while the main window loads
+/// how the start-up animation looks; the Splash Lab (--splash-lab) changes it and saves it next to the program
+public sealed class SplashStyle
+{
+    // the defaults are the look picked in the lab (2026-11-16)
+    public double Speed { get; set; } = 0.79; public double Thick { get; set; } = 1.13; public double Taper { get; set; } = 0.65; public double Glow { get; set; } = 2.16; public double Tail { get; set; } = 1; public double Stagger { get; set; } = 0.19; public double Hold { get; set; } = 0.6; public double GlowSize { get; set; } = 1; public double Threshold { get; set; } = 0.25;
+    public int Count { get; set; } = 2;
+    public bool Sound { get; set; } = true;     // the start sound with it
+    public string[] Colors { get; set; } = { "#ff7a2a", "#1fa8ff", "#8dff3a", "#ff2fa8", "#8a5cff", "#ffd23f" };
+    public static string File0 => Path.Combine(Path.GetDirectoryName(Environment.ProcessPath ?? AppContext.BaseDirectory)!, "splash_style.json");
+    public static SplashStyle Load()
+    {
+        try { if (File.Exists(File0)) return System.Text.Json.JsonSerializer.Deserialize<SplashStyle>(File.ReadAllText(File0)) ?? new(); } catch (Exception) { }
+        return new();
+    }
+    public void Save() => File.WriteAllText(File0, System.Text.Json.JsonSerializer.Serialize(this, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    public SplashStyle Copy() => System.Text.Json.JsonSerializer.Deserialize<SplashStyle>(System.Text.Json.JsonSerializer.Serialize(this))!;
+}
+
 public sealed class Splash : Form
 {
-    const int Ms = 2500;
-    readonly long _t0 = Environment.TickCount64;
-    public Splash()
+    const double Step = 3, Shrink = 0.5, PhotoOut = 0.2;     // pixels between a stroke's points (small = smooth); seconds the strokes shrink away, then the picture goes
+    const int Pad = 1;                                       // the frame sits right on the picture's edge, square corners
+
+    /// one light stroke: it swoops in from the screen's edge, then draws a third of the frame. Points every Step pixels
+    sealed class Stroke
     {
-        FormBorderStyle = FormBorderStyle.None; StartPosition = FormStartPosition.CenterScreen; TopMost = true; ShowInTaskbar = false; BackColor = Theme.Bg;
-        Look.Dress(this);
+        public PointF[] P = Array.Empty<PointF>(); public PointF[] Nrm = Array.Empty<PointF>();
+        public int FrameFrom;               // points from here on are the frame: they stay lit
+        public double Start, Dur; public Color Col, Core;
+        public double Len => (P.Length - 1) * Step;
+        public double HeadAt(double t) { double u = Math.Clamp((t - Start) / Dur, 0, 1); return Len * (1 - Math.Pow(1 - u, 2.3)); }     // fast in, slows down while drawing
+        public double End => Start + Dur;
+        public double T0 = 1.55, Taper = 0.65;
+        public double Thick(int i) => T0 - Taper * i / Math.Max(1, P.Length - 1);     // thick where it starts, thinner at its end
+    }
+    readonly Stroke[] _st;
+    readonly SplashStyle _y;
+    public readonly bool Lab;
+    readonly Bitmap _photo;
+    readonly Rectangle _scr;
+    Rectangle _pr;
+    readonly Stopwatch _sw = Stopwatch.StartNew();
+    readonly System.Windows.Forms.Timer _tick = new() { Interval = 15 };
+    volatile bool _ready; bool _skip; double _outAt = -1;
+    IntPtr _dc, _dib, _old, _bits; Bitmap? _surf;
+
+    public Splash(SplashStyle? style = null, bool lab = false)
+    {
+        _y = style ?? SplashStyle.Load(); Lab = lab;
+        FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; TopMost = true; StartPosition = FormStartPosition.Manual;
+        _scr = SystemInformation.VirtualScreen;      // all the screens together: the strokes come in from the outer edges of the whole desktop
+        var home = Screen.FromPoint(Cursor.Position).Bounds;     // the picture sits in the middle of the screen with the mouse
+        Bounds = _scr;
         using var s = typeof(Splash).Assembly.GetManifestResourceStream("splash.png")!;
-        var img = new Bitmap(s);
-        ClientSize = new Size(img.Width, img.Height + 24);
-        var p = new PictureBox { Image = img, Dock = DockStyle.Top, Height = img.Height };
-        var l = new Label { Text = "Loading...", Dock = DockStyle.Bottom, Height = 24, ForeColor = Theme.Text, Padding = new Padding(8, 3, 0, 0) };
-        p.Click += (_, _) => Close();
-        Controls.Add(p); Controls.Add(l);
+        using var img = new Bitmap(s);
+        _photo = new Bitmap(img.Width, img.Height + 24, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+        using (var g = Graphics.FromImage(_photo))
+        {
+            g.Clear(Theme.Bg); g.DrawImage(img, 0, 0, img.Width, img.Height);
+            TextRenderer.DrawText(g, "Loading...", Font, new Rectangle(8, img.Height + 3, img.Width - 8, 21), Theme.Text, TextFormatFlags.Left | TextFormatFlags.Top);
+        }
+        _pr = new Rectangle(home.X - _scr.X + (home.Width - _photo.Width) / 2, home.Y - _scr.Y + (home.Height - _photo.Height) / 2, _photo.Width, _photo.Height);
+        _st = MakeStrokes();
+        _tick.Tick += (_, _) => Frame();
+        MouseDown += (_, e) => { if (_pr.Contains(e.Location)) _skip = true; };
     }
 
-    /// keep it up for its time (a click closes it sooner), then hand over
-    public void Finish(Action shown)
+    /// the frame is shared out between the strokes, all drawn the same way round (from the bottom-left corner along the bottom,
+    /// up the right, along the top, down the left); each swoops in from the nearest screen edge and joins its piece along the line
+    Stroke[] MakeStrokes()
     {
-        int wait = Math.Max(1, Ms - (int)(Environment.TickCount64 - _t0));
-        var t = new System.Windows.Forms.Timer { Interval = wait };
-        FormClosed += (_, _) => { t.Stop(); shown(); };
-        t.Tick += (_, _) => { t.Stop(); Close(); };
-        t.Start();
+        float W = _scr.Width, H = _scr.Height;
+        float L = _pr.Left - Pad, T = _pr.Top - Pad, R = _pr.Right + Pad, B = _pr.Bottom + Pad, per = 2 * (R - L + B - T);
+        int n = Math.Clamp(_y.Count, 1, 6); float part = per / n;
+        var o = new Stroke[n];
+        for (int k = 0; k < n; k++)
+        {
+            float d0 = k * part;
+            var j = Perim(L, T, R, B, d0 + 0.01f);
+            var j2 = Perim(L, T, R, B, d0 + 1);
+            float dx = j2.X - j.X, dy = j2.Y - j.Y, dl = MathF.Max(1e-3f, MathF.Sqrt(dx * dx + dy * dy)); dx /= dl; dy /= dl;     // the way along the frame
+            float nx = dy, ny = -dx;                                                    // out from the picture (the frame runs anticlockwise on screen)
+            float side = k % 2 == 0 ? 1 : 0.6f;
+            PointF Cl(float x, float y) => new(Math.Clamp(x, 40, W - 40), Math.Clamp(y, 40, H - 40));
+            var j0 = Perim(L, T, R, B, d0);
+            var bp = new PointF(j0.X - dx * 150 + nx * 90 * side, j0.Y - dy * 150 + ny * 90 * side);
+            var a = Cl(j0.X - dx * 480 + nx * 280 * side, j0.Y - dy * 480 + ny * 280 * side);
+            // off the desktop's edge in the way it swoops in from (with several screens, that can be the far side of another screen)
+            float vx = a.X - j0.X, vy = a.Y - j0.Y;
+            int e = Math.Abs(vx) >= Math.Abs(vy) ? (vx < 0 ? 0 : 1) : (vy < 0 ? 2 : 3);
+            PointF Off(float m) => e switch { 0 => new(-m, a.Y - dy * 200), 1 => new(W + m, a.Y - dy * 200), 2 => new(a.X - dx * 200, -m), _ => new(a.X - dx * 200, H + m) };
+            var raw = Spline(Off(260), Off(80), a, bp, j0, new PointF(j0.X + dx * 40, j0.Y + dy * 40));
+            int f = raw.Count; raw.AddRange(Perimeter(L, T, R, B, d0, part));
+            var col = C(_y.Colors.Length > 0 ? _y.Colors[k % _y.Colors.Length] : "#1fa8ff");
+            double sp = Math.Max(0.1, _y.Speed);
+            o[k] = Resample(raw, f, (0.1 + k * _y.Stagger) / sp, 2.0 / sp, col, Mix(col, Color.White, 0.8));
+            o[k].Taper = _y.Taper * _y.Thick; o[k].T0 = (1 + _y.Taper * 0.85) * _y.Thick;
+        }
+        return o;
+    }
+    static Color Mix(Color a, Color b, double k) => Color.FromArgb((int)(a.R + (b.R - a.R) * k), (int)(a.G + (b.G - a.G) * k), (int)(a.B + (b.B - a.B) * k));
+    static Color C(string h) => ColorTranslator.FromHtml(h);
+
+    /// a point on the picture's frame, d pixels from the bottom-left corner, going right along the bottom, up the right, left along the top, down the left
+    static PointF Perim(float L, float T, float R, float B, float d)
+    {
+        float w = R - L, h = B - T, per = 2 * (w + h);
+        d = ((d % per) + per) % per;
+        if (d < w) return new PointF(L + d, B); d -= w;
+        if (d < h) return new PointF(R, B - d); d -= h;
+        if (d < w) return new PointF(R - d, T); d -= w;
+        return new PointF(L, T + d);
+    }
+    static List<PointF> Perimeter(float L, float T, float R, float B, float from, float len)
+    {
+        var o = new List<PointF>();
+        for (float d = 0; d < len; d += 2) o.Add(Perim(L, T, R, B, from + d));
+        o.Add(Perim(L, T, R, B, from + len));
+        return o;
+    }
+
+    /// a smooth curve through the points (Catmull-Rom); the first and last are only there to bend the ends, the curve runs from the 2nd to the 2nd last
+    static List<PointF> Spline(params PointF[] k)
+    {
+        var o = new List<PointF>();
+        for (int i = 1; i < k.Length - 2; i++)
+        {
+            PointF p0 = k[i - 1], p1 = k[i], p2 = k[i + 1], p3 = k[i + 2];
+            int n = Math.Max(8, (int)(Dist(p1, p2) / 2));
+            for (int j = 0; j < n; j++)
+            {
+                float t = (float)j / n, t2 = t * t, t3 = t2 * t;
+                o.Add(new PointF(
+                    0.5f * (2 * p1.X + (-p0.X + p2.X) * t + (2 * p0.X - 5 * p1.X + 4 * p2.X - p3.X) * t2 + (-p0.X + 3 * p1.X - 3 * p2.X + p3.X) * t3),
+                    0.5f * (2 * p1.Y + (-p0.Y + p2.Y) * t + (2 * p0.Y - 5 * p1.Y + 4 * p2.Y - p3.Y) * t2 + (-p0.Y + 3 * p1.Y - 3 * p2.Y + p3.Y) * t3)));
+            }
+        }
+        return o;
+    }
+
+    static float Dist(PointF a, PointF b) => (float)Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
+
+    /// even spacing along the stroke (so it moves at a steady speed and draws smooth), with the side direction at each point
+    static Stroke Resample(List<PointF> raw, int frameFrom, double start, double dur, Color col, Color core)
+    {
+        var p = new List<PointF> { raw[0] }; int ff = 0; double carry = 0;
+        for (int i = 1; i < raw.Count; i++)
+        {
+            PointF a = raw[i - 1], b = raw[i]; double d = Dist(a, b), at = Step - carry;
+            while (at <= d) { p.Add(new PointF((float)(a.X + (b.X - a.X) * at / d), (float)(a.Y + (b.Y - a.Y) * at / d))); at += Step; }
+            carry = d - (at - Step);
+            if (i == frameFrom) ff = p.Count;
+        }
+        var n = new PointF[p.Count];
+        for (int i = 0; i < p.Count; i++)
+        {
+            PointF a = p[Math.Max(0, i - 1)], b = p[Math.Min(p.Count - 1, i + 1)]; float dx = b.X - a.X, dy = b.Y - a.Y, l = (float)Math.Sqrt(dx * dx + dy * dy) + 1e-4f;
+            n[i] = new PointF(-dy / l, dx / l);
+        }
+        return new Stroke { P = p.ToArray(), Nrm = n, FrameFrom = ff, Start = start, Dur = dur, Col = col, Core = core };
+    }
+
+    /// the main window is made: the splash may end once its show is over
+    public void Ready() => _ready = true;
+
+    protected override CreateParams CreateParams
+    {
+        get { var cp = base.CreateParams; cp.ExStyle |= 0x80000 | 0x80 | 0x8; return cp; }      // layered, tool window, topmost
+    }
+    protected override bool ShowWithoutActivation => true;
+    public void Skip() => _skip = true;
+    protected override void OnPaintBackground(PaintEventArgs e) { }
+    protected override void OnPaint(PaintEventArgs e) { }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        _dc = CreateCompatibleDC(IntPtr.Zero);
+        var bi = new BITMAPINFOHEADER { biSize = 40, biWidth = _scr.Width, biHeight = -_scr.Height, biPlanes = 1, biBitCount = 32 };
+        _dib = CreateDIBSection(_dc, ref bi, 0, out _bits, IntPtr.Zero, 0);
+        _old = SelectObject(_dc, _dib);
+        _surf = new Bitmap(_scr.Width, _scr.Height, _scr.Width * 4, System.Drawing.Imaging.PixelFormat.Format32bppPArgb, _bits);
+        Frame(); _tick.Start();
+    }
+
+    protected override void OnFormClosed(FormClosedEventArgs e)
+    {
+        _tick.Stop(); _surf?.Dispose(); _photo.Dispose(); _glow?.Dispose();
+        if (_dc != IntPtr.Zero) { SelectObject(_dc, _old); DeleteObject(_dib); DeleteDC(_dc); }
+        base.OnFormClosed(e);
+    }
+
+    void Frame()
+    {
+        if (_surf == null || IsDisposed) return;
+        double t = _sw.Elapsed.TotalSeconds, done = _st.Max(x => x.End), show = done + _y.Hold;
+        if (_outAt < 0 && _ready && (t >= show || _skip)) _outAt = t;
+        double gone = _outAt < 0 ? 0 : (t - _outAt) / Shrink;                       // 0..1: the strokes shrink away
+        double shrink = gone >= 1 ? 0 : 1 - gone * gone;
+        double photo = gone <= 1 ? 1 : 1 - (t - _outAt - Shrink) / PhotoOut;         // then the picture fades
+        if (photo <= 0) { _tick.Stop(); Close(); return; }
+        using (var g = Graphics.FromImage(_surf))
+        {
+            double flash = t > done ? Math.Max(0, 1 - (t - done) / 0.7) : 0;     // the frame lights up when it closes, then settles
+            if (shrink > 0 && _y.Glow > 0.01) { Bloom(t, flash, shrink); Upscale(); }      // fills the whole surface: no clear needed
+            else
+            {
+                g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                g.Clear(Color.Transparent);
+            }
+            g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceOver;
+            g.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+            if (shrink > 0) foreach (var s in _st) DrawStroke(g, s, t, flash, shrink, false);
+            g.DrawImageUnscaled(_photo, _pr.X, _pr.Y);
+        }
+        var dst = new POINT { x = _scr.X, y = _scr.Y }; var src = new POINT(); var size = new SIZE { cx = _scr.Width, cy = _scr.Height };
+        var blend = new BLENDFUNCTION { BlendOp = 0, SourceConstantAlpha = (byte)(255 * Math.Clamp(photo, 0, 1)), AlphaFormat = 1 };
+        UpdateLayeredWindow(Handle, IntPtr.Zero, ref dst, ref size, _dc, ref src, 0, ref blend, 2);
+    }
+
+    // the glow: the strokes' bright parts drawn small, blurred (box blur a few times = a smooth bell-shaped glow, a tight one
+    // and a wide one), brightened, then stretched under the sharp lines
+    Bitmap? _glow; int _gw, _gh, _q; float[]? _src, _tight, _wide, _tmp; byte[]? _buf;
+
+    void Bloom(double t, double flash, double shrink)
+    {
+        if (_glow == null)
+        {
+            _q = Math.Max(4, (int)Math.Ceiling(Math.Sqrt((double)_scr.Width * _scr.Height / 150000)));     // the glow is soft: a small picture (about 150,000 points, however many screens) is plenty
+            _gw = (_scr.Width + _q - 1) / _q; _gh = (_scr.Height + _q - 1) / _q;
+            _glow = new Bitmap(_gw, _gh, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+            int n = _gw * _gh * 4; _src = new float[n]; _tight = new float[n]; _wide = new float[n]; _tmp = new float[n]; _buf = new byte[n];
+        }
+        using (var g = Graphics.FromImage(_glow))
+        {
+            g.Clear(Color.Transparent);
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.ScaleTransform(1f / _q, 1f / _q);
+            foreach (var s in _st) DrawStroke(g, s, t, flash, shrink, true);
+        }
+        var rect = new Rectangle(0, 0, _gw, _gh);
+        var bd = _glow.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadWrite, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+        try
+        {
+            int row = _gw * 4;
+            for (int y = 0; y < _gh; y++) System.Runtime.InteropServices.Marshal.Copy(bd.Scan0 + y * bd.Stride, _buf!, y * row, row);
+            for (int i = 0; i < _buf!.Length; i++) _src![i] = _buf[i];
+            double size = Math.Clamp(_y.GlowSize, 0.2, 4) * 3.0 / _q;     // blur sizes in full-screen pixels / the shrink
+            Blur(_src!, _tight!, Math.Max(1, (int)Math.Round(4 * size)), 2);
+            Blur(_tight!, _wide!, Math.Max(2, (int)Math.Round(15 * size)), 2);     // the wide one grows from the tight one
+            float gain = (float)Math.Max(0, _y.Glow);
+            for (int i = 0; i < _buf.Length; i += 4)
+            {
+                float a = Math.Min(255, gain * (1.4f * _tight![i + 3] + 2.2f * _wide![i + 3]));
+                for (int c = 0; c < 3; c++) _buf[i + c] = (byte)Math.Min(a, gain * (1.4f * _tight[i + c] + 2.2f * _wide[i + c]));
+                _buf[i + 3] = (byte)a;
+            }
+        }
+        finally { _glow.UnlockBits(bd); }
+    }
+
+    /// the glow picture (_buf) stretched smoothly over the whole screen surface, on all cores; this also wipes the last frame
+    int[]? _xa, _xb; float[]? _xt;
+    unsafe void Upscale()
+    {
+        int W = _scr.Width, H = _scr.Height, gw = _gw, gh = _gh; float q = _q; var src = _buf!;
+        if (_xa == null)
+        {
+            _xa = new int[W]; _xb = new int[W]; _xt = new float[W];
+            for (int x = 0; x < W; x++) { float fx = (x + 0.5f) / q - 0.5f; int x0 = (int)MathF.Floor(fx); _xt[x] = fx - x0; _xa[x] = Math.Clamp(x0, 0, gw - 1) * 4; _xb[x] = Math.Clamp(x0 + 1, 0, gw - 1) * 4; }
+        }
+        int[] xa = _xa, xb = _xb!; float[] xt = _xt!; IntPtr bits = _bits;
+        System.Threading.Tasks.Parallel.For(0, H, y =>
+        {
+            float fy = (y + 0.5f) / q - 0.5f; int y0 = (int)MathF.Floor(fy); float ty = fy - y0;
+            int ra = Math.Clamp(y0, 0, gh - 1) * gw * 4, rb = Math.Clamp(y0 + 1, 0, gh - 1) * gw * 4;
+            byte* d = (byte*)bits + (long)y * W * 4;
+            for (int x = 0; x < W; x++)
+            {
+                int a = xa[x], b = xb[x]; float tx = xt[x];
+                for (int c = 0; c < 4; c++)
+                {
+                    float top = src[ra + a + c] + (src[ra + b + c] - src[ra + a + c]) * tx, bot = src[rb + a + c] + (src[rb + b + c] - src[rb + a + c]) * tx;
+                    d[x * 4 + c] = (byte)(top + (bot - top) * ty);
+                }
+            }
+        });
+    }
+
+    /// box blur, rows then columns, `times` over (3 times is close to a gaussian); edges held
+    void Blur(float[] from, float[] to, int r, int times)
+    {
+        int W = _gw, H = _gh; Array.Copy(from, to, from.Length);
+        var b = _tmp!;
+        for (int it = 0; it < times; it++)
+        {
+            System.Threading.Tasks.Parallel.For(0, H, y =>
+            {
+                int o = y * W * 4; float inv = 1f / (2 * r + 1);
+                for (int c = 0; c < 4; c++)
+                {
+                    float sum = 0;
+                    for (int x = -r; x <= r; x++) sum += to[o + Math.Clamp(x, 0, W - 1) * 4 + c];
+                    for (int x = 0; x < W; x++)
+                    {
+                        b[o + x * 4 + c] = sum * inv;
+                        sum += to[o + Math.Min(W - 1, x + r + 1) * 4 + c] - to[o + Math.Max(0, x - r) * 4 + c];
+                    }
+                }
+            });
+            System.Threading.Tasks.Parallel.For(0, W, x =>
+            {
+                float inv = 1f / (2 * r + 1);
+                for (int c = 0; c < 4; c++)
+                {
+                    float sum = 0;
+                    for (int y = -r; y <= r; y++) sum += b[(Math.Clamp(y, 0, H - 1) * W + x) * 4 + c];
+                    for (int y = 0; y < H; y++)
+                    {
+                        to[(y * W + x) * 4 + c] = sum * inv;
+                        sum += b[(Math.Min(H - 1, y + r + 1) * W + x) * 4 + c] - b[(Math.Max(0, y - r) * W + x) * 4 + c];
+                    }
+                }
+            });
+        }
+    }
+
+    /// light-painting: a hot head, a tail that cools behind it (its fine strands parting a little), the swoop shrinking away
+    /// behind the head, and the frame part staying lit. Nothing fades: lines get thinner until they are gone
+    void DrawStroke(Graphics g, Stroke s, double t, double flash, double shrink, bool glow)
+    {
+        double head = s.HeadAt(t);
+        if (head <= 0) return;
+        int hi = Math.Min(s.P.Length - 1, (int)(head / Step));
+        double swoopGone = t > s.End ? Math.Clamp((t - s.End) / 0.6, 0, 1) : 0;
+        double frameLit = 0.6 + 0.4 * flash;
+        const int Lv = 20, Wq = 60;
+        var lv = new int[hi + 1]; var wq = new int[hi + 1];
+        for (int i = 0; i <= hi; i++)
+        {
+            double d = head - i * Step;
+            double b = Math.Exp(-d / (380.0 * _y.Tail)), wf = s.Thick(i) * shrink;            // the hot tail
+            if (i < s.FrameFrom) { b = Math.Max(b, 0.45); wf *= Math.Clamp(1 - d / (1500.0 * _y.Tail), 0, 1) * (1 - swoopGone); }     // the swoop thins out behind the head
+            else b = Math.Max(b, frameLit);
+            lv[i] = (int)Math.Round(Math.Clamp(b, 0, 1) * Lv);
+            wq[i] = (int)Math.Round(Math.Clamp(wf / 4, 0, 1) * Wq);
+        }
+        // runs of the same brightness and width as one line each (few calls, no seams)
+        for (int pass = glow ? 0 : 2; pass < (glow ? 1 : 4); pass++)
+        {
+            int i0 = 0;
+            while (i0 < hi)
+            {
+                int i1 = i0 + 1;
+                while (i1 < hi && lv[i1] == lv[i0] && wq[i1] == wq[i0]) i1++;
+                if (lv[i0] > 0 && wq[i0] > 0) Run(g, s, i0, i1, lv[i0] / (double)Lv, wq[i0] * 4.0 / Wq, pass);
+                i0 = i1;
+            }
+        }
+        // the head: a white-hot spot in its colour's glow; it shrinks away once the stroke is done
+        double hb = (t > s.End ? Math.Max(0, 1 - (t - s.End) / 0.35) : 1) * shrink * s.Thick(hi);
+        if (hb > 0.02)
+        {
+            var h = s.P[hi];
+            if (glow)     // a bright spot for the blur to spread: the head blooms most
+            {
+                float r = (float)(9 * hb); using var br = new SolidBrush(s.Col); g.FillEllipse(br, h.X - r, h.Y - r, r * 2, r * 2);
+                r = (float)(4.5 * hb); using var wb = new SolidBrush(s.Core); g.FillEllipse(wb, h.X - r, h.Y - r, r * 2, r * 2);
+            }
+            else
+                for (int i = 1; i >= 0; i--)
+                {
+                    float r = (float)((i == 0 ? 3.2 : 5.5) * hb);
+                    using var br = new SolidBrush(Color.FromArgb(i == 0 ? 255 : 200, i == 0 ? Color.White : s.Core));
+                    g.FillEllipse(br, h.X - r, h.Y - r, r * 2, r * 2);
+                }
+        }
+    }
+
+    void Run(Graphics g, Stroke s, int i0, int i1, double b, double wf, int pass)
+    {
+        var pts = new PointF[i1 - i0 + 1];
+        float w; int a; Color col; int strands = 1; float spread = 0;
+        switch (pass)
+        {
+            case 0:     // what feeds the glow: only what is brighter than the threshold
+                double th = Math.Clamp(_y.Threshold, 0, 0.95), k = Math.Max(0, (b - th) / (1 - th));
+                w = 6; a = (int)(255 * k); col = s.Col; break;
+            case 2: w = 4.2f; a = (int)(180 * b); col = s.Col; break;
+            default: w = (float)(1.1 + 1.3 * b); a = (int)(255 * Math.Min(1, b * 1.3)); col = s.Core; strands = 3; spread = (float)(3.5 * (1 - b) * wf); break;     // hot core, strands part in the old tail
+        }
+        w *= (float)wf;
+        if (a <= 0 || w < 0.25f) return;
+        using var pen = new Pen(Color.FromArgb(Math.Min(255, a), col), w) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round, LineJoin = System.Drawing.Drawing2D.LineJoin.Round };
+        for (int k = 0; k < strands; k++)
+        {
+            float off = strands == 1 ? 0 : (k - 1) * spread;
+            for (int i = i0; i <= i1; i++) pts[i - i0] = new PointF(s.P[i].X + s.Nrm[i].X * off, s.P[i].Y + s.Nrm[i].Y * off);
+            if (pts.Length >= 2) g.DrawLines(pen, pts);
+        }
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)] struct POINT { public int x, y; }
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)] struct SIZE { public int cx, cy; }
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, Pack = 1)] struct BLENDFUNCTION { public byte BlendOp, BlendFlags, SourceConstantAlpha, AlphaFormat; }
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    struct BITMAPINFOHEADER { public int biSize, biWidth, biHeight; public short biPlanes, biBitCount; public int biCompression, biSizeImage, biXPelsPerMeter, biYPelsPerMeter, biClrUsed, biClrImportant; }
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, ref POINT pptDst, ref SIZE psize, IntPtr hdcSrc, ref POINT pptSrc, int crKey, ref BLENDFUNCTION pblend, int dwFlags);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern IntPtr CreateDIBSection(IntPtr hdc, ref BITMAPINFOHEADER bmi, uint usage, out IntPtr bits, IntPtr section, uint offset);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr hdc, IntPtr obj);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr obj);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr hdc);
+
+    /// shows the splash on its own thread and plays the start sound; call Ready() + Join() on what comes back once the main window is made
+    public static (Splash? s, Thread? th) Start()
+    {
+        if (SplashStyle.Load().Sound) Sfx.Play("startup.wav");
+        Splash? made = null; using var ok = new ManualResetEventSlim();
+        var th = new Thread(() =>
+        {
+            try { made = new Splash(); } catch (Exception) { }
+            ok.Set();
+            if (made != null) try { Application.Run(made); } catch (Exception) { }
+        }) { IsBackground = true };
+        th.SetApartmentState(ApartmentState.STA); th.Start();
+        ok.Wait(5000);
+        return (made, th);
     }
 }
 
@@ -454,6 +878,7 @@ static class Program
         Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        if (a.Contains("--splash-lab")) { Application.Run(new SplashLab()); return 0; }
         if (game == null)
         {
             MessageBox.Show("Put this program into your Blur folder (next to Blur.exe), or start it with --game \"<Blur folder>\".", "Blur Map Builder (C#)");
@@ -473,15 +898,9 @@ static class Program
         if (!a.Contains("--selftest") && !a.Contains("--selftest2") && !SetupWindow.Run()) return 1;
         Directory.CreateDirectory(Paths.Work); Directory.CreateDirectory(Paths.Tracks);
         bool test = a.Contains("--selftest") || a.Contains("--selftest2");
-        Splash? splash = test ? null : new Splash();
-        splash?.Show(); splash?.Refresh();
+        var (splash, splashTh) = test ? (null, null) : Splash.Start();
         var f = new MainForm(test);
-        if (splash != null)
-        {
-            var hold = new ApplicationContext(splash);
-            splash.Finish(() => { });
-            Application.Run(hold);
-        }
+        if (splash != null) { splash.Ready(); splashTh!.Join(15000); }
         if (test)
         {
             string o = a[a.IndexOf(a.Contains("--selftest") ? "--selftest" : "--selftest2") + 1];

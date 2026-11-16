@@ -191,6 +191,8 @@ public sealed partial class MainForm
         if (m.Truthy("laps")) R("Laps", m.Int("laps").ToString(), () => SetLaps(-1), () => SetLaps(1));
         _props.Controls.Add(Theme.Check("Auto bridges where the road crosses", !m.ContainsKey("auto_bridges") || m.Truthy("auto_bridges"), v => Edit(() => m["auto_bridges"] = v)));
         _props.Controls.Add(Theme.Check("Obstacles (containers, barrels)", m.Truthy("obstacles"), v => Edit(() => m["obstacles"] = v)));
+        _props.Controls.Add(Look.Tip(Theme.Check("Road side walls (solid road edges)", Bmb.Core.Layout.RoadWalls(m), v => Edit(() => m["road_walls"] = v)),
+            "On: the road has solid walls on both sides. Off: cars can drive off the road (e.g. onto a map made of your own .glb models). Draw your own walls with the Wall tool (W)"));
         L("Power-ups: " + (m["pickups"] is List<object?> l ? $"{l.Count} items" : "automatic"));
         R("Rows every", $"{Bmb.Core.Layout.PickupStep(m):0} m", () => MapNum("pickup_step", -25, 50, 600, 150), () => MapNum("pickup_step", 25, 50, 600, 150));
         R("Power-ups per row", Bmb.Core.Layout.RowSize(m).ToString(), () => MapNum("pickup_per_row", -1, 1, 9, 5), () => MapNum("pickup_per_row", 1, 1, 9, 5));

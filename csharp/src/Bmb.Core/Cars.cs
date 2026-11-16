@@ -322,19 +322,30 @@ public static class CarModel
     }
 
     /// all triangles of the car as the side view sees them (car_parts): (x y z ...), and the tyres on their own
+    /// the game car an imported body is fitted around: the replaced car (its wheels are where the game puts them), else the body car
+    public static string FitCar(JObj car) => car.Truthy("body_glb") ? CarGlb.Container : car.Str("base")!;
+
+    /// the fit of an imported body; a replaced car keeps its own wheel spots (its handling places them), so no wheel spacing
+    public static JObj FitOf(JObj car)
+    {
+        if (!car.Truthy("body_glb")) return new JObj();
+        return car.Obj("glb_fit") ?? new JObj();
+    }
+
     internal static (List<float[]> All, List<float[]> Tyres) CarParts(Pak root, JObj car)
     {
         string bas = car.Str("base")!, wheels = car.Truthy("wheels") ? car.Str("wheels")! : bas;
         var body = ReadGameCar(root, bas);
         var whl = wheels != bas ? ReadGameCar(root, wheels) : null;
-        var fit = car.Obj("glb_fit") ?? new JObj();
+        var fit = FitOf(car);
+        var refCar = car.Truthy("body_glb") ? ReadGameCar(root, FitCar(car)) : body;     // where the wheels are (an imported body: its container's)
         var all = new List<float[]>(); var tyres = new List<float[]>();
-        if (car.Truthy("body_glb")) all.Add(FitGlb(ReadGlbBody(Path.Combine(Paths.Tracks, "cars", car.Str("body_glb")!)), body, fit));
+        if (car.Truthy("body_glb")) all.Add(FitGlb(ReadGlbBody(Path.Combine(Paths.Tracks, "cars", car.Str("body_glb")!)), refCar, fit));
         else foreach (var (k, v) in body.Tris) if (!k.Contains('|') && !(whl != null && k == "rim") && (k.Split('|')[0] is not ("tyre"))) all.AddRange(v);
         var src = whl ?? body;
         foreach (var c in Corners)
         {
-            if (!body.Centre.TryGetValue(c, out var at) || !src.Centre.TryGetValue(c, out var frm)) continue;
+            if (!refCar.Centre.TryGetValue(c, out var at) || !src.Centre.TryGetValue(c, out var frm)) continue;
             double[] to = { at[0] + Math.Sign(at[0]) * fit.Num("track") / 2, at[1], at[2] + Math.Sign(at[2]) * fit.Num("wb") / 2 };
             foreach (var kind in new[] { "tyre", "rim" })
                 if (src.Tris.TryGetValue(kind + "|" + c, out var l))
@@ -355,6 +366,9 @@ public static class CarGlb
     const string TrimFx = "veh_default_b_c_f";
     static readonly string[] Still = { "e_exterior", "e_interior" };
     public static readonly string[] GlbBody = { "Opel_AstraExtreme_Stock", "Bowler_Nemesis_Stock", "Nissan_Navara_Rat", "Nissan_Navara_OffRoad" };
+    /// the game model every imported body is written into: the one with the most room (about 14,600 triangles), whatever the class.
+    /// (GlbBody stays the class's start car for a new car's handling.)
+    public const string Container = "Bowler_Nemesis_Stock";
     static readonly Dictionary<int, int> TypeSize = new() { [6] = 12, [0xB] = 4, [8] = 4, [9] = 8, [0xA] = 4 };
     static readonly double[] BuriedBox = { -0.01, -20.0, -0.01, 0.01, -19.99, 0.01 };
     static readonly Regex Level = new("\\x1c\\x00\\x00\\x00(....)(....)\\x01\\x00\\x00\\x00(....)DXT1\\x00\\x00\\x00\\x00\\x03\\x00\\x00\\x00RA\\x00\\x00(....)", RegexOptions.Singleline | RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -512,18 +526,18 @@ public static class CarGlb
 
     public static byte[] GlbModel(Pak root, JObj car, string glbPath, Action<string> log)
     {
-        var data = (byte[])CarModel.ModelBytes(root, CarModel.ModelPath(car.Str("base")!)).Clone();
+        var data = (byte[])CarModel.ModelBytes(root, CarModel.ModelPath(Container)).Clone();
         var M = CpModel.Read(data);
         var (meshes, rooms) = Rooms(M);
         int vroom = rooms.Sum(r => r.M.Data1[0].VCount), iroom = rooms.Sum(r => IndexRoom(r.M));
         var raw = CarModel.ReadGlbBody(glbPath);
-        var fitted = CarModel.FitGlb(raw, CarModel.ReadGameCar(root, car.Str("base")!), car.Obj("glb_fit") ?? new JObj());
+        var fitted = CarModel.FitGlb(raw, CarModel.ReadGameCar(root, CarModel.FitCar(car)), CarModel.FitOf(car));
         var tri = fitted.Select(v => (double)v).ToArray(); var uv = raw.Uv.Select(v => (double)v).ToArray();
         var (pts, uvs, faces) = WeldUv(tri, uv);
         int placed = Place(data, M, meshes, rooms, pts, uvs, faces);
         log($"   imported body: {faces.Count} triangles, {placed} placed in {rooms.Count} trim parts (room {vroom} points, {iroom} indices)");
         if (placed < faces.Count)
-            log($"   WARNING: the class's body car {car.Str("base")} has room for only part of this body - {faces.Count - placed} of its {faces.Count} triangles are missing (holes). Make the .glb smaller (Blender: Decimate) - the Custom car tab says to about how many triangles.");
+            log($"   WARNING: the body model ({Container}) has room for only part of this body - {faces.Count - placed} of its {faces.Count} triangles are missing (holes). Make the .glb smaller (Blender: Decimate) - the Custom car tab says to about how many triangles.");
         // wheel spots, only for the boxes
         var extra = new List<double[]>();
         var spots = new HashSet<(float, float, float)>();
@@ -1161,6 +1175,7 @@ public static partial class CarBuild
         Pak? rootSrc = null;
         var names = InternalNames(cars);
         var added = new List<uint>();
+        var replaced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (int i = 0; i < cars.Count; i++)
         {
             var car = cars[i]; string name = names[i];
@@ -1175,10 +1190,17 @@ public static partial class CarBuild
             Db amax = new(amaxD), rp = new(rpD);
             int bi = amax.Cars()[bas];
             var (rpVals, carVals) = Handling(car, amax, rp);
-            int ri = rp.ObjOfUid(amax.RefUid(bi, "dynamics")), rt = rp.K.Objects[ri].Blocks[0].Type;
+            int rb = rp.ObjOfUid(amax.RefUid(bi, "dynamics")), ri = rb, rt = rp.K.Objects[ri].Blocks[0].Type;
+            // a replacer: the replaced car's own handling, but the wheels where this car has them (the game puts each wheel where
+            // the physics geometry says), so the whole look - body, tyres and their spots - is this car's
+            string? replaceOf = Replaces(car);
+            bool replacing = replaceOf != null && amax.Cars().ContainsKey(replaceOf);
+            if (replacing) { ri = rp.ObjOfUid(amax.RefUid(amax.Cars()[replaceOf!], "dynamics")); rpVals = new(); }
+            bool glbBody = car.Truthy("body_glb");
+            if (glbBody) rb = rp.ObjOfUid(amax.RefUid(amax.Cars()[CarGlb.Container], "dynamics"));     // its wheels sit where the container's do
             var fit = car.Truthy("body_glb") ? car.Obj("glb_fit") ?? new JObj() : new JObj();
             foreach (var (f, d) in new[] { ("geometry.wheelBase", fit.Num("wb")), ("geometry.trackWidthFront", fit.Num("track")), ("geometry.trackWidthRear", fit.Num("track")) })
-                if (d != 0) rpVals[f] = rp.Get(ri, f) + d;
+                if (d != 0 || replacing || glbBody) rpVals[f] = rp.Get(rb, f) + d;
             rpD = KslfWrite.CloneObjectAny(rpD, ri, null, dynUid, (data, pool, blocks) =>
             {
                 foreach (var (f, v) in rpVals) rp.Set(data, blocks[0], rt, f, v);
@@ -1217,7 +1239,7 @@ public static partial class CarBuild
             long mph = CarsData.TopSpeed((int)car.Int("class"), s2.Int("speed"));
             sets["LocString"] = Loc0 + (uint)i; sets["dynamics"] = dynRow; sets["UiSpeed"] = s2.Int("speed"); sets["UiAcceleration"] = s2.Int("acceleration"); sets["UiDrift"] = s2.Int("drift");
             sets["UiGrip"] = s2.Int("grip"); sets["UiStrength"] = s2.Int("strength"); sets["UiMaxSpeed"] = mph; sets["GameplayTopSpeed"] = mph; sets["BossAbilitySlot"] = 0; sets["class"] = car.Int("class");
-            if (car.Truthy("body_glb")) sets["DriverOffset.vy"] = amax.Get(bi, "DriverOffset.vy") - DriverDown;
+            if (car.Truthy("body_glb")) sets["DriverOffset.vy"] = amax.Get(amax.Cars()[CarGlb.Container], "DriverOffset.vy") - DriverDown;
             // the sound: another game car's engine + wheel sound fields, copied byte for byte (references, numbers, flags)
             string? sound = car.Truthy("sound") ? car.Str("sound") : null;
             int si = sound != null && sound != bas && amax.Cars().TryGetValue(sound, out int sIdx) ? sIdx : -1;
@@ -1273,6 +1295,22 @@ public static partial class CarBuild
             }
             int iconOff = amax.Field(vt, "UiIconName").Off;
             var amaxNow = amax;
+            // a car replacer: the game car keeps its record (name, handling, stats, class, paints - the same online), and gets this
+            // car's wheels and sound here; its body comes with the root pack (ModelFiles). No new car is added.
+            if (Replaces(car) is { } target)
+            {
+                if (!amax.Cars().TryGetValue(target, out int ti)) { log($"custom car {car.Str("name")}: the car to replace, {target}, was not found - skipped"); continue; }
+                if (!replaced.Add(target)) log($"   two of your cars replace the {target}: the last one wins");
+                var keep = new[] { "dynamics", "wheelScaleFront", "wheelScaleRear", "wheelDepthFront", "wheelDepthRear", "DriverOffset.vy" };
+                amaxD = KslfWrite.EditObject(amaxD, ti, ctx =>
+                {
+                    foreach (var f in keep) if (sets.TryGetValue(f, out double v)) amaxNow.Set(ctx.Data, ctx.Blocks[0], vt, f, v);
+                    foreach (var (off, bytes) in soundBytes) for (int k = 0; k < bytes.Length; k++) ctx.Data[ctx.Blocks[0] + off + k] = bytes[k];
+                    if (ownRow >= 0) { amaxNow.Set(ctx.Data, ctx.Blocks[0], vt, "vehicleAudioEntity", ownRow); amaxNow.Set(ctx.Data, ctx.Blocks[0], vt, "aiVehicleAudioEntity", aiRow); }
+                });
+                log($"custom car {car.Str("name")} replaces the {target}: body {bas}, wheels {wheels} (where this car has them), sound {(ownRow >= 0 ? "own" : si >= 0 ? sound : "the " + target + "'s")}; the rest of the handling and the stats stay the {target}'s");
+                continue;
+            }
             amaxD = KslfWrite.CloneObjectAny(amaxD, bi, name, carUid, (data, pool, blocks) =>
             {
                 foreach (var (f, v) in sets) amaxNow.Set(data, blocks[0], vt, f, v);
@@ -1358,6 +1396,8 @@ public static partial class CarBuild
         return (o.ToArray(), amax.Get(wi, "wheelDepthFront"));
     }
 
+    public static string WheelFileIn(byte[] amax, string car) => WheelFile(new Db(amax), car);
+    static string TryWheelFile(Db amax, string car) { try { return WheelFile(amax, car); } catch (Exception) { return ""; } }
     static string WheelFile(Db amax, string car)
     {
         int wi = amax.ObjOfUid(amax.RefUid(amax.Cars()[car], "wheelModel"));
@@ -1384,6 +1424,9 @@ public static partial class CarBuild
         return o;
     }
 
+    /// the game car a custom car replaces (its "replace"), or null for a new car
+    public static string? Replaces(JObj car) => car.Truthy("replace") ? car.Str("replace") : null;
+
     public static IEnumerable<KeyValuePair<string, byte[]>> ModelFiles(JObj wld, Pak src, Action<string> log)
     {
         var cars = WorldCars(wld);
@@ -1394,10 +1437,24 @@ public static partial class CarBuild
         {
             var car = cars[i]; string name = names[i].ToLowerInvariant();
             string bas = car.Str("base")!;
-            bool other = car.Truthy("wheels") && car.Str("wheels") != bas;
+            string wheelCar = car.Truthy("wheels") ? car.Str("wheels")! : bas, modelCar = car.Truthy("body_glb") ? CarGlb.Container : bas;
+            bool other = !wheelCar.Equals(modelCar, StringComparison.OrdinalIgnoreCase) && (car.Truthy("wheels") || car.Truthy("body_glb"));
             byte[]? body = car.Truthy("body_glb") ? CarGlb.GlbModel(src, car, Path.Combine(Paths.Tracks, "cars", car.Str("body_glb")!), log) : other ? (byte[])CarModel.ModelBytes(src, CarModel.ModelPath(bas)).Clone() : null;
-            if (other) CarGlb.SwapWheels(body!, CarModel.ModelBytes(src, CarModel.ModelPath(bas)), src, car.Str("wheels")!, log);
-            if (body != null) o.Add(new("\\models\\vehicles\\" + name + ".model", body));
+            if (other) CarGlb.SwapWheels(body!, CarModel.ModelBytes(src, CarModel.ModelPath(modelCar)), src, wheelCar, log);
+            if (Replaces(car) is { } target)
+            {
+                // a replacer: the game car's own model file gets this body (the same file name, so its record is not changed)
+                if (body == null && !target.Equals(bas, StringComparison.OrdinalIgnoreCase)) body = (byte[])CarModel.ModelBytes(src, CarModel.ModelPath(bas)).Clone();
+                if (body != null) o.Add(new("\\" + CarModel.ModelPath(target), body));
+                // its own wheel file too (when no other car uses it): whatever loads the wheels by that name gets these wheels
+                string tw = WheelFile(amax, target), cw = WheelFile(amax, car.Truthy("wheels") ? car.Str("wheels")! : bas);
+                // (the game shows a car's wheels from its own file; a Legend / boss version that shares the file gets them too)
+                var sharing = amax.Cars().Keys.Where(k => !k.Equals(target, StringComparison.OrdinalIgnoreCase) && TryWheelFile(amax, k).Equals(tw, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (sharing.Count > 0) log($"   the {target}'s wheel file is shared with {string.Join(", ", sharing)}: they get these wheels too");
+                if (!tw.Equals(cw, StringComparison.OrdinalIgnoreCase))
+                    o.Add(new($"\\models\\vehicles\\wheels\\{tw.ToLowerInvariant()}.model", CarModel.ModelBytes(src, $"models\\vehicles\\wheels\\{cw.ToLowerInvariant()}.model")));
+            }
+            else if (body != null) o.Add(new("\\models\\vehicles\\" + name + ".model", body));
             string w = WheelFile(amax, car.Truthy("wheels") ? car.Str("wheels")! : car.Str("base")!).ToLowerInvariant();
             o.Add(new("\\models\\vehicles\\wheels\\" + name + ".model", CarModel.ModelBytes(src, $"models\\vehicles\\wheels\\{w}.model")));
         }
