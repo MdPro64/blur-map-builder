@@ -1177,3 +1177,157 @@ Back to the normal view ||| Обычный вид
 already replaced by {} ||| уже заменена машиной {}
 The {} is already replaced by your car "{}" - a game car can be replaced by one of your cars only. Pick another, or change "{}" first. ||| {} уже заменена вашей машиной «{}» - машину игры можно заменить только одной вашей машиной. Выберите другую или сначала измените «{}».
 In game the {} gets this car's body, wheels and sound - online too, on your screen (other players see the normal {}). Its wheels sit where yours do; the rest of its handling, its stats and class stay the {}'s. It is not added as a new car. You see it after Build + install. ||| В игре {} получит кузов, колёса и звук этой машины - и в онлайне, на вашем экране (другие игроки видят обычную {}). Колёса стоят там же, где у вашей; остальное управление, характеристики и класс остаются как у {}. Новая машина не добавляется. Видно после сборки.
+Logo ||| Логотип
+⇩ Import logo (.png) ||| ⇩ Импорт логотипа (.png)
+A picture of the maker logo, best a .png with a see-through background. Shown in the garage and car select. ||| Картинка логотипа марки, лучше .png с прозрачным фоном. Видна в гараже и при выборе машины.
+Game logo ||| Логотип игры
+the maker's game logo ||| логотип марки из игры
+{} is missing - the game logo stays ||| {} не найден - остаётся логотип игры
+Logo {} is on {}. You see it in the garage after Build + install. ||| Логотип {} стоит на {}. Он будет виден в гараже после Build + install.
+This picture can't be used: {} ||| Эту картинку нельзя использовать: {}
+The car shows its maker's game logo again ||| У машины снова логотип марки из игры
+Logo picture ||| Картинка логотипа
+{} deleted, and its files went to the Recycle Bin: {} ||| {} удалена, её файлы отправлены в корзину: {}
+⇧ Export a game car (.glb) ||| ⇧ Экспорт машины из игры (.glb)
+Save a game car's own model as a .glb, to change it in Blender and import it back as a body ||| Сохранить модель машины из игры в .glb, чтобы изменить её в Blender и загрузить обратно как кузов
+Class {} ||| Класс {}
+Save the game car's model ||| Сохранить модель машины из игры
+Saving {}... ||| Сохранение {}...
+Cannot save the car: {} ||| Не удалось сохранить машину: {}
+Saved {} - open it in Blender. To use it as a body, make it smaller (Decimate) to about {} triangles, then Import body. ||| Сохранено: {} - откройте в Blender. Чтобы использовать как кузов, уменьшите (Decimate) примерно до {} треугольников, затем Import body.
+MY OWN OTHER SOUNDS ||| МОИ ДРУГИЕ ЗВУКИ
+Supercharger whine ||| Вой нагнетателя
+Turbo spool ||| Раскрутка турбины
+Turbo blow-off ||| Сброс турбины
+Turbo air ||| Шум воздуха турбины
+Gear shift ||| Переключение передач
+Backfire pops ||| Выстрелы выхлопа
+The whine of a supercharger (only engines that have one) ||| Вой нагнетателя (только у моторов с ним)
+The turbo whistle while it spins up (only turbo engines) ||| Свист турбины при раскрутке (только турбомоторы)
+The pssh when you lift off the gas (only turbo engines) ||| Пшик при сбросе газа (только турбомоторы)
+The air rush of the turbo (only turbo engines) ||| Шум воздуха турбины (только турбомоторы)
+The clunk of a gear change ||| Звук переключения передачи
+The pops and bangs from the exhaust ||| Хлопки и выстрелы из выхлопа
+Play your sound for this (press again to stop) ||| Прослушать ваш звук (нажмите ещё раз, чтобы остановить)
+↺ Game sound ||| ↺ Звук игры
+Back to the engine's own sound for this ||| Вернуть звук мотора из игры
+(the engine's own) ||| (звук мотора из игры)
+{}  (missing!) ||| {}  (нет файла!)
+{} (.wav) ||| {} (.wav)
+{}: your sound {} is on {}. You hear it after Build + install. ||| {}: ваш звук {} стоит на {}. Он будет слышен после Build + install.
+Each one is a .wav of just that sound. Turbo and supercharger sounds are only heard on engines that have them (pick one in the list above). Gear shift and backfire pops work on every engine. Sounds that play once (blow-off, gear, pops) keep your recording's length - keep them short. ||| Каждый - .wav только с этим звуком. Звуки турбины и нагнетателя слышны только у моторов, где они есть (выберите такой в списке выше). Переключение передач и выстрелы работают на любом моторе. Звуки, играющие один раз (сброс, передача, выстрелы), остаются вашей длины - делайте их короткими.
+Exhaust flames ||| Пламя выхлопа
+Where the flames come out of the exhaust. Drag the orange dots in the car preview ||| Откуда выходит пламя из выхлопа. Перетащите оранжевые точки в просмотре машины
++ Pipe ||| + Труба
+− Pipe ||| − Труба
+One more exhaust pipe ||| Ещё одна выхлопная труба
+One exhaust pipe less ||| На одну выхлопную трубу меньше
+↺ Game spots ||| ↺ Места из игры
+Back to where the game car's pipes are ||| Вернуть трубы туда, где они у машины из игры
+(this car has none) ||| (у этой машины их нет)
+{} pipe(s), {} - drag the fire dots in the preview ||| Труб: {}, {} - перетащите огненные точки в просмотре
+your spots ||| ваши места
+the game car's spots ||| места машины из игры
+Pipe {}: side {} m, up {} m, along {} m{}  (let go to keep it) ||| Труба {}: вбок {} м, вверх {} м, вдоль {} м{}  (отпустите, чтобы оставить)
+  (its twin on the other side moves with it) |||   (её пара с другой стороны двигается вместе)
+This car has no exhaust flames ||| У этой машины нет пламени выхлопа
+A car needs at least one pipe ||| У машины должна быть хотя бы одна труба
+8 pipes is the most ||| Больше 8 труб нельзя
+drag = turn the car,  blue circles = wheels,  orange = move the body,  diamond = its size,  fire = exhaust flames ||| тяните = поворот машины,  синие круги = колёса,  оранжевый = сдвиг кузова,  ромб = размер,  огонь = пламя выхлопа
+drag = turn the car,  fire dots = exhaust flames ||| тяните = поворот машины,  огненные точки = пламя выхлопа
+Zoom in (or the mouse wheel on the car) ||| Приблизить (или колесо мыши на машине)
+Zoom out (or the mouse wheel on the car) ||| Отдалить (или колесо мыши на машине)
+Gearbox whine ||| Вой коробки передач
+Gear crunch ||| Хруст передачи
+Damage hiss / fire ||| Шипение / огонь при поломке
+Tyres rolling ||| Шум шин по дороге
+Tyre skid / drift ||| Визг шин / дрифт
+Brake squeal ||| Визг тормозов
+Wheelspin ||| Пробуксовка
+The whine of the gearbox while driving fast ||| Вой коробки передач на скорости
+The crunch / grind of a missed gear ||| Хруст / скрежет при неудачном переключении
+The hiss and fire of a badly damaged engine ||| Шипение и огонь сильно разбитого мотора
+The tyres on the road (asphalt, concrete, cobbles, wood, metal) ||| Шины по дороге (асфальт, бетон, брусчатка, дерево, металл)
+The squeal of the tyres sliding sideways (drift) ||| Визг шин при скольжении боком (дрифт)
+The tyres when you brake hard ||| Шины при резком торможении
+The tyres spinning on the spot (burnout, fast start) ||| Шины, крутящиеся на месте (бёрнаут, резкий старт)
+Each one is a .wav of just that sound. Turbo and supercharger sounds are only heard on engines that have them (pick one in the list above); the gear, pop, damage and tyre sounds work on every car. Sounds that play once (blow-off, gear shift, gear crunch, pops) keep your recording's length - keep them short; the others loop, so 1-3 seconds of a steady sound is best. ||| Каждый - .wav только с этим звуком. Звуки турбины и нагнетателя слышны только у моторов, где они есть (выберите такой в списке выше); звуки передач, выстрелов, поломки и шин работают на любой машине. Звуки, играющие один раз (сброс, переключение, хруст передачи, выстрелы), остаются вашей длины - делайте их короткими; остальные повторяются, лучше 1-3 секунды ровного звука.
+Front wheels side to side ||| Передние колёса вбок
+Rear wheels side to side ||| Задние колёса вбок
+{} wheels side to side {} m,  front to back {} m  (let go to keep it) ||| {} колёса вбок {} м,  вперёд-назад {} м  (отпустите, чтобы оставить)
+Rear ||| Задние
+Front ||| Передние
+The game's {}... ||| Звук игры: {}...
+Cannot play the game sound: {} ||| Не удалось проиграть звук игры: {}
+The {}'s engine has no {} - pick an engine that has one above ||| У мотора {} нет звука «{}» - выберите выше мотор, где он есть
+The game's {} ({}). Import a .wav to change it. ||| Звук игры: {} ({}). Импортируйте .wav, чтобы заменить его.
+Engine sound (.wav or .mp3) ||| Звук мотора (.wav или .mp3)
+{} (.wav or .mp3) ||| {} (.wav или .mp3)
+⇩ Import sound... ||| ⇩ Импорт звука...
+A .wav or .mp3 recording of an engine at steady revs (1-3 seconds is enough); an .mp3 is turned into a .wav ||| Запись мотора на ровных оборотах в .wav или .mp3 (хватит 1-3 секунд); .mp3 превращается в .wav
+{} of at most {} pipe(s), {} - drag the fire dots in the preview ||| Труб: {} из {}, {} - перетащите огненные точки в просмотре
+The car it replaces has {} pipe(s) - that is the most ||| У заменяемой машины труб: {} - больше нельзя
+A new car has at most 2 pipes ||| У новой машины не больше 2 труб
+What do you want to install? ||| Что установить?
+A part you untick stays in the game exactly as the last install had it. ||| Часть без галочки остаётся в игре такой, как при прошлой установке.
+Maps (roads, objects, landscape, lighting) ||| Карты (дороги, объекты, рельеф, освещение)
+Custom cars (bodies, sounds, logos) ||| Свои машины (кузова, звуки, логотипы)
+Car skins ||| Скины машин
+   (changed since the last install) |||    (изменено после прошлой установки)
+   (no change) |||    (без изменений)
+Only skins: a quick install (only the skinned cars change). ||| Только скины: быстрая установка (меняются только машины со скинами).
+Tick at least one. ||| Отметьте хотя бы одно.
+Build + install ||| Build + install
+SHARE ||| ОБМЕН
+One file for another player: a map, a car or skins ||| Один файл для другого игрока: карта, машина или скины
+⇅ Export / Import ||| ⇅ Экспорт / Импорт
+EXPORT / IMPORT ||| ЭКСПОРТ / ИМПОРТ
+Export / Import ||| Экспорт / Импорт
+Make ONE file to give to another player. They press Import here and everything it needs is put in place. Then Build + install. ||| Сделайте ОДИН файл для другого игрока. Он нажимает здесь Импорт, и всё нужное встаёт на место. Затем Build + install.
+🗺  A map  (.blurmap) ||| 🗺  Карта  (.blurmap)
+The map you have open, with its menu picture, minimap, your 3D models on it and its location's lighting + sky picture. ||| Открытая карта с картинкой меню, мини-картой, вашими 3D-моделями на ней и освещением + небом её локации.
+This map: ||| Эта карта:
+⇧ Export map... ||| ⇧ Экспорт карты...
+⇩ Import map... ||| ⇩ Импорт карты...
+⛟  A custom car  (.blurcar) ||| ⛟  Своя машина  (.blurcar)
+The car with its settings, its imported body (.glb), all its own sounds and its logo. ||| Машина с настройками, загруженным кузовом (.glb), всеми своими звуками и логотипом.
+⇧ Export car... ||| ⇧ Экспорт машины...
+⇩ Import car... ||| ⇩ Импорт машины...
+🎨  Car skins  (.blurskin) ||| 🎨  Скины машин  (.blurskin)
+All your skins of one game car, and which of them are on. ||| Все ваши скины одной машины игры и какие из них включены.
+⇧ Export skins... ||| ⇧ Экспорт скинов...
+⇩ Import skins... ||| ⇩ Импорт скинов...
+(no custom car yet) ||| (своих машин ещё нет)
+(no skin yet) ||| (скинов ещё нет)
+Make a custom car first (Custom car tab) ||| Сначала сделайте свою машину (вкладка Custom car)
+Make a skin first (Car skins tab) ||| Сначала сделайте скин (вкладка Car skins)
+Export the car for another player ||| Экспорт машины для другого игрока
+Import a car from another player ||| Импорт машины от другого игрока
+Export the skins for another player ||| Экспорт скинов для другого игрока
+Import skins from another player ||| Импорт скинов от другого игрока
+Exported {} with {} file(s) to {}{} ||| {} экспортирована, файлов: {}, в {}{}
+Could not export: {} ||| Не удалось экспортировать: {}
+Could not import this file:
+{} ||| Не удалось импортировать файл:
+{}
+Imported the car '{}'{}. See it in the Custom car tab; Build + install to drive it. ||| Машина '{}' импортирована{}. Она во вкладке Custom car; Build + install, чтобы ездить.
+Exported {} skin picture(s) of the {} to {} ||| Экспортировано картинок скинов: {}, машина {}, в {}
+Imported {} skin picture(s) of the {}. See them in the Car skins tab; Build + install (or Build skins) to see them in game. ||| Импортировано картинок скинов: {}, машина {}. Они во вкладке Car skins; Build + install (или Build skins), чтобы увидеть в игре.
+EXPORT / IMPORT: one file for another player - a map (with its pictures, 3D models and sky), a custom car (with its body, sounds and logo) or skins ||| ЭКСПОРТ / ИМПОРТ: один файл для другого игрока - карта (с картинками, 3D-моделями и небом), своя машина (с кузовом, звуками и логотипом) или скины
+Turned off = stays in the game as the last install had it. ||| Выключено = остаётся в игре как при прошлой установке.
+Maps ||| Карты
+Roads, 3D objects, landscape, surface, lighting ||| Дороги, 3D-объекты, рельеф, покрытие, освещение
+Custom cars ||| Свои машины
+Bodies, wheels, sounds, logos, exhaust flames ||| Кузова, колёса, звуки, логотипы, пламя выхлопа
+Your paint on the game's cars ||| Ваша покраска машин игры
+FIRST INSTALL ||| ПЕРВАЯ УСТАНОВКА
+CHANGED ||| ИЗМЕНЕНО
+NO CHANGE ||| БЕЗ ИЗМЕНЕНИЙ
+Install ||| Установить
+Pick something ||| Выберите что-нибудь
+⬇  Install all ||| ⬇  Установить всё
+⚡  Install skins ||| ⚡  Установить скины
+⬇  Install {} parts ||| ⬇  Установить части: {}
+Quick: only the skinned cars change. ||| Быстро: меняются только машины со скинами.
+Turn on at least one. ||| Включите хотя бы одно.
+The parts that are off stay as they are in the game. ||| Выключенные части остаются в игре как есть.

@@ -8,7 +8,14 @@ using System.Text;
 
 namespace Bmb.Core;
 
-public sealed class BuildOptions { public bool Dry; public bool NoCars; public bool NoRoot; public Action<string> Log = Console.WriteLine; }
+public sealed class BuildOptions
+{
+    public bool Dry; public bool NoCars; public bool NoRoot; public Action<string> Log = Console.WriteLine;
+    /// the parts to update (an unticked one goes in as the last install had it - see Installed)
+    public bool Maps = true, Cars = true, Skins = true;
+    /// the world that was built (before ids were filled in): kept as the installed copy after a good install
+    public JObj? Built;
+}
 
 public static class Build
 {
@@ -760,7 +767,7 @@ public static class Build
         }
         if (!opt.NoCars) frontend = CarBuild.MenuPictures(frontend, wld);
         Add(FrontendBpr, frontend);
-        files.AddRange(Skins.BuildFiles(files, n => src.Read(n)!, log));      // the player's car skins, over whatever the build changed in those models
+        files.AddRange(Skins.BuildFiles(files, n => src.Read(n)!, log, Installed.SkinsFrom(opt)));      // the player's car skins, over whatever the build changed in those models
         // a later entry replaces an earlier one of the same name (Python's dict)
         var uniq = new Dictionary<string, byte[]>();
         foreach (var (k, v) in files) uniq[k] = v;
@@ -896,7 +903,9 @@ public static class Build
     {
         var log = opt.Log;
         Directory.CreateDirectory(Paths.FeWork);
-        var wld = World.AssignIds(World.Load());
+        var raw = Installed.ForBuild(World.Load(), opt);
+        opt.Built = Share.Copy(raw);
+        var wld = World.AssignIds(raw);
         ModelImport.Prepare(wld);
         string U = Paths.Unpacked;
         byte[] R(params string[] p) => File.ReadAllBytes(Path.Combine(new[] { U }.Concat(p).ToArray()));

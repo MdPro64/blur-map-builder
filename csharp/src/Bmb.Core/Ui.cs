@@ -270,7 +270,7 @@ public static class CarUi
         foreach (var c in new[] { "frontleft", "frontright", "backleft", "backright" })
         {
             if (!refCar.Centre.TryGetValue(c, out var at) || !src.Centre.TryGetValue(c, out var frm)) continue;
-            double[] to = { at[0] + Math.Sign(at[0]) * fit.Num("track") / 2, at[1], at[2] + Math.Sign(at[2]) * fit.Num("wb") / 2 };
+            double[] to = { at[0] + Math.Sign(at[0]) * CarGlb.Track(fit, c.StartsWith("back")) / 2, at[1], at[2] + Math.Sign(at[2]) * fit.Num("wb") / 2 };
             foreach (var kind in new[] { "tyre", "rim" })
                 if (src.Tris.TryGetValue(kind + "|" + c, out var l))
                     foreach (var a in l)
@@ -440,7 +440,8 @@ public static class CarUi
         return o;
     }
 
-    public static unsafe Bitmap Picture(Parts parts, byte[] paint, int size, double yaw, bool smooth, double pitch = -0.35, ViewInfo? info = null)
+    /// zoom: 1 = the whole car fits; pan: how far the car is moved on the picture (picture pixels, after the zoom)
+    public static unsafe Bitmap Picture(Parts parts, byte[] paint, int size, double yaw, bool smooth, double pitch = -0.35, ViewInfo? info = null, double zoom = 1, double panX = 0, double panY = 0)
     {
         int k = smooth ? 2 : 1, S = size * k;
         var kinds = parts.Kinds.Keys.OrderBy(s => s, StringComparer.Ordinal).ToList();
@@ -486,8 +487,8 @@ public static class CarUi
         for (int i = 0; i < tris.Length; i += 3) rad = Math.Max(rad, Math.Sqrt((tris[i] - ccx) * (tris[i] - ccx) + (tris[i + 2] - ccz) * (tris[i + 2] - ccz)));
         foreach (var q in arr) rad = Math.Max(rad, Math.Sqrt((q[0] - ccx) * (q[0] - ccx) + (q[2] - ccz) * (q[2] - ccz)));
         double spanX = 2 * rad, spanY = (bhiy - bloy) * Math.Abs(cp) + 2 * rad * Math.Abs(sp);
-        double scale = 0.9 * S / Math.Max(spanX, spanY);
-        double ccxr = ccx * cy - ccz * sy, cczr = ccx * sy + ccz * cy, mx = ccxr, my = ccy * cp + cczr * sp;
+        double scale = 0.9 * S / Math.Max(spanX, spanY) * zoom;
+        double ccxr = ccx * cy - ccz * sy, cczr = ccx * sy + ccz * cy, mx = ccxr - panX * k / scale, my = ccy * cp + cczr * sp + panY * k / scale;
         if (info != null) { info.Scale = scale / k; info.Mx = mx; info.My = my; info.Cy = cy; info.Sy = sy; info.Cp = cp; info.Sp = sp; info.Size = size; }
         double lx = 0.35, ly = 0.75, lz = -0.55, ll = Math.Sqrt(lx * lx + ly * ly + lz * lz); lx /= ll; ly /= ll; lz /= ll;
         var env = Env();
@@ -996,7 +997,44 @@ public static class ImportUi
 }
 
 // ---- .blurmap --------------------------------------------------------------------------------------------------------
-public sealed class BlurMapFile { public JObj Map = new(), Info = new(); public Dictionary<string, byte[]> Pics = new(); }
+public sealed class BlurMapFile
+{
+    public JObj Map = new(), Info = new(); public Dictionary<string, byte[]> Pics = new();
+    /// the imported models ("imports/NAME.glb" + ".json") and the sky picture ("sky/NAME") that came with it
+    public Dictionary<string, byte[]> Files = new();
+
+    /// puts the models and the sky into the program's folders, and points the map (and the settings' lighting) at them.
+    /// Returns how many models were added
+    public int PlaceExtras(JObj settings)
+    {
+        int added = 0;
+        var rename = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, data) in Files.Where(f => f.Key.StartsWith("imports/") && f.Key.EndsWith(".glb", StringComparison.OrdinalIgnoreCase)))
+        {
+            string file = name["imports/".Length..];
+            string here = Packs.Place(ModelImport.Folder, file, data);
+            string side = Path.Combine(ModelImport.Folder, here + ".json");
+            if (!File.Exists(side))
+            {
+                // its .json, with a free slot here
+                JObj sc = Files.TryGetValue(name + ".json", out var sj) && Json.Parse(Encoding.UTF8.GetString(sj)) is JObj j ? j : new JObj { ["name"] = Path.GetFileNameWithoutExtension(here), ["pieces"] = 1L };
+                var used = Directory.GetFiles(ModelImport.Folder, "*.glb.json").Select(f => { try { return ((JObj)Json.Load(f)!).Int("slot"); } catch (Exception) { return -1L; } }).ToHashSet();
+                sc["file"] = here; sc["slot"] = Enumerable.Range(0, 256).Select(i => (long)i).First(i => !used.Contains(i)); sc.Remove("source");
+                Json.Save(sc, side);
+                added++;
+            }
+            rename[file] = here;
+        }
+        foreach (var o in Map.Objs("objects"))
+            if ((o.Str("id") ?? "").StartsWith("import:") && rename.TryGetValue(o.Str("id")!["import:".Length..], out var n)) o["id"] = "import:" + n;
+        if (settings.Obj("lighting") is { } lt && lt.Truthy("sky_image"))
+        {
+            if (Files.TryGetValue(lt.Str("sky_image")!, out var sky)) lt["sky_image"] = "skies/" + Packs.Place(Path.Combine(Paths.Tracks, "skies"), Path.GetFileName(lt.Str("sky_image")!), sky);
+            else lt.Remove("sky_image");
+        }
+        return added;
+    }
+}
 
 public static class Share
 {
@@ -1020,6 +1058,22 @@ public static class Share
             string name = $"picture_{n}{Path.GetExtension(pics[n].Src).ToLowerInvariant()}";
             z.CreateEntryFromFile(pics[n].Src, name);
             pics[n].Set(name);
+        }
+        // the imported 3D models it uses (the .glb + its .json), and the location's own sky picture
+        var models = data.Objs("objects").Select(o => o.Str("id") ?? "").Where(id => id.StartsWith("import:")).Select(id => id["import:".Length..]).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        foreach (var mf in models)
+        {
+            string g = Path.Combine(ModelImport.Folder, mf);
+            if (!File.Exists(g)) continue;
+            z.CreateEntryFromFile(g, "imports/" + Packs.Plain(mf));
+            if (File.Exists(g + ".json")) z.CreateEntryFromFile(g + ".json", "imports/" + Packs.Plain(mf) + ".json");
+        }
+        settings = Copy(settings);
+        if (settings.Obj("lighting") is { } lt && lt.Truthy("sky_image"))
+        {
+            string sky = Path.Combine(Paths.Tracks, lt.Str("sky_image")!);
+            if (File.Exists(sky)) { string e = "sky/" + Packs.Plain(Path.GetFileName(sky)); z.CreateEntryFromFile(sky, e); lt["sky_image"] = e; }
+            else lt.Remove("sky_image");
         }
         void Text(string name, string s) { using var w = new StreamWriter(z.CreateEntry(name).Open(), new UTF8Encoding(false)); w.Write(s); }
         Text("map.json", Json.Dumps(data, 1));
@@ -1047,6 +1101,12 @@ public static class Share
                 {
                     using var s = e.Open(); using var ms = new MemoryStream(); s.CopyTo(ms);
                     o.Pics[e.FullName] = ms.ToArray();
+                }
+            foreach (var e in z.Entries)
+                if ((e.FullName.StartsWith("imports/") || e.FullName.StartsWith("sky/")) && e.FullName.Count(c => c == '/') == 1 && !e.FullName.Contains("..") && e.Length < 200L * 1024 * 1024)
+                {
+                    using var s = e.Open(); using var ms = new MemoryStream(); s.CopyTo(ms);
+                    o.Files[e.FullName] = ms.ToArray();
                 }
             return o;
         }

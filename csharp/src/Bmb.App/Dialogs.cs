@@ -191,9 +191,14 @@ VIEW
                 catch (Exception e) { bad.Add($"{loc.Str("name")} / {m.Str("name")}: {e.Message}"); }
         if (bad.Count > 0 && !_test && MessageBox.Show(this, string.Join("\n", bad) + "\n\nBuild anyway?", "Problems", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
         DoSave();
+        // what to update: the parts not ticked go in as the last install had them
+        var pick = _test ? (true, true, true) : PickParts();
+        if (pick == null) return;
+        var (pMaps, pCars, pSkins) = pick.Value;
+        bool skinsOnly = pSkins && !pMaps && !pCars && File.Exists(Path.Combine(Paths.PackDir, "root.pak"));
         Building = true; _build.Enabled = false; _build.Text = "Building...";
         var lines = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        var opt = new BuildOptions { Log = lines.Enqueue };
+        var opt = new BuildOptions { Log = lines.Enqueue, Maps = pMaps, Cars = pCars, Skins = pSkins };
         var log = new Form { Text = "Building", Width = 820, Height = 480, BackColor = Theme.Panel, StartPosition = FormStartPosition.CenterParent };
         Look.Dress(log, "build");
         var stage = new Label { Text = "Starting the build...", Dock = DockStyle.Fill, ForeColor = Color.White, Font = new Font("Segoe UI", 11f, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft };
@@ -236,6 +241,15 @@ VIEW
             try
             {
                 if (Play.GameRunning()) { lines.Enqueue("Blur is running: the level files can't be replaced. Close Blur and build again."); throw new InvalidOperationException("close Blur first"); }
+                if (skinsOnly)
+                {
+                    // only the skins: just the skinned cars' models in the installed pack change (fast)
+                    lines.Enqueue("Only the skins: putting them into the installed pack");
+                    var (on, back) = Skins.Install(lines.Enqueue);
+                    lines.Enqueue($"skins: {on} car(s) with your skin, {back} back to the game's picture");
+                }
+                else
+                {
                 Bmb.Core.Build.Run(opt);
                 double took = sw.Elapsed.TotalSeconds;
                 try { File.WriteAllText(BuildTimeFile, took.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)); } catch (IOException) { }
@@ -247,6 +261,9 @@ VIEW
                     if (!File.Exists(src)) continue;
                     File.Copy(src, dst + ".new", true);
                     File.Move(dst + ".new", dst, true);
+                }
+                try { if (opt.Built != null) Installed.Remember(opt.Built, opt); }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { lines.Enqueue("could not keep a copy of what was installed: " + e.Message); }
                 }
             }
             catch (Exception e) { err = e; lines.Enqueue(e.ToString()); }
@@ -272,6 +289,80 @@ VIEW
                 else if (!_test) MessageBox.Show(this, $"{msg}\n\nThe full log is in the Building window and in {BuildLog}", "Build failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
             });
         });
+    }
+
+    /// the "what to install" window: maps / cars / skins as cards, the changed ones on. Null = cancelled
+    (bool Maps, bool Cars, bool Skins)? PickParts()
+    {
+        (bool Maps, bool Cars, bool Skins) ch;
+        try { ch = Installed.Changed(D.World); } catch (Exception) { ch = (true, true, true); }
+        var (f, cm, cc, cs) = PickForm(ch, (Installed.HasMaps, Installed.HasCars, Installed.HasSkins));
+        using (f) return f.ShowDialog(this) == DialogResult.OK ? (cm.On, cc.On, cs.On) : null;
+    }
+
+    /// the window itself (also drawn to a picture by the look test)
+    static (Form F, PartCard Maps, PartCard Cars, PartCard Skins) PickForm((bool Maps, bool Cars, bool Skins) ch, (bool Maps, bool Cars, bool Skins) had)
+    {
+        var f = new Form
+        {
+            Text = "Build + install", FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false, ShowInTaskbar = false,
+            StartPosition = FormStartPosition.CenterParent, ClientSize = new Size(560, 430), BackColor = Theme.Panel, ForeColor = Theme.Text, Font = new Font("Segoe UI", 10f),
+        };
+        f.Controls.Add(new Label { Text = "What do you want to install?", Location = new Point(28, 22), AutoSize = true, Font = new Font("Segoe UI Semibold", 15f), ForeColor = Color.White });
+        f.Controls.Add(new Label { Text = "Turned off = stays in the game as the last install had it.", Location = new Point(30, 58), AutoSize = true, ForeColor = ColorTranslator.FromHtml("#8fa3b8") });
+        var cards = new List<PartCard>();
+        PartCard Card(int i, string icon, string title, string what, bool changed, bool had)
+        {
+            var c = new PartCard
+            {
+                Icon = icon, Title = title, What = what, On = changed || !had,
+                Badge = !had ? "FIRST INSTALL" : changed ? "CHANGED" : "NO CHANGE",
+                BadgeColor = !had ? Theme.Blue : changed ? Theme.Orange : ColorTranslator.FromHtml("#5d6f85"),
+                Location = new Point(28, 96 + i * 82), Size = new Size(504, 70),
+            };
+            f.Controls.Add(c); cards.Add(c); return c;
+        }
+        var cMaps = Card(0, "🗺", "Maps", "Roads, 3D objects, landscape, surface, lighting", ch.Maps, had.Maps);
+        var cCars = Card(1, "🏎", "Custom cars", "Bodies, wheels, sounds, logos, exhaust flames", ch.Cars, had.Cars);
+        var cSkins = Card(2, "🎨", "Car skins", "Your paint on the game's cars", ch.Skins, had.Skins);
+        var note = new Label { Location = new Point(30, 338), Size = new Size(500, 24), ForeColor = ColorTranslator.FromHtml("#8fa3b8"), TextAlign = ContentAlignment.MiddleLeft };
+        f.Controls.Add(note);
+        var cancel = Theme.Btn("Cancel", () => f.DialogResult = DialogResult.Cancel);
+        var ok = Theme.Btn("Install", () => { if (cards.Any(c => c.On)) f.DialogResult = DialogResult.OK; }, Theme.Good);
+        foreach (var b in new[] { ok, cancel }) { b.AutoSize = false; b.Height = 38; b.Font = new Font("Segoe UI Semibold", 10f); }
+        ok.Width = 190; cancel.Width = 96;
+        ok.Location = new Point(560 - 28 - ok.Width, 370); cancel.Location = new Point(ok.Left - 10 - cancel.Width, 370);
+        f.Controls.Add(ok); f.Controls.Add(cancel);
+        f.AcceptButton = ok; f.CancelButton = cancel;
+        void Update()
+        {
+            int n = cards.Count(c => c.On);
+            bool quick = cSkins.On && !cMaps.On && !cCars.On;
+            ok.Text = n == 0 ? "Pick something" : n == 3 ? "⬇  Install all" : quick ? "⚡  Install skins" : $"⬇  Install {n} parts";
+            ok.Enabled = n > 0; ok.BackColor = n > 0 ? Theme.Good : Theme.Glass;
+            note.Text = quick ? "Quick: only the skinned cars change." : n == 0 ? "Turn on at least one." : n == 3 ? "" : "The parts that are off stay as they are in the game.";
+            note.ForeColor = quick ? Theme.Good : n == 0 ? Theme.Warn : ColorTranslator.FromHtml("#8fa3b8");
+        }
+        foreach (var c in cards) c.Changed += Update;
+        Update();
+        Look.Dress(f);
+        return (f, cMaps, cCars, cSkins);
+    }
+
+    /// (look test) the install window drawn to a picture
+    public static void PickFormPicture(string png)
+    {
+        var (f, _, _, _) = PickForm((true, false, true), (true, true, false));
+        using (f)
+        {
+            f.StartPosition = FormStartPosition.Manual; f.Location = new Point(40, 40); f.Opacity = 0.01;
+            f.Show(); for (int i = 0; i < 10; i++) { Application.DoEvents(); Thread.Sleep(30); }
+            using var whole = new Bitmap(f.Width, f.Height);
+            f.DrawToBitmap(whole, new Rectangle(Point.Empty, f.Size));
+            var at = f.PointToScreen(Point.Empty);
+            using var bm = whole.Clone(new Rectangle(at.X - f.Left, at.Y - f.Top, f.ClientSize.Width, f.ClientSize.Height), whole.PixelFormat);
+            bm.Save(png);
+        }
     }
 
     // ---- play
@@ -799,6 +890,18 @@ public sealed class Splash : Form
     [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr hdc);
 
     /// shows the splash on its own thread and plays the start sound; call Ready() + Join() on what comes back once the main window is made
+    /// the start-up show while it is up (null after)
+    public static Splash? Current { get; private set; }
+
+    /// hide (false) / show again (true) the start-up show from another thread, e.g. while a question is asked
+    public static void ShowNow(bool on)
+    {
+        var s = Current;
+        if (s == null || s.IsDisposed || !s.IsHandleCreated) return;
+        try { s.Invoke(() => { if (!s.IsDisposed) s.Visible = on; }); }
+        catch (Exception e) when (e is InvalidOperationException or ObjectDisposedException) { }
+    }
+
     public static (Splash? s, Thread? th) Start()
     {
         if (SplashStyle.Load().Sound) Sfx.Play("startup.wav");
@@ -807,7 +910,7 @@ public sealed class Splash : Form
         {
             try { made = new Splash(); } catch (Exception) { }
             ok.Set();
-            if (made != null) try { Application.Run(made); } catch (Exception) { }
+            if (made != null) try { Current = made; Application.Run(made); } catch (Exception) { } finally { Current = null; }
         }) { IsBackground = true };
         th.SetApartmentState(ApartmentState.STA); th.Start();
         ok.Wait(5000);
@@ -879,6 +982,7 @@ static class Program
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
         if (a.Contains("--splash-lab")) { Application.Run(new SplashLab()); return 0; }
+        if (a.Contains("--pick-look")) { MainForm.PickFormPicture(a[a.IndexOf("--pick-look") + 1]); return 0; }
         if (game == null)
         {
             MessageBox.Show("Put this program into your Blur folder (next to Blur.exe), or start it with --game \"<Blur folder>\".", "Blur Map Builder (C#)");
@@ -928,4 +1032,69 @@ static class Program
     }
 
     static string? Env(string k) => Environment.GetEnvironmentVariable(k);
+}
+
+/// one part in the "what to install" window: a card that turns on / off when clicked
+sealed class PartCard : Control
+{
+    public string Icon = "", Title = "", What = "", Badge = "";
+    public Color BadgeColor = Color.Gray;
+    bool _on, _hover;
+    public bool On { get => _on; set { _on = value; Invalidate(); } }
+    public event Action? Changed;
+
+    public PartCard()
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+        Cursor = Cursors.Hand;
+    }
+
+    protected override void OnClick(EventArgs e) { On = !On; Changed?.Invoke(); base.OnClick(e); }
+    protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { _hover = false; Invalidate(); base.OnMouseLeave(e); }
+
+    static System.Drawing.Drawing2D.GraphicsPath Round(RectangleF r, float rad)
+    {
+        var p = new System.Drawing.Drawing2D.GraphicsPath(); float d = rad * 2;
+        p.AddArc(r.X, r.Y, d, d, 180, 90); p.AddArc(r.Right - d, r.Y, d, d, 270, 90); p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90); p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+        p.CloseFigure(); return p;
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+        g.Clear(Parent?.BackColor ?? Theme.Panel);
+        var r = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
+        var fill = _on ? ColorTranslator.FromHtml("#16304d") : _hover ? ColorTranslator.FromHtml("#152338") : ColorTranslator.FromHtml("#121e30");
+        var edge = _on ? Theme.Blue : _hover ? ColorTranslator.FromHtml("#3a5578") : ColorTranslator.FromHtml("#22344d");
+        using (var path = Round(r, 10)) { using var b = new SolidBrush(fill); g.FillPath(b, path); using var pen = new Pen(edge, _on ? 2f : 1f); g.DrawPath(pen, path); }
+        // the icon in a soft circle
+        var ic = new RectangleF(16, (Height - 42) / 2f, 42, 42);
+        using (var b = new SolidBrush(_on ? Color.FromArgb(60, Theme.Blue) : Color.FromArgb(40, 255, 255, 255))) g.FillEllipse(b, ic);
+        using (var f = new Font("Segoe UI Emoji", 15f))
+            TextRenderer.DrawText(g, Icon, f, Rectangle.Round(ic), Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        // title + what is in it
+        var dim = ColorTranslator.FromHtml("#8fa3b8");
+        using (var f = new Font("Segoe UI Semibold", 11.5f)) TextRenderer.DrawText(g, Title, f, new Point(72, 13), _on ? Color.White : ColorTranslator.FromHtml("#b9c7d6"), TextFormatFlags.NoPadding);
+        using (var f = new Font("Segoe UI", 9f)) TextRenderer.DrawText(g, What, f, new Point(72, 39), dim, TextFormatFlags.NoPadding);
+        // the badge
+        using (var f = new Font("Segoe UI", 7.5f, FontStyle.Bold))
+        {
+            var sz = TextRenderer.MeasureText(Badge, f, Size.Empty, TextFormatFlags.NoPadding);
+            var tb = new RectangleF(Width - 58 - sz.Width - 16, 14, sz.Width + 16, 20);
+            using (var path = Round(tb, 9)) { using var b = new SolidBrush(Color.FromArgb(45, BadgeColor)); g.FillPath(b, path); using var pen = new Pen(Color.FromArgb(150, BadgeColor)); g.DrawPath(pen, path); }
+            TextRenderer.DrawText(g, Badge, f, Rectangle.Round(tb), BadgeColor, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        }
+        // the tick
+        var ck = new RectangleF(Width - 42, (Height - 24) / 2f, 24, 24);
+        if (_on)
+        {
+            using (var b = new SolidBrush(Theme.Blue)) g.FillEllipse(b, ck);
+            using var pen = new Pen(Color.White, 2.4f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round, LineJoin = System.Drawing.Drawing2D.LineJoin.Round };
+            g.DrawLines(pen, new[] { new PointF(ck.X + 6.5f, ck.Y + 12.5f), new PointF(ck.X + 10.5f, ck.Y + 16.5f), new PointF(ck.X + 17.5f, ck.Y + 8f) });
+        }
+        else using (var pen = new Pen(ColorTranslator.FromHtml("#4a6080"), 2f)) g.DrawEllipse(pen, ck);
+    }
 }

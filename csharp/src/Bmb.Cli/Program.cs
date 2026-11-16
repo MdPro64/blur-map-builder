@@ -91,6 +91,39 @@ switch (cmd)
         Console.WriteLine(Sha(o) + " " + o.Length);
         break;
     }
+    case "carexport":       // carexport GAME OUTDIR CAR...: each game car's model as OUTDIR\CAR.glb (look only)
+    {
+        Paths.Init(args[1]); Directory.CreateDirectory(args[2]);
+        foreach (var car in args.Skip(3))
+        {
+            string f = Path.Combine(args[2], car + ".glb");
+            File.WriteAllBytes(f, CarExport.Glb(car, Console.WriteLine));
+            var pic = Previews.Render(Previews.Imported(f), 640);
+            if (pic != null) using (var bm = Previews.ToBitmap(pic)) bm.Save(Path.ChangeExtension(f, ".png"));
+        }
+        break;
+    }
+    case "logotest":        // logotest GAME WORLD.json OUTDIR: the custom cars made in memory: each one's maker record + its logo picture read back as PNG (look only)
+    {
+        Paths.Init(args[1]); Directory.CreateDirectory(args[3]);
+        var files = new Dictionary<string, byte[]>();
+        var wld = (JObj)Json.Load(args[2])!;
+        CarBuild.AddCars(files, wld, Console.WriteLine);
+        foreach (var l in CarLogo.Dump(files["gamedata/xt/amax.bin"], new[] { "BMB_", "BMW_M3E92_Drift" })) Console.WriteLine(l);
+        using var R = new Pak(Paths.RootOriginal);
+        var fe = CarBuild.MenuPictures(R.Read("\\ui\\data\\ui_frontend.bpr")!, wld);
+        var b = Bpr.Parse(fe);
+        foreach (var r in b.Recs.Where(r => b.NameOf(r).StartsWith("man_bmb_") || b.NameOf(r) == "man_bmw"))
+        {
+            var rgba = Previews.Dxt5Decode(b.Data.Span.Slice(r[2], r[9] * r[10]), r[9], r[10]);
+            using var bm = new System.Drawing.Bitmap(r[9], r[10]);
+            for (int y = 0; y < r[10]; y++) for (int x = 0; x < r[9]; x++) { int a = 4 * (y * r[9] + x); bm.SetPixel(x, y, System.Drawing.Color.FromArgb(rgba[a + 3], rgba[a], rgba[a + 1], rgba[a + 2])); }
+            bm.Save(Path.Combine(args[3], b.NameOf(r) + ".png"));
+            Console.WriteLine($"{b.NameOf(r)}: {r[9]}x{r[10]} format {r[7]} mips {r[8]} bytes {r[5]}");
+        }
+        Console.WriteLine($"frontend pack {fe.Length} bytes, reads back: {Bpr.Parse(fe).Recs.Count} pictures");
+        break;
+    }
     case "soundtest":       // soundtest GAME WORLD.json CAR...: the custom cars made in memory + the sound fields of them and of the given game cars
     {
         Paths.Init(args[1]);
@@ -103,6 +136,148 @@ switch (cmd)
     {
         using var pk = new Pak(args[1]);
         foreach (var e in pk.Files) Console.WriteLine($"{e.Name}	{e.Size}	{(e.Offset == Pak.NoData ? "nodata" : "")}");
+        break;
+    }
+    case "bankwaves":       // bankwaves GAME CAR...: each car's engine sound bank: every sound's name, format, length (look only)
+    {
+        Paths.Init(args[1]);
+        using var rp = new Pak(Paths.RootOriginal);
+        if (args[2] == "ALL")
+        {
+            // every engine bank's sound names, with the numbers taken out, and how many banks have each
+            var seen = new Dictionary<string, SortedSet<string>>();
+            foreach (var bk in CarSoundPreview.Engines().Values.Distinct().Select(e => CarSoundPreview.BankOf(e, rp)).Distinct().Append("Car_Common"))
+            {
+                var d = rp.Read(@"\audio\" + bk.ToLowerInvariant() + ".baf");
+                if (d == null) { Console.WriteLine($"{bk}: no bank file"); continue; }
+                foreach (var w in SoundBank.Read(d).Waves)
+                {
+                    string k = System.Text.RegularExpressions.Regex.Replace(w.Name, @"^[^_]+_", "*_");
+                    k = System.Text.RegularExpressions.Regex.Replace(k, @"\d+", "#");
+                    if (bk == "Car_Common") k = "COMMON " + w.Name;
+                    if (!seen.TryGetValue(k, out var set)) seen[k] = set = new();
+                    set.Add(bk);
+                }
+            }
+            foreach (var (k, v) in seen.OrderBy(q => q.Key)) Console.WriteLine($"{k,-45} {v.Count,3} banks  e.g. {v.First()}");
+            break;
+        }
+        foreach (var car in args.Skip(2))
+        {
+            var plan = OwnSound.MakePlan(car, 0, rp);
+            var bank = SoundBank.Read(rp.Read(@"\audio\" + plan.Bank.ToLowerInvariant() + ".baf")!);
+            Console.WriteLine($"{car}: engine {plan.Engine}, bank {plan.Bank}, {bank.Waves.Count} sounds; dats {string.Join(" ", plan.Dats.Select(d => d.OldFile))}");
+            foreach (var w in bank.Waves) Console.WriteLine($"   {w.Name,-40} fmt {w.Format} ch {w.Channels} {w.Samples / (double)Math.Max(1, w.Rate):0.00} s");
+        }
+        break;
+    }
+    case "exhausttest":     // exhausttest GAME WORLD.json: the custom cars made in memory: each one's flame points (look only)
+    {
+        Paths.Init(args[1]);
+        var files = new Dictionary<string, byte[]>();
+        CarBuild.AddCars(files, (JObj)Json.Load(args[2])!, l => { if (l.Contains("exhaust")) Console.WriteLine(l); });
+        foreach (var l in CarExhaust.Dump(files["gamedata/xt/amax.bin"], new[] { "BMB_", "BMW_M3E92_Drift" })) Console.WriteLine(l);
+        break;
+    }
+    case "flamelook":       // flamelook GAME OUT.png BASECAR [GLB]: the Custom car preview of a car with its flame spots drawn on (look only)
+    {
+        Paths.Init(args[1]);
+        var car = new JObj { ["base"] = args[3], ["class"] = 1L, ["paint"] = new List<object?> { "#2050a0", "#202020" } };
+        if (args.Length > 4) car["body_glb"] = args[4];
+        var parts = CarUi.CarParts(car); var info = new CarUi.ViewInfo();
+        using var bm = CarUi.Picture(parts, new byte[] { 32, 80, 160 }, 700, 2.5, true, -0.25, info);
+        using var g = System.Drawing.Graphics.FromImage(bm);
+        foreach (var q in CarExhaust.Game(args[3])) { var (x, y) = CarUi.Project(info, q[0], q[1], q[2]); g.FillEllipse(System.Drawing.Brushes.OrangeRed, x - 6, y - 6, 12, 12); }
+        bm.Save(args[2]);
+        break;
+    }
+    case "usedsounds":      // usedsounds GAME CAR...: every sound each car can play, by sound field / .dat / bank (look only)
+    {
+        Paths.Init(args[1]);
+        using var rp = new Pak(Paths.RootOriginal);
+        foreach (var car in args.Skip(2)) { Console.WriteLine("== " + car); foreach (var l in OwnSound.UsedSounds(car, rp)) Console.WriteLine(l); }
+        break;
+    }
+    case "gamesound":       // gamesound GAME CAR OUTDIR: the game's own sound of every kind for this car's engine, as OUTDIR\KIND.wav (look only)
+    {
+        Paths.Init(args[1]); Directory.CreateDirectory(args[3]);
+        using var rp = new Pak(Paths.RootOriginal);
+        foreach (var k in OwnSound.Kinds)
+        {
+            var w = OwnSound.GameSound(args[2], k.Key, rp);
+            Console.WriteLine($"{k.Key}: {(w == null ? "none" : w.Length + " bytes")}");
+            if (w != null) File.WriteAllBytes(Path.Combine(args[3], k.Key + ".wav"), w);
+        }
+        break;
+    }
+    case "mp3wav":          // mp3wav IN OUT.wav: a sound file (.mp3 ...) read the way an import reads it, written as the .wav it becomes (look only)
+    {
+        var x = OwnSound.ReadWav(args[1]);
+        File.WriteAllBytes(args[2], OwnSound.Wav16(x));
+        Console.WriteLine($"{x.Length} samples at 48 kHz = {x.Length / 48000.0:0.00} s, peak {x.Max(Math.Abs):0.000}");
+        break;
+    }
+    case "packtest":        // packtest GAME SRCMAPS SRCDATA DSTMAPS DSTDATA OUTDIR: car / skins / map exported from SRC, imported into DST (test only)
+    {
+        Paths.Init(args[1], args[2]); Paths.Data = args[3];
+        var wld = (JObj)Json.Load(Paths.WorldFile)!;
+        string outd = args[6]; Directory.CreateDirectory(outd);
+        // a car with an imported body + own sounds + a logo
+        var car = (JObj)wld.Arr("cars")!.First(c => ((JObj)c!).Truthy("body_glb"))!;
+        car["logo"] = "test_logo.png"; car["sound_own"] = "eng.wav"; car["sound_own_file"] = "eng.wav"; car["sounds"] = new JObj { ["gear"] = "gear.wav", ["tyre_skid"] = "skid.wav" };
+        Console.WriteLine($"car: {car.Str("name")}, body {car.Str("body_glb")}");
+        var (n, miss) = Packs.ExportCar(car, Path.Combine(outd, "car.blurcar"));
+        Console.WriteLine($"car exported: {n} files, missing [{string.Join(", ", miss)}]");
+        // skins of the first car that has some
+        string skCar = Skins.All().First(kv => kv.Value is JObj j && j.Count > 0).Key;
+        Console.WriteLine($"skins exported: {Packs.ExportSkins(skCar, Path.Combine(outd, "skins.blurskin"))} of {skCar}");
+        // the map with an imported model + the location's sky
+        var loc = wld.Objs("locations").First(); var map = loc.Objs("maps").First(m => m.Objs("objects").Any(o => (o.Str("id") ?? "").StartsWith("import:")));
+        var st = new JObj { ["lighting"] = loc.Obj("lighting") != null ? Share.Copy(loc.Obj("lighting")!) : null };
+        Console.WriteLine($"map: {map.Str("name")}, sky {loc.Obj("lighting")?.Str("sky_image")}, pictures {Share.Export(map, loc.Str("name")!, Path.Combine(outd, "map.blurmap"), st)}");
+        // ---- into the other folders, twice (the second time: the same files are used again, nothing doubled)
+        Paths.Init(args[1], args[4]); Paths.Data = args[5];
+        for (int round = 1; round <= 2; round++)
+        {
+            Console.WriteLine($"== import round {round}");
+            var c2 = Packs.ImportCar(Path.Combine(outd, "car.blurcar"));
+            Console.WriteLine($"car: body {c2.Str("body_glb")}, own {c2.Str("sound_own")}, logo {c2.Str("logo")}, sounds {Json.Dumps(c2["sounds"], -1)}");
+            var (sc, sn) = Packs.ImportSkins(Path.Combine(outd, "skins.blurskin"));
+            Console.WriteLine($"skins: {sn} of {sc}; on now: {Json.Dumps(Skins.OnNow().GetValueOrDefault(sc), -1)}");
+            var f = Share.Read(Path.Combine(outd, "map.blurmap"));
+            var st2 = f.Info.Obj("settings") ?? new JObj();
+            int added = f.PlaceExtras(st2);
+            Console.WriteLine($"map: {added} model(s) added; files in package: {string.Join(", ", f.Files.Keys)}; objects: {string.Join(", ", f.Map.Objs("objects").Select(o => o.Str("id")).Where(i => i!.StartsWith("import:")).Distinct())}; sky -> {st2.Obj("lighting")?.Str("sky_image")}");
+        }
+        foreach (var d in new[] { "cars", "cars/sounds", "cars/logos", "imports", "skies" })
+        {
+            string dir = Path.Combine(args[4], d.Replace('/', '\\'));
+            Console.WriteLine($"{d}: {(Directory.Exists(dir) ? string.Join(", ", Directory.GetFiles(dir).Select(Path.GetFileName)) : "-")}");
+        }
+        break;
+    }
+    case "kindtest":        // kindtest GAME ENGINECAR SOUND.wav [ENGINE]: every sound kind from SOUND.wav: which sounds of each bank copy changed (look only)
+    {
+        Paths.Init(args[1]);
+        using var rp = new Pak(Paths.RootOriginal);
+        var x = OwnSound.ReadWav(args[3]);
+        var snd = new OwnSound.Sounds { Engine = args.Length > 4 ? x : null };
+        foreach (var k in OwnSound.Kinds) snd.Extra[k.Key] = x;
+        var plans = OwnSound.MakePlans(args[2], 0, rp, true); plans.AddRange(OwnSound.MakeWheelPlans(args[2], 0, rp));
+        var plan = plans[0];
+        foreach (var pl in plans) Console.WriteLine($"plan {pl.Target}{(pl.Ai ? " AI" : "")}: entity {pl.Engine}, bank {pl.Bank} -> {pl.NewBank}, dats {string.Join(" ", pl.Dats.Select(d => d.OldFile + "->" + d.NewFile))}");
+        foreach (var (n, d) in plans.SelectMany(pl => OwnSound.RootFiles(pl, rp, snd)).GroupBy(q => q.Key).Select(g => g.First()))
+        {
+            if (!n.EndsWith(".baf")) { Console.WriteLine($"{n}: {d.Length} bytes{(B.Latin1.GetString(d).Contains(plan.NewCommon) ? ", names " + plan.NewCommon : "")}"); continue; }
+            var nb = SoundBank.Read(d);
+            var gname = n.Contains(plan.NewCommon.ToLowerInvariant()) ? OwnSound.CommonBank : plans.First(pl => n.Contains(pl.NewBank.ToLowerInvariant())).Bank;
+            var gb = SoundBank.Read(rp.Read(@"\audio\" + gname.ToLowerInvariant() + ".baf")!);
+            var changed = nb.Waves.Zip(gb.Waves).Where(q => !d.AsSpan(q.First.Off, q.First.Size).SequenceEqual(rp.Read(@"\audio\" + gname.ToLowerInvariant() + ".baf")!.AsSpan(q.Second.Off, q.Second.Size))).Select(q => $"{q.First.Name} ({q.Second.Samples}->{q.First.Samples})").ToList();
+            Console.WriteLine($"{n} (bank '{nb.Name}', {nb.Waves.Count} sounds): changed {changed.Count}: {string.Join(", ", changed)}");
+        }
+        var list = B.Latin1.GetString(rp.Read(OwnSound.BankList)!);
+        foreach (var pl in plans) list = OwnSound.AddToBankList(list, pl, snd.Common);
+        foreach (var l in list.Split(';').Select(q => q.Trim()).Where(q => q.StartsWith("zb"))) Console.WriteLine("bank list: " + l);
         break;
     }
     case "owntest":         // owntest GAME ENGINECAR SOUND.wav RPM OUTDIR: the own-sound copy made in memory + checked (look only)
@@ -160,6 +335,13 @@ switch (cmd)
         foreach (var c in args.Skip(3)) CarUi.WheelPicture(c, 360)?.Save(Path.Combine(args[2], "wheel_" + c + ".png"));
         break;
     }
+    case "glbmodel":        // glbmodel GAME BODY.glb OUT.model: an imported body written into the container model, with the build's log (look only)
+    {
+        Paths.Init(args[1]);
+        using var R = new Pak(Paths.RootOriginal);
+        File.WriteAllBytes(args[3], CarGlb.GlbModel(R, new JObj { ["base"] = CarGlb.Container, ["class"] = 1L }, args[2], Console.WriteLine));
+        break;
+    }
     case "glbroom":         // glbroom GAME: how much room each game car's model has for an imported body (look only)
     {
         Paths.Init(args[1]);
@@ -180,8 +362,11 @@ switch (cmd)
     case "build":           // build GAME MAPS WORK LEVELS [dry] [nocars] [noroot]
     {
         Paths.Init(args[1], args[2], args[3], Path.Combine(args[3], "rebrn"), args[4]);
-        var opt = new BuildOptions { Dry = args.Contains("dry"), NoCars = args.Contains("nocars"), NoRoot = args.Contains("noroot"), Log = s => Console.WriteLine($"{sw.Elapsed.TotalSeconds,7:0.00}  {s}") };
+        // -maps / -cars / -skins: that part is not updated (the last install's copy goes in); remember: keep what was built as installed
+        var opt = new BuildOptions { Dry = args.Contains("dry"), NoCars = args.Contains("nocars"), NoRoot = args.Contains("noroot"), Log = s => Console.WriteLine($"{sw.Elapsed.TotalSeconds,7:0.00}  {s}"),
+            Maps = !args.Contains("-maps"), Cars = !args.Contains("-cars"), Skins = !args.Contains("-skins") };
         Build.Run(opt);
+        if (args.Contains("remember") && opt.Built != null) { Installed.Remember(opt.Built, opt); Console.WriteLine("remembered as installed"); }
         Console.WriteLine($"done in {sw.Elapsed.TotalSeconds:0.00} s");
         break;
     }

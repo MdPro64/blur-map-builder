@@ -108,6 +108,62 @@ The C# window keeps its own auto-save the same way as Python, and asks before cl
   Dry build checked (both copies, wbl lines, sizes). **Fifth in-game test (2026-11-15): WORKS - the siren is heard on the custom car.**
   (The BMB_SOUND_PROXY_TEST switch is removed.) The app exe still has the switch until its next build (it does nothing unless set).
 
+## Community wishes, round 2 (2026-11-16, after 2.5.0; NOT released, NOT committed, NOT tried in game)
+
+- **Delete a car = its files go too.** Custom car > Delete also sends the car's imported body (.glb), own sound (.wav) and
+  logo picture to the Recycle Bin, unless another car still uses the same file. (Undo brings the car back, not the files.)
+- **Own sound keeps the rest.** Checked: only the engine, exhaust and intake loops are the player's sound; turbo,
+  supercharger, blow-off, gear and the other sounds stay the game engine's (OwnSound.cs head comment fixed).
+- **Floating brake lights fixed** (imported bodies). Two faults: (1) `CarModel.Kind` sorted "e_BrakeLight_*" as a wheel part
+  ("brake"), so the brake light shapes were never hidden; now "brakelight" = light. (2) Each light's box is in the model
+  twice: the element list (before the vertex data) and a part list at the end, rounded a little differently; the game puts
+  the light trails at the centre of the second one. Both copies now go under the ground (the second matched within 1 mm).
+  Bowler container: 15 lights, 30 boxes, 8874 points (was 12 boxes, 8699 points). `bmbcli glbmodel GAME BODY.glb OUT.model`.
+- **Own logo** (Body page > Logo > Import logo): picture copied to `maps\cars\logos\`, `car["logo"]`. Build: a copy of the
+  maker record (AmaxManufacturer, uid CA4F0000 + i, name `<car>_logo`, of the replaced car when replacing) whose UiTexture
+  = `man_bmb_<i>`; the car's `Manufacturer` points at it; the picture goes into ui_frontend.bpr like the game logos (256x128
+  + 128x64, DXT5, format 5, 2 mips; `Bpr.SetPicture` overload). Maker name stays. `bmbcli logotest GAME WORLD.json OUTDIR`
+  checks records + reads the picture back. Not yet seen in game: whether a second record with the same maker name shows up
+  twice in a maker list.
+- **Own other sounds** (Sound tab > MY OWN OTHER SOUNDS, `car["sounds"][kind]` = .wav in `maps\cars\sounds\`): supercharger
+  whine (`_sc_N`, loops, pitched by N / middle N), turbo spool (`_turbo_spool`, `_Induction_boost`), turbo air (`_turbo_air`,
+  `_ext_air`), turbo blow-off (`_turbo_bov*`, plays once), gear shift (`Transmission_race_gear_up/down`), backfire pops
+  (`pop_NN`, `bang_*`). The last two are in the shared bank Car_Common: the car then gets its own copy `zb<i>_Common`, its
+  engine/exhaust .dat copies name it, and its bank-list lines too. Loops keep the game sound's length, once-sounds the
+  player's; each as loud as the game's. `OwnSound.Kinds` / `Sounds` / `MakeBank(game, name, sounds, common)`.
+  **Bug found + fixed:** the rev-step names also come as `_eng_`, `_ext_`, `_extA_`, `_ind_` (BMW_V8, CCXR_V8, LR_V8 ...):
+  those exhaust / intake loops were never replaced, so e.g. the M3's exhaust stayed the game's. Checked: `bmbcli kindtest`
+  (BMW_V8: all 28 sounds changed + 14 in the shared copy; Focus RS / Audi TT: spool, air, blow-off). `bmbcli bankwaves GAME ALL`
+  lists every bank's sound names.
+- **Build + install: what to install** (2026-11-16): a window ticks Maps / Custom cars / Car skins (the changed ones pre-ticked).
+  An unticked part goes in exactly as the last install had it: `Installed.cs` keeps copies in `work\installed\` (maps.json =
+  the locations, cars.json, skins\ = skins.json + the pictures that are on), written after every good install (and by Build
+  skins). Only skins ticked = the quick `Skins.Install`. `bmbcli build ... -maps|-cars|-skins remember` tested: unticked
+  part = the old one. No speed gain beyond skins-only (a full build is ~10 s).
+- **Export / Import tab** (SHARE group, `SharePanel.cs`, `Packs.cs`): .blurmap now also carries the map's imported models
+  (`imports/`, a free slot on import) and the location's sky picture (`sky/`); .blurcar = car.json + body / sounds / logo
+  files; .blurskin = skins.json (picture names kept: they are the game's slots, e.g. `..._scratch#DXT5`) + pictures. Import
+  puts files in our folders under plain names; a different file of the same name gets _2. `bmbcli packtest` round-trips all
+  three (twice: no doubles). Flame pipes: a replacer at most as many as the replaced car, a new car 2 (`CarExhaust.Max`).
+- **Every driving sound** (after an in-game test: own gear sound fell back to the game's above ~100): the gear sounds play from
+  the SHARED `Car_common_road.dat` (names Car_Common), which was not copied. Now, when a car changes a shared-bank kind, every
+  .dat of its entity naming Car_Common is copied too (`MakePlans(..., common)`). More kinds: gearbox whine
+  (`Transmission_straight/helix`), gear crunch (`gears_crunch_N`, `Grinding_loop_N`), damage hiss/fire (`steam_loop`,
+  `car_fire02L`), and tyres: rolling (`*_Road`), skid (`Asphalt_Lateral_N`), brakes (`Asphalt_Brakes*`), wheelspin
+  (`Asphalt_Spin`). Tyre kinds copy the tyre entity (Wheel_dry / Wheel_dry_AI, uids BA580000 + 16 i, bank `zb<i>el_dry`) and
+  point the car's dryWheelAudioEntity / aiDryWheelAudioEntity at it (`MakeWheelPlans`). Not changeable per car (shared
+  entities, not driving): collisions, bumps, puddles, rumble strips, off-road surfaces. `bmbcli usedsounds GAME CAR` lists
+  every sound a car can play by .dat and bank. NOT heard in game yet.
+- **Exhaust flames** (Body page > Exhaust flames: + Pipe, − Pipe, Game spots; fire dots in the 3D preview to drag; a mirrored
+  twin moves with it): the AmaxVehicle record's `exhaustEmitters` = points in the car model's space (= the preview's space,
+  checked with `bmbcli flamelook`). `car["exhaust"]` = [[x,y,z],...]; the build (`CarExhaust.Write`) overwrites the copied
+  record's list, growing it with new items when there are more pipes (copies of the last one). Works for replaced cars too.
+  `bmbcli exhausttest GAME WORLD.json`. Not seen in game yet.
+- **Export a game car** (Body page > Export a game car (.glb), a menu by class): `CarExport.Glb` = every part at the finest
+  detail, grouped (body with its picture, plain paint in the picture's main colour, glass, lights, tyres, rims, brakes,
+  trim), axes as the body import reads them. ~30,000 triangles; checked by a round trip through the body import and a
+  render. `bmbcli carexport GAME OUTDIR CAR...`.
+
 ## Community wishes (2026-11-15, after 2.4.0; NOT released, NOT tried in game)
 
 - **Road side walls switch:** map panel "Road side walls (solid road edges)", map key `road_walls` (default on). Off: no edge walls

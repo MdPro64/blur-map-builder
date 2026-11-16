@@ -307,14 +307,17 @@ public sealed class Bpr
     }
 
     /// a picture from ready DXT1 bytes (replace or add)
-    public static byte[] SetPicture(byte[] bpr, string name, byte[] pic)
+    public static byte[] SetPicture(byte[] bpr, string name, byte[] pic) => SetPicture(bpr, name, pic, 1, 2, 512, 256);
+
+    /// a picture from ready bytes (replace or add): format 1 = DXT1, 5 = DXT5; mips = how many sizes follow each other
+    public static byte[] SetPicture(byte[] bpr, string name, byte[] pic, int format, int mips, int w, int h)
     {
         var b = Parse(bpr);
         foreach (var r in b.Recs)
-            if (b.NameOf(r) == name) { r[2] = b.Data.Len; r[5] = pic.Length; b.Data.Add(pic); return b.Write(); }
+            if (b.NameOf(r) == name) { r[2] = b.Data.Len; r[5] = pic.Length; r[7] = format; r[8] = mips; r[9] = w; r[10] = h; b.Data.Add(pic); return b.Write(); }
         int nameOff = b.Names.Len;
         b.Names.AddSz(name);
-        var rec = new[] { RecSize, nameOff, b.Data.Len, 1, 0, pic.Length, 0, 1, 2, 512, 256 };
+        var rec = new[] { RecSize, nameOff, b.Data.Len, 1, 0, pic.Length, 0, format, mips, w, h };
         b.Data.Add(pic);
         b.Recs.Insert(b.Recs.Count - 1, rec);
         return b.Write();

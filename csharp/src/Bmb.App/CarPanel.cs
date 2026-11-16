@@ -30,6 +30,12 @@ public sealed class CarPanel : Panel
     readonly System.Windows.Forms.Timer _playEnd = new();
     CheckBox _ownOn = null!; Label _ownFile = null!; Spin _ownRpm = null!; Control _ownRow = null!;
     readonly PictureBox _miniPic = new() { Width = 150, Height = 48, BackColor = Theme.Bg };
+    readonly Dictionary<string, Label> _kindFile = new();
+    List<double[]> _flames = new();                           // where the exhaust flames come out (car model space)
+    int _flameDrag = -1; Point _flameFrom; readonly double[] _flameD = new double[3];
+    readonly Label _flameNote = new() { AutoSize = true, ForeColor = Theme.Text, Margin = new Padding(6, 8, 0, 0) };
+    readonly PictureBox _logoPic = new() { Width = 96, Height = 48, BackColor = ColorTranslator.FromHtml("#3c3c46"), SizeMode = PictureBoxSizeMode.Zoom, Margin = new Padding(8, 0, 8, 0) };
+    readonly Label _logoNote = new() { AutoSize = true, ForeColor = Theme.Text, Margin = new Padding(0, 14, 0, 0) };
     readonly Panel[] _paint = { new() { Width = 34, Height = 22, BorderStyle = BorderStyle.FixedSingle, Cursor = Cursors.Hand }, new() { Width = 34, Height = 22, BorderStyle = BorderStyle.FixedSingle, Cursor = Cursors.Hand } };
     readonly Button[] _paintB = new Button[2];
     readonly Button _bodyBtn;
@@ -44,6 +50,8 @@ public sealed class CarPanel : Panel
     readonly FlowLayoutPanel _controls = new() { Dock = DockStyle.Fill, AutoScroll = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Theme.Bg, Padding = new Padding(10) };
     readonly List<Control> _needCar = new();
     double _yaw = -0.7, _pitch = -0.35; int _dragX; bool _dragging;
+    bool _dragRear;                                                       // the dragged wheel is a rear one
+    double _zoom = 1, _panX, _panY; Point _panFrom; bool _panning;     // the preview's zoom (mouse wheel) and move (right drag)
     // the preview's camera buttons: top / side / front, and orbit (turns by itself)
     readonly System.Windows.Forms.Timer _orbit = new() { Interval = 40 };
     Button? _orbitBtn;
@@ -131,7 +139,7 @@ public sealed class CarPanel : Panel
         _ownOn.CheckedChanged += (_, _) => _ownOn.Text = _ownOn.Checked ? "✔ My own sound: ON" : "My own sound: OFF";
         Look.Tip(_ownOn, "On: your recording replaces the engine, exhaust and intake of the sound above (turbo and gear sounds stay)");
         oRow.Controls.Add(_ownOn);
-        oRow.Controls.Add(Look.Tip(Theme.Btn("⇩ Import .wav...", ImportSound), "A .wav recording of an engine at steady revs (1-3 seconds is enough)"));
+        oRow.Controls.Add(Look.Tip(Theme.Btn("⇩ Import sound...", ImportSound), "A .wav or .mp3 recording of an engine at steady revs (1-3 seconds is enough); an .mp3 is turned into a .wav"));
         _ownFile = new Label { AutoSize = true, ForeColor = Theme.Text, Margin = new Padding(6, 8, 10, 0), UseMnemonic = false };
         oRow.Controls.Add(_ownFile);
         _ownRpm = new Spin("Recorded at (rpm)", OwnSound.DefaultRpm, 250, 500, 12000, "0").Tight();
@@ -144,6 +152,22 @@ public sealed class CarPanel : Panel
         _soundPage.Controls.Add(oRow); _wide.Add(oRow);
         _soundPage.Controls.Add(new Label { Text = "Best: 1-3 seconds of an engine at steady revs, no music or talking. The program pitches it to every rev step; the turbo and gear sounds come from the engine chosen above.", AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = ColorTranslator.FromHtml("#9aa8b8"), Margin = new Padding(0, 4, 0, 10) });
         _soundPage.Controls.Add(new Label { Text = "Recorded at (rpm): how fast the engine was turning in your recording (rpm = engine turns per minute). The game needs your sound at every engine speed, from idle (about 800) to the top (about 6500), and makes them by playing it slower or faster from this number. 3000 is a good start.\nSounds too high in game? Raise it (try 4000-5000). Too low? Lower it (try 2000). Press Listen to hear the change before you build.", AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = ColorTranslator.FromHtml("#9aa8b8"), Margin = new Padding(0, 0, 0, 10) });
+        // the other sounds: each its own .wav (turbo, supercharger, gear, pops); the rest stays the engine's above
+        _soundPage.Controls.Add(new Label { Text = "MY OWN OTHER SOUNDS", AutoSize = true, ForeColor = Theme.Head, Font = Theme.Bold, Margin = new Padding(0, 16, 0, 4) });
+        foreach (var k in OwnSound.Kinds)
+        {
+            var kind = k;
+            var kRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Theme.Bg, Margin = new Padding(0) };
+            kRow.Controls.Add(Look.Tip(new Label { Text = kind.Label, Width = 160, Height = 30, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Theme.Text }, kind.Tip));
+            kRow.Controls.Add(Look.Tip(Theme.Btn("⇩ Import sound...", () => ImportKind(kind)), kind.Tip + " (.wav or .mp3)"));
+            Button play = null!; play = Theme.Btn("▶ Listen", () => ListenKind(kind, play), Theme.Blue);
+            kRow.Controls.Add(Look.Tip(play, "Play your sound for this (press again to stop)"));
+            kRow.Controls.Add(Look.Tip(Theme.Btn("↺ Game sound", () => SetKind(kind, null)), "Back to the engine's own sound for this"));
+            var file = new Label { AutoSize = true, ForeColor = Theme.Text, Margin = new Padding(6, 8, 0, 0), UseMnemonic = false };
+            kRow.Controls.Add(file); _kindFile[kind.Key] = file;
+            _soundPage.Controls.Add(kRow); _wide.Add(kRow);
+        }
+        _soundPage.Controls.Add(new Label { Text = "Each one is a .wav of just that sound. Turbo and supercharger sounds are only heard on engines that have them (pick one in the list above); the gear, pop, damage and tyre sounds work on every car. Sounds that play once (blow-off, gear shift, gear crunch, pops) keep your recording's length - keep them short; the others loop, so 1-3 seconds of a steady sound is best.", AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = ColorTranslator.FromHtml("#9aa8b8"), Margin = new Padding(0, 4, 0, 10) });
         _soundPage.Controls.Add(_soundNow);
         _controls.Controls.Add(_bodyPage); _controls.Controls.Add(_soundPage);
         var paint = new FlowLayoutPanel { AutoSize = true, WrapContents = true, BackColor = Theme.Bg, Margin = new Padding(0, 10, 0, 0), MaximumSize = new Size(1100, 0) };
@@ -161,18 +185,35 @@ public sealed class CarPanel : Panel
         _wheels.DropDownClosed += (_, _) => WheelHoverHide();
         paint.Controls.Add(_wheels);
         paint.Controls.Add(Theme.Btn("⇩ Import body (.glb)", ImportBody));
+        Button? exp = null;
+        exp = Look.Tip(Theme.Btn("⇧ Export a game car (.glb)", () => ExportMenu(exp!)), "Save a game car's own model as a .glb, to change it in Blender and import it back as a body");
+        paint.Controls.Add(exp);
         paint.Controls.Add(_bodyBtn);
         _bodyPage.Controls.Add(paint); _wide.Add(paint); _wide.Add(_fitRow);
         _fitRow.Controls.Add(new Label { Text = "Fit the body on the wheels:", AutoSize = true, ForeColor = Theme.Head, Margin = new Padding(0, 6, 8, 0) });
-        foreach (var (label, key, step) in new[] { ("Size", "size", 0.02), ("Forward", "fwd", 0.03), ("Up", "up", 0.02), ("Wheels side to side", "track", 0.02), ("front to back", "wb", 0.02) })
+        foreach (var (label, key, step) in new[] { ("Size", "size", 0.02), ("Forward", "fwd", 0.03), ("Up", "up", 0.02), ("Front wheels side to side", "track", 0.02), ("Rear wheels side to side", "track_r", 0.02), ("front to back", "wb", 0.02) })
         {
             string k = key; double s = step;
             var trio = new Control[] { Theme.Lbl(label), Theme.Btn("−", () => Fit(k, -s)), Theme.Btn("+", () => Fit(k, s)) };
             _fitRow.Controls.AddRange(trio);
-            if (k is "track" or "wb") _spacing.AddRange(trio);
+            if (k is "track" or "track_r" or "wb") _spacing.AddRange(trio);
         }
         _fitRow.Controls.Add(Theme.Btn("↻ Turn 90°", () => Fit("turn", 90))); _fitRow.Controls.Add(Theme.Btn("Reset", () => Fit(null, 0)));
         _bodyPage.Controls.Add(_fitRow); _bodyPage.Controls.Add(_fitLabel); _bodyPage.Controls.Add(_roomLabel);
+        var logoRow = new FlowLayoutPanel { AutoSize = true, WrapContents = true, BackColor = Theme.Bg, Margin = new Padding(0, 10, 0, 0) };
+        logoRow.Controls.Add(Theme.Lbl("Logo"));
+        logoRow.Controls.Add(_logoPic);
+        logoRow.Controls.Add(Look.Tip(Theme.Btn("⇩ Import logo (.png)", ImportLogo), "A picture of the maker logo, best a .png with a see-through background. Shown in the garage and car select."));
+        logoRow.Controls.Add(Theme.Btn("Game logo", () => { if (Car()?.Truthy("logo") == true) { Set("logo", null); _f.Say("The car shows its maker's game logo again", Theme.Good); } }));
+        logoRow.Controls.Add(_logoNote);
+        _bodyPage.Controls.Add(logoRow); _wide.Add(logoRow);
+        var flameRow = new FlowLayoutPanel { AutoSize = true, WrapContents = true, BackColor = Theme.Bg, Margin = new Padding(0, 10, 0, 0) };
+        flameRow.Controls.Add(Look.Tip(Theme.Lbl("Exhaust flames"), "Where the flames come out of the exhaust. Drag the orange dots in the car preview"));
+        flameRow.Controls.Add(Look.Tip(Theme.Btn("+ Pipe", () => FlamePipes(1)), "One more exhaust pipe"));
+        flameRow.Controls.Add(Look.Tip(Theme.Btn("− Pipe", () => FlamePipes(-1)), "One exhaust pipe less"));
+        flameRow.Controls.Add(Look.Tip(Theme.Btn("↺ Game spots", () => { Set("exhaust", null); }), "Back to where the game car's pipes are"));
+        flameRow.Controls.Add(_flameNote);
+        _bodyPage.Controls.Add(flameRow); _wide.Add(flameRow);
         _controls.Controls.Add(new Label { Text = "STATS  (each one stays inside the class's range; all together inside its point budget)", AutoSize = true, ForeColor = Theme.Head, Font = Theme.Bold, Margin = new Padding(0, 14, 0, 2) });
         _controls.Controls.Add(_points);
         var body = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Theme.Bg };
@@ -199,17 +240,27 @@ public sealed class CarPanel : Panel
         _controls.Controls.Add(new Label { Text = "Build + install puts your cars in the game (car select: their class).  The game finds a car's 3D model by its body car.", AutoSize = true, ForeColor = ColorTranslator.FromHtml("#9aa8b8"), Margin = new Padding(0, 14, 0, 0) });
         _viewBox.Controls.Add(_view);
         var cams = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, WrapContents = false, BackColor = Theme.Bg, Padding = new Padding(6, 2, 0, 2) };
-        void Cam(string text, string tip, double yaw, double pitch) => cams.Controls.Add(Look.Tip(Theme.Btn(text, () => { OrbitStop(); _yaw = yaw; _pitch = pitch; Draw(true); }), tip));
+        void Cam(string text, string tip, double yaw, double pitch) => cams.Controls.Add(Look.Tip(Theme.Btn(text, () => { OrbitStop(); _yaw = yaw; _pitch = pitch; ZoomReset(); Draw(true); }), tip));
         Cam("⬒ Top", "Look down on the car", 0, -1.5);
         Cam("◧ Side", "The car from its side", Math.PI / 2, -0.08);
         Cam("◉ Front", "The car from the front", 0, -0.12);
         _orbitBtn = Look.Tip(Theme.Btn("⟳ Orbit", OrbitToggle), "Turn around the car by itself (press again to stop)");
         cams.Controls.Add(_orbitBtn);
-        cams.Controls.Add(Look.Tip(Theme.Btn("↺", () => { OrbitStop(); _yaw = -0.7; _pitch = -0.35; Draw(true); }), "Back to the normal view"));
+        cams.Controls.Add(Look.Tip(Theme.Btn("＋", () => ZoomBy(1.25, null)), "Zoom in (or the mouse wheel on the car)"));
+        cams.Controls.Add(Look.Tip(Theme.Btn("−", () => ZoomBy(0.8, null)), "Zoom out (or the mouse wheel on the car)"));
+        cams.Controls.Add(Look.Tip(Theme.Btn("↺", () => { OrbitStop(); _yaw = -0.7; _pitch = -0.35; ZoomReset(); Draw(true); }), "Back to the normal view"));
+        _view.MouseWheel += (_, e) => ZoomBy(e.Delta > 0 ? 1.2 : 1 / 1.2, e.Location);
+        _view.MouseEnter += (_, _) => { if (FindForm()?.ActiveControl is not TextBoxBase) _view.Focus(); };
         _orbit.Tick += (_, _) => { _yaw += 0.035; Draw(false); };
+        _zoomDone.Tick += (_, _) => { _zoomDone.Stop(); Draw(true); };
+        _flameAnim.Tick += (_, _) => { if (FlamesOn && Visible && _view.Visible) _view.Invalidate(); };
+        _flameAnim.Start();
         _viewBox.Controls.Add(cams); _viewBox.Controls.Add(_hint);
         _view.MouseDown += (_, e) =>
         {
+            if (e.Button is MouseButtons.Right or MouseButtons.Middle) { _panning = true; _panFrom = e.Location; return; }
+            int fl = FlameAt(e.Location);
+            if (fl >= 0 && e.Button == MouseButtons.Left) { _flameDrag = fl; _flameFrom = e.Location; Array.Clear(_flameD); return; }
             int w = WheelAt(e.Location);
             if (w >= 0 && e.Button == MouseButtons.Left) { _wheelDrag = w; _wheelFrom = e.Location; _dTrack = _dWb = _dUp = _dFwd = 0; _kSize = 1; return; }
             OrbitStop();
@@ -217,16 +268,20 @@ public sealed class CarPanel : Panel
         };
         _view.MouseMove += (_, e) =>
         {
+            if (_panning) { _panX += e.X - _panFrom.X; _panY += e.Y - _panFrom.Y; _panFrom = e.Location; Draw(false); return; }
+            if (_flameDrag >= 0) { FlameDragTo(e.Location); return; }
             if (_wheelDrag >= 0) { WheelDragTo(e.Location); return; }
             if (_dragging && e.Button == MouseButtons.Left) { _yaw += (e.X - _dragX) * 0.012; _dragX = e.X; Draw(false); return; }
-            _view.Cursor = WheelAt(e.Location) >= 0 ? Cursors.SizeAll : Cursors.SizeWE;
+            _view.Cursor = WheelAt(e.Location) >= 0 || FlameAt(e.Location) >= 0 ? Cursors.SizeAll : Cursors.SizeWE;
         };
         _view.MouseUp += (_, _) =>
         {
+            if (_panning) { _panning = false; Draw(true); return; }
+            if (_flameDrag >= 0) { FlameDragDone(); return; }
             if (_wheelDrag >= 0) { WheelDragDone(); return; }
             _dragging = false; Draw(true);
         };
-        _view.Paint += (_, e) => WheelHandles(e.Graphics);
+        _view.Paint += (_, e) => { WheelHandles(e.Graphics); FlameHandles(e.Graphics); };
         _view.Resize += (_, _) => Draw(true);
         var right = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Bg };
         var vs = f.PanelSash(DockStyle.Right, "car_view_side", _viewBox, 460);
@@ -340,17 +395,82 @@ public sealed class CarPanel : Panel
     {
         var c = Car();
         if (c == null) return;
-        string? path = _f.PickFile("Engine sound (.wav)", "Wave sound|*.wav");
+        string? path = _f.PickFile("Engine sound (.wav or .mp3)", OwnSound.Filter);
         if (path == null) return;
-        try { OwnSound.ReadWav(path); }
-        catch (Exception e) when (e is IOException or InvalidDataException) { _f.Say("This sound can't be used: " + e.Message, Theme.Bad); return; }
-        string folder = Path.Combine(Paths.Tracks, "cars", OwnSound.Folder);
-        Directory.CreateDirectory(folder);
-        string name = Path.GetFileName(path), dst = Path.Combine(folder, name);
-        if (!string.Equals(Path.GetFullPath(path), Path.GetFullPath(dst), StringComparison.OrdinalIgnoreCase)) File.Copy(path, dst, true);
+        string name;
+        try { OwnSound.ReadWav(path); name = OwnSound.Import(path); }
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException) { _f.Say("This sound can't be used: " + e.Message, Theme.Bad); return; }
         Edit(q => { q["sound_own"] = name; q["sound_own_file"] = name; if (!q.ContainsKey("sound_rpm")) q["sound_rpm"] = OwnSound.DefaultRpm; });
         Load2();
         _f.Say($"Your sound {name} is on {c.Str("name")}. Press Listen, set the revs it was recorded at, then Build + install.", Theme.Good);
+    }
+
+    /// a .wav for one of the other sound kinds, into maps\cars\sounds\
+    void ImportKind(OwnSound.Kind kind)
+    {
+        var c = Car();
+        if (c == null) return;
+        string? path = _f.PickFile($"{kind.Label} (.wav or .mp3)", OwnSound.Filter);
+        if (path == null) return;
+        string name;
+        try { OwnSound.ReadWav(path); name = OwnSound.Import(path); }
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException) { _f.Say("This sound can't be used: " + e.Message, Theme.Bad); return; }
+        SetKind(kind, name);
+        _f.Say($"{kind.Label}: your sound {name} is on {c.Str("name")}. You hear it after Build + install.", Theme.Good);
+    }
+
+    void SetKind(OwnSound.Kind kind, string? file)
+    {
+        if (Car() == null) return;
+        Edit(q =>
+        {
+            var sd = q.Obj("sounds") != null ? Share.Copy(q.Obj("sounds")!) : new JObj();
+            if (file == null) sd.Remove(kind.Key); else sd[kind.Key] = file;
+            q["sounds"] = sd.Count > 0 ? sd : null;
+        });
+        ShowKinds();
+    }
+
+    void ShowKinds()
+    {
+        var c = Car();
+        foreach (var k in OwnSound.Kinds)
+        {
+            if (!_kindFile.TryGetValue(k.Key, out var l)) continue;
+            string? f = c?.Obj("sounds")?.Str(k.Key);
+            if (string.IsNullOrEmpty(f)) { l.Text = "(the engine's own)"; l.ForeColor = ColorTranslator.FromHtml("#9aa8b8"); }
+            else if (!File.Exists(OwnSound.FilePath(f))) { l.Text = f + "  (missing!)"; l.ForeColor = Theme.Bad; }
+            else { l.Text = f; l.ForeColor = Theme.Good; }
+        }
+    }
+
+    void ListenKind(OwnSound.Kind kind, Button b)
+    {
+        if (_playing == b) { StopSound(); return; }
+        var c = Car();
+        if (c == null) return;
+        string? f = c.Obj("sounds")?.Str(kind.Key);
+        if (string.IsNullOrEmpty(f) || !File.Exists(OwnSound.FilePath(f)))
+        {
+            // no own sound yet: the game's, so you hear what this row changes
+            string car = EngineCar(c);
+            _f.Say($"The game's {kind.Label.ToLowerInvariant()}...");
+            Task.Run(() =>
+            {
+                try { using var root = new Pak(Paths.RootOriginal); return (OwnSound.GameSound(car, kind.Key, root), (string?)null); }
+                catch (Exception e) when (e is not OutOfMemoryException) { return ((byte[]?)null, e.Message); }
+            }).ContinueWith(t =>
+            {
+                var (wav, err) = t.Result;
+                if (err != null) { _f.Say("Cannot play the game sound: " + err, Theme.Bad); return; }
+                if (wav == null) { _f.Say($"The {Skins.Nice(car)}'s engine has no {kind.Label.ToLowerInvariant()} - pick an engine that has one above", Theme.Warn); return; }
+                PlaySound(b, wav);
+                _f.Say($"The game's {kind.Label.ToLowerInvariant()} ({Skins.Nice(car)}). Import a .wav to change it.", Theme.Good);
+            }, TaskScheduler.FromCurrentSynchronizationContext());
+            return;
+        }
+        try { PlaySound(b, OwnSound.Wav16(OwnSound.ReadWav(OwnSound.FilePath(f)))); }
+        catch (Exception e) when (e is IOException or InvalidDataException) { _f.Say("Cannot play this sound: " + e.Message, Theme.Bad); }
     }
 
     void ListenOwn(Button b)
@@ -462,7 +582,7 @@ public sealed class CarPanel : Panel
         var c = Car();
         if (c == null || _loading || Equals(c[key], value)) return;
         Edit(q => q[key] = value);
-        if (key is "wheels" or "body_glb" or "glb_fit" or "mini_icon") Load2();
+        if (key is "wheels" or "body_glb" or "glb_fit" or "mini_icon" or "logo" or "exhaust" or "replace") Load2();
         if (key == "name") { _loading = true; _list.Items[Sel] = Label(Car()!); _loading = false; }
     }
 
@@ -517,11 +637,28 @@ public sealed class CarPanel : Panel
 
     void Delete()
     {
-        if (Car() == null) return;
+        var c = Car();
+        if (c == null) return;
         _f.D.Snapshot();
         Cars().RemoveAt(Sel);
+        // its imported body (.glb) and own sound (.wav) go too (to the Recycle Bin), unless another car still uses them
+        var gone = new List<string>();
+        bool UsedKind(string file) => Cars().OfType<JObj>().Any(o => OwnSound.Kinds.Any(k => string.Equals(o.Obj("sounds")?.Str(k.Key), file, StringComparison.OrdinalIgnoreCase)));
+        bool Used(string key, string file) => Cars().OfType<JObj>().Any(o => string.Equals(o.Str(key), file, StringComparison.OrdinalIgnoreCase));
+        void Bin(string path)
+        {
+            try { if (File.Exists(path)) { Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(path, Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs, Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin); gone.Add(Path.GetFileName(path)); } }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException) { }
+        }
+        if (c.Truthy("body_glb") && !Used("body_glb", c.Str("body_glb")!)) Bin(GlbPath(c));
+        foreach (var file in new[] { c.Str("sound_own"), c.Str("sound_own_file") }.Where(x => !string.IsNullOrEmpty(x)).Distinct(StringComparer.OrdinalIgnoreCase))
+            if (!Used("sound_own", file!) && !Used("sound_own_file", file!) && !UsedKind(file!)) Bin(OwnSound.FilePath(file!));
+        foreach (var file in OwnSound.Kinds.Select(k => c.Obj("sounds")?.Str(k.Key)).Where(x => !string.IsNullOrEmpty(x)).Distinct(StringComparer.OrdinalIgnoreCase))
+            if (!Used("sound_own", file!) && !Used("sound_own_file", file!) && !UsedKind(file!)) Bin(OwnSound.FilePath(file!));
+        if (c.Truthy("logo") && !Used("logo", c.Str("logo")!)) Bin(CarLogo.FilePath(c.Str("logo")!));
         _f.D.Touched(); _f.Changed();
         Refresh2();
+        if (gone.Count > 0) _f.Say($"{c.Str("name")} deleted, and its files went to the Recycle Bin: {string.Join(", ", gone)}", Theme.Good);
     }
 
     void Load2()
@@ -565,6 +702,7 @@ public sealed class CarPanel : Panel
         _ownFile.Text = own == null ? "(no file yet)" : File.Exists(OwnSound.FilePath(own)) ? own : own + "  (missing!)";
         _ownFile.ForeColor = own != null && !File.Exists(OwnSound.FilePath(own)) ? Theme.Bad : Theme.Text;
         _ownRpm.Value = c.Num("sound_rpm", OwnSound.DefaultRpm);
+        ShowKinds();
         ShowSound();
         bool glb = c.Truthy("body_glb");
         bool rep = c.Truthy("replace");
@@ -576,11 +714,13 @@ public sealed class CarPanel : Panel
         if (glb)
         {
             var q = c.Obj("glb_fit") ?? new JObj();
-            _fitLabel.Text = $"size x{q.Num("size", 1.0):0.00}, forward {q.Num("fwd"):+0.00;-0.00;+0.00} m, up {q.Num("up"):+0.00;-0.00;+0.00} m, turned {q.Int("turn")}°, wheels {q.Num("track"):+0.00;-0.00;+0.00} / {q.Num("wb"):+0.00;-0.00;+0.00} m";
+            _fitLabel.Text = $"size x{q.Num("size", 1.0):0.00}, forward {q.Num("fwd"):+0.00;-0.00;+0.00} m, up {q.Num("up"):+0.00;-0.00;+0.00} m, turned {q.Int("turn")}°, wheels front {CarGlb.Track(q, false):+0.00;-0.00;+0.00} / rear {CarGlb.Track(q, true):+0.00;-0.00;+0.00} / length {q.Num("wb"):+0.00;-0.00;+0.00} m";
             RoomText(c);
         }
         for (int i = 0; i < 2; i++) _paint[i].BackColor = ColorTranslator.FromHtml((string)c.Arr("paint")![i]!);
         ShowMini(c);
+        ShowLogo(c);
+        ShowFlames();
         _loading = false;
         ShowStats();
         Draw(true);
@@ -772,6 +912,74 @@ public sealed class CarPanel : Panel
         }
     }
 
+    /// a picture into maps\cars\logos\, then this car shows it as its maker logo in game (after Build + install)
+    void ImportLogo()
+    {
+        var c = Car();
+        if (c == null) return;
+        string? path = _f.PickFile("Logo picture", "Pictures|*.png;*.jpg;*.jpeg;*.bmp");
+        if (path == null) return;
+        try { using var b = new Bitmap(path); if (b.Width < 8 || b.Height < 8) throw new ArgumentException("the picture is too small"); }
+        catch (Exception e) when (e is ArgumentException or IOException or OutOfMemoryException) { _f.Say("This picture can't be used: " + e.Message, Theme.Bad); return; }
+        string folder = Path.Combine(Paths.Tracks, "cars", CarLogo.Folder);
+        Directory.CreateDirectory(folder);
+        string name = Path.GetFileName(path), dst = Path.Combine(folder, name);
+        if (!string.Equals(Path.GetFullPath(path), Path.GetFullPath(dst), StringComparison.OrdinalIgnoreCase)) File.Copy(path, dst, true);
+        Set("logo", name);
+        _f.Say($"Logo {name} is on {c.Str("name")}. You see it in the garage after Build + install.", Theme.Good);
+    }
+
+    void ShowLogo(JObj c)
+    {
+        var old = _logoPic.Image; _logoPic.Image = null; old?.Dispose();
+        string? file = c.Truthy("logo") ? c.Str("logo") : null;
+        if (file == null) { _logoNote.Text = "the maker's game logo"; _logoNote.ForeColor = Theme.Text; return; }
+        string p = CarLogo.FilePath(file);
+        try
+        {
+            using var b = new Bitmap(p);
+            _logoPic.Image = new Bitmap(b);
+            _logoNote.Text = file; _logoNote.ForeColor = Theme.Good;
+        }
+        catch (Exception e) when (e is ArgumentException or IOException or OutOfMemoryException)
+        {
+            _logoNote.Text = $"{file} is missing - the game logo stays"; _logoNote.ForeColor = Theme.Warn;
+        }
+    }
+
+    /// a menu of the game cars by class; the one picked is saved as a .glb
+    void ExportMenu(Control at)
+    {
+        var menu = new ContextMenuStrip();
+        foreach (var grp in CarUi.Pickable().GroupBy(g => g.Class).OrderBy(g => g.Key))
+        {
+            var sub = new ToolStripMenuItem($"Class {CarUi.Classes[grp.Key]}");
+            foreach (var gc in grp.OrderBy(g => Skins.Nice(g.Name)))
+            {
+                string car = gc.Name;
+                sub.DropDownItems.Add(Skins.Nice(car), null, (_, _) => ExportCar(car));
+            }
+            menu.Items.Add(sub);
+        }
+        menu.Show(at, new Point(0, at.Height));
+    }
+
+    void ExportCar(string car)
+    {
+        string? path = _f.SaveAs("Save the game car's model", "glTF binary|*.glb", car + ".glb");
+        if (path == null) return;
+        _f.Say($"Saving {Skins.Nice(car)}...");
+        Task.Run(() =>
+        {
+            try { File.WriteAllBytes(path, CarExport.Glb(car)); return (string?)null; }
+            catch (Exception e) when (e is not OutOfMemoryException) { return e.Message; }
+        }).ContinueWith(t =>
+        {
+            if (t.Result != null) _f.Say("Cannot save the car: " + t.Result, Theme.Bad);
+            else _f.Say($"Saved {Path.GetFileName(path)} - open it in Blender. To use it as a body, make it smaller (Decimate) to about {CarUi.GlbMaxTris} triangles, then Import body.", Theme.Good);
+        }, TaskScheduler.FromCurrentSynchronizationContext());
+    }
+
     void ImportBody()
     {
         var c0 = Car();
@@ -799,7 +1007,12 @@ public sealed class CarPanel : Panel
         var q = c?.Obj("glb_fit") != null ? Share.Copy(c.Obj("glb_fit")!) : new JObj();
         if (key == null) q = new JObj();
         else if (key == "turn") q["turn"] = Py.Mod(q.Int("turn") + d, 360);
-        else q[key] = Py.RoundN(q.Num(key, key == "size" ? 1.0 : 0.0) + d, 3);
+        else
+        {
+            // the first change of one axle's width: the other keeps where it is (before, one number moved both)
+            if (key is "track" or "track_r" && !q.ContainsKey("track_r")) q["track_r"] = q.Num("track");
+            q[key] = Py.RoundN(q.Num(key, key == "size" ? 1.0 : 0.0) + d, 3);
+        }
         Set("glb_fit", q);
     }
 
@@ -812,7 +1025,7 @@ public sealed class CarPanel : Panel
         string key = Json.Dumps(new List<object?> { c["base"], c["wheels"], c["body_glb"], c["glb_fit"] }, -1);
         var col = ColorTranslator.FromHtml((string)c.Arr("paint")![0]!);
         byte[] paint = { col.R, col.G, col.B };
-        int job = ++_job, size = Math.Max(60, Math.Min(w, h)); double yaw = _yaw, pitch = _pitch;
+        int job = ++_job, size = Math.Max(60, Math.Min(w, h)); double yaw = _yaw, pitch = _pitch, zoom = _zoom, panX = _panX, panY = _panY;
         var info = new CarUi.ViewInfo();
         var car = Share.Copy(c);
         var known = _parts; string pk = _partsKey;
@@ -822,7 +1035,7 @@ public sealed class CarPanel : Panel
             try
             {
                 if (key != pk) parts = CarUi.CarParts(car);
-                if (job == _job) bm = CarUi.Picture(parts!, paint, size, yaw, full, pitch, info);
+                if (job == _job) bm = CarUi.Picture(parts!, paint, size, yaw, full, pitch, info, zoom, panX, panY);
             }
             catch (Exception e) { err = "This car can't be shown: " + e.Message; }
             if (IsHandleCreated && !IsDisposed)
@@ -834,19 +1047,39 @@ public sealed class CarPanel : Panel
                     _hint.Text = "drag = turn the car";
                     var old = _view.Image; _view.Image = bm; old?.Dispose();
                     _viewInfo = info; _wheelsAt = parts != null ? CarUi.Wheels(parts) : new();
+                    ShowFlames();
                     _bodyLo = _bodyHi = null;
                     if (parts != null && parts.Kinds.TryGetValue("glb", out var gt) && gt.Length >= 3)
                     {
                         _bodyLo = new double[] { 1e30, 1e30, 1e30 }; _bodyHi = new double[] { -1e30, -1e30, -1e30 };
                         for (int i = 0; i < gt.Length; i++) { _bodyLo[i % 3] = Math.Min(_bodyLo[i % 3], gt[i]); _bodyHi[i % 3] = Math.Max(_bodyHi[i % 3], gt[i]); }
                     }
-                    _hint.Text = Car()?.Truthy("body_glb") == true ? "drag = turn the car,  blue circles = wheels,  orange = move the body,  diamond = its size" : "drag = turn the car";
+                    _hint.Text = Car()?.Truthy("body_glb") == true ? "drag = turn the car,  blue circles = wheels,  orange = move the body,  diamond = its size,  fire = exhaust flames" : "drag = turn the car,  fire dots = exhaust flames";
                     PictureDone?.Invoke();
                 });
         });
     }
 
     public event Action? PictureDone;
+
+    void ZoomReset() { _zoom = 1; _panX = _panY = 0; }
+
+    /// zoom by k; with a mouse point the spot under it stays where it is (else the middle of the picture)
+    void ZoomBy(double k, Point? at)
+    {
+        double z = Math.Clamp(_zoom * k, 0.5, 8);
+        if (z == _zoom) return;
+        // the mouse point from the middle of the picture (the picture is centred in the control)
+        double sx = 0, sy = 0;
+        if (at is { } p) { sx = p.X - _view.Width / 2.0; sy = p.Y - _view.Height / 2.0; }
+        _panX = sx - (sx - _panX) * z / _zoom; _panY = sy - (sy - _panY) * z / _zoom;
+        _zoom = z;
+        if (_zoom <= 1.0001) { _panX = _panY = 0; }
+        Draw(false);
+        _zoomDone.Stop(); _zoomDone.Start();
+    }
+    readonly System.Windows.Forms.Timer _zoomDone = new() { Interval = 250 };
+    readonly System.Windows.Forms.Timer _flameAnim = new() { Interval = 33 };     // the little fires flicker
 
     void OrbitToggle() { if (_orbit.Enabled) OrbitStop(); else { if (_pitch < -1.2) _pitch = -0.35; _orbit.Start(); if (_orbitBtn != null) _orbitBtn.Text = "■ Stop"; } }
 
@@ -856,6 +1089,148 @@ public sealed class CarPanel : Panel
         _orbit.Stop();
         if (_orbitBtn != null) _orbitBtn.Text = "⟳ Orbit";
         Draw(true);
+    }
+
+    // ---- exhaust flame handles: where the flames come out (every car)
+    void ShowFlames()
+    {
+        var c = Car();
+        if (c == null) { _flames = new(); return; }
+        _flames = CarExhaust.Points(c);
+        bool own = c.Truthy("exhaust");
+        _flameNote.Text = _flames.Count == 0 ? "(this car has none)" : $"{_flames.Count} of at most {CarExhaust.Max(c)} pipe(s), {(own ? "your spots" : "the game car's spots")} - drag the fire dots in the preview";
+        _flameNote.ForeColor = own ? Theme.Good : Theme.Text;
+        _view.Invalidate();
+    }
+
+    bool FlamesOn => _viewInfo != null && _view.Image != null && _flames.Count > 0 && !_dragging;
+
+    /// the other pipe that mirrors pipe i (same height and length, the other side), or -1
+    int Mirror(int i)
+    {
+        var p = _flames[i];
+        if (Math.Abs(p[0]) < 0.03) return -1;
+        for (int j = 0; j < _flames.Count; j++)
+            if (j != i && Math.Abs(_flames[j][0] + p[0]) < 0.03 && Math.Abs(_flames[j][1] - p[1]) < 0.03 && Math.Abs(_flames[j][2] - p[2]) < 0.03) return j;
+        return -1;
+    }
+
+    double[] FlameAtNow(int i)
+    {
+        var p = _flames[i];
+        if (_flameDrag < 0) return p;
+        if (i == _flameDrag) return new[] { p[0] + _flameD[0], p[1] + _flameD[1], p[2] + _flameD[2] };
+        return p;
+    }
+
+    int FlameAt(Point q)
+    {
+        if (!FlamesOn) return -1;
+        for (int i = 0; i < _flames.Count; i++) { var p = ViewPoint(_flames[i][0], _flames[i][1], _flames[i][2]); if (Math.Abs(p.X - q.X) < 11 && Math.Abs(p.Y - q.Y) < 11) return i; }
+        return -1;
+    }
+
+    /// screen move -> car-space move along the two of the car's axes that show best on screen now
+    void FlameDragTo(Point q)
+    {
+        var p = _flames[_flameDrag];
+        var o = CarUi.Project(_viewInfo!, p[0], p[1], p[2]);
+        var ax = new (double X, double Y)[3];
+        for (int k = 0; k < 3; k++) { var e = (double[])p.Clone(); e[k] += 1; var s = CarUi.Project(_viewInfo!, e[0], e[1], e[2]); ax[k] = (s.X - o.X, s.Y - o.Y); }
+        (int A, int B) best = (0, 2); double bestDet = 0;
+        foreach (var (a, b) in new[] { (0, 2), (1, 2), (0, 1) })
+        {
+            double d = Math.Abs(ax[a].X * ax[b].Y - ax[a].Y * ax[b].X);
+            if (d > bestDet * 1.2) { bestDet = d; best = (a, b); }
+        }
+        var (ia, ib) = best;
+        double ux = ax[ia].X, uy = ax[ia].Y, vx = ax[ib].X, vy = ax[ib].Y, det = ux * vy - uy * vx;
+        double dx = q.X - _flameFrom.X, dy = q.Y - _flameFrom.Y;
+        Array.Clear(_flameD);
+        if (Math.Abs(det) > 1e-3) { _flameD[ia] = Math.Round((dx * vy - dy * vx) / det, 3); _flameD[ib] = Math.Round((ux * dy - uy * dx) / det, 3); }
+        var n = FlameAtNow(_flameDrag);
+        _f.Say($"Pipe {_flameDrag + 1}: side {n[0]:+0.00;-0.00;+0.00} m, up {n[1]:+0.00;-0.00;+0.00} m, along {n[2]:+0.00;-0.00;+0.00} m  (let go to keep it)");
+        _view.Invalidate();
+    }
+
+    void FlameDragDone()
+    {
+        int i = _flameDrag;
+        var pts = Enumerable.Range(0, _flames.Count).Select(FlameAtNow).ToList();
+        _flameDrag = -1;
+        if (i < 0 || _flameD.All(v => v == 0)) { _view.Invalidate(); return; }
+        Array.Clear(_flameD);
+        SaveFlames(pts);
+    }
+
+    void SaveFlames(List<double[]> pts) => Set("exhaust", pts.Select(p => (object?)p.Select(v => (object?)Py.RoundN(v, 3)).ToList()).ToList());
+
+    /// one pipe more (the twin of the last one on the other side, or next to it) or less (never none)
+    void FlamePipes(int d)
+    {
+        if (Car() == null || _flames.Count == 0) { _f.Say("This car has no exhaust flames", Theme.Warn); return; }
+        var pts = _flames.Select(p => (double[])p.Clone()).ToList();
+        if (d < 0) { if (pts.Count <= 1) { _f.Say("A car needs at least one pipe", Theme.Warn); return; } pts.RemoveAt(pts.Count - 1); }
+        else
+        {
+            int max = CarExhaust.Max(Car()!);
+            if (pts.Count >= max) { _f.Say(Car()!.Truthy("replace") ? $"The car it replaces has {max} pipe(s) - that is the most" : "A new car has at most 2 pipes", Theme.Warn); return; }
+            var l = pts[^1];
+            var twin = new[] { -l[0], l[1], l[2] };
+            bool taken = pts.Any(p => Math.Abs(p[0] - twin[0]) < 0.05 && Math.Abs(p[1] - twin[1]) < 0.05 && Math.Abs(p[2] - twin[2]) < 0.05);
+            pts.Add(taken ? new[] { l[0] + (l[0] >= 0 ? 0.1 : -0.1), l[1], l[2] } : twin);
+        }
+        SaveFlames(pts);
+    }
+
+    void FlameHandles(Graphics g)
+    {
+        if (!FlamesOn) return;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        double time = Environment.TickCount64 / 1000.0;
+        for (int i = 0; i < _flames.Count; i++)
+        {
+            var p = FlameAtNow(i);
+            var at = ViewPoint(p[0], p[1], p[2]);
+            // a small flickering fire blowing backwards out of the pipe (along -z), so it is clear what the dot is
+            var back = ViewPoint(p[0], p[1], p[2] - 0.35);
+            float dx = back.X - at.X, dy = back.Y - at.Y, len = MathF.Sqrt(dx * dx + dy * dy);
+            if (len < 4) { dx = 0; dy = -1; len = 1; }         // seen from straight behind: the fire points up a little
+            float ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+            // a backfire: every ~1.2 s a burst shoots out of the pipe - puffs that fly back, grow, turn from white-yellow to
+            // orange to red and fade - then a short rest with only a tiny glow at the pipe
+            float reach = Math.Clamp(len * 2.6f, 60f, 140f) * (float)(_zoom > 1 ? Math.Min(_zoom, 2.5) : 1);
+            double ph = (time / 1.2 + i * 0.37) % 1.0;
+            const int Puffs = 10;
+            if (ph < 0.45)
+            {
+                float t = (float)(ph / 0.45);                    // 0 -> 1 over the burst
+                for (int k = Puffs - 1; k >= 0; k--)
+                {
+                    float s = (float)k / Puffs;                    // later puffs leave later
+                    float life = Math.Clamp(t * 1.7f - s * 0.7f, 0f, 1f);
+                    if (life <= 0) continue;
+                    float dist = reach * (1 - (1 - life) * (1 - life)) * (0.75f + 0.25f * (1 - s));   // fast out, slowing down
+                    float side = (float)Math.Sin(k * 2.3 + i + time * 9) * dist * 0.08f;
+                    float r = 4f + dist * 0.16f;
+                    float fade = (1 - life) * (1 - t * 0.5f);
+                    if (fade <= 0.02f) continue;
+                    var c = life < 0.3f ? Color.FromArgb((int)(240 * fade), 255, 240, 170) : life < 0.65f ? Color.FromArgb((int)(220 * fade), 255, 150, 40) : Color.FromArgb((int)(190 * fade), 230, 70, 20);
+                    float px = at.X + ux * dist + nx * side, py = at.Y + uy * dist + ny * side;
+                    using (var glow = new SolidBrush(Color.FromArgb((int)(c.A * 0.35f), c.R, c.G, c.B))) g.FillEllipse(glow, px - r * 1.8f, py - r * 1.8f, r * 3.6f, r * 3.6f);
+                    using (var b = new SolidBrush(c)) g.FillEllipse(b, px - r, py - r, 2 * r, 2 * r);
+                }
+                // the flash at the pipe at the start of the burst
+                if (t < 0.35f) { float fr = 9 * (1 - t / 0.35f) + 4; using var fl = new SolidBrush(Color.FromArgb((int)(230 * (1 - t / 0.35f)), 255, 250, 210)); g.FillEllipse(fl, at.X - fr, at.Y - fr, 2 * fr, 2 * fr); }
+            }
+            else
+            {
+                float gl = 3 + (float)Math.Sin(time * 20 + i) * 1.2f;
+                using var idle = new SolidBrush(Color.FromArgb(110, 255, 120, 30)); g.FillEllipse(idle, at.X + ux * 4 - gl, at.Y + uy * 4 - gl, 2 * gl, 2 * gl);
+            }
+            using (var fill = new SolidBrush(Color.FromArgb(255, 255, 110, 30))) g.FillEllipse(fill, at.X - 5, at.Y - 5, 10, 10);
+            using (var ring = new Pen(i == _flameDrag ? Color.FromArgb(255, 255, 230, 120) : Color.White, 1.5f)) g.DrawEllipse(ring, at.X - 5, at.Y - 5, 10, 10);
+        }
     }
 
     // ---- wheel handles: only for an imported body (its fit moves the wheels)
@@ -946,7 +1321,8 @@ public sealed class CarPanel : Panel
         // outward from the car's middle = wider; both sides move together, so the whole width changes twice as much
         _dTrack = Math.Round(2 * a * w.Side, 2); _dWb = Math.Round(2 * b * w.End, 2);
         var q = Car()?.Obj("glb_fit");
-        _f.Say($"Wheels side to side {(q?.Num("track") ?? 0) + _dTrack:+0.00;-0.00;+0.00} m,  front to back {(q?.Num("wb") ?? 0) + _dWb:+0.00;-0.00;+0.00} m  (let go to keep it)");
+        _dragRear = w.End < 0;
+        _f.Say($"{(_dragRear ? "Rear" : "Front")} wheels side to side {(q != null ? CarGlb.Track(q, _dragRear) : 0) + _dTrack:+0.00;-0.00;+0.00} m,  front to back {(q?.Num("wb") ?? 0) + _dWb:+0.00;-0.00;+0.00} m  (let go to keep it)");
         _view.Invalidate();
     }
 
@@ -958,7 +1334,12 @@ public sealed class CarPanel : Panel
         var q = c?.Obj("glb_fit") != null ? Share.Copy(c.Obj("glb_fit")!) : new JObj();
         if (i == BodyHandle) { q["up"] = Py.RoundN(q.Num("up") + _dUp, 3); q["fwd"] = Py.RoundN(q.Num("fwd") + _dFwd, 3); }
         else if (i == SizeHandle) q["size"] = Py.RoundN(q.Num("size", 1.0) * _kSize, 3);
-        else { q["track"] = Py.RoundN(q.Num("track") + _dTrack, 3); q["wb"] = Py.RoundN(q.Num("wb") + _dWb, 3); }
+        else
+        {
+            if (!q.ContainsKey("track_r")) q["track_r"] = q.Num("track");
+            string tk = _dragRear ? "track_r" : "track";
+            q[tk] = Py.RoundN(q.Num(tk) + _dTrack, 3); q["wb"] = Py.RoundN(q.Num("wb") + _dWb, 3);
+        }
         _dTrack = _dWb = _dUp = _dFwd = 0; _kSize = 1;
         Set("glb_fit", q);
     }
@@ -1003,7 +1384,8 @@ public sealed class CarPanel : Panel
         // where the dragged wheel goes, and the other three with it
         for (int i = 0; i < _wheelsAt.Count; i++)
         {
-            var from = WheelPoint(i); var to = WheelPoint(i, _dTrack / 2, _dWb / 2);
+            bool same = (_wheelsAt[i].End < 0) == _dragRear;      // only the dragged axle gets wider; the length moves all four
+            var from = WheelPoint(i); var to = WheelPoint(i, same ? _dTrack / 2 : 0, _dWb / 2);
             using var line = new Pen(Color.FromArgb(160, 255, 210, 90), 1.5f) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash };
             g.DrawLine(line, from, to);
             using var hit = new SolidBrush(Color.FromArgb(230, 255, 210, 90)); g.FillEllipse(hit, to.X - 7, to.Y - 7, 14, 14);

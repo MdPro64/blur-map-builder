@@ -582,13 +582,17 @@ public static class Skins
     }
 
     /// {car: [pictures]} of the skins that are on (and whose picture is there)
-    public static Dictionary<string, List<string>> OnNow()
+    public static Dictionary<string, List<string>> OnNow() => OnNow(Folder);
+
+    /// the skins that are on in a skins folder (the player's, or the copy of the last install)
+    public static Dictionary<string, List<string>> OnNow(string folder)
     {
         var o = new Dictionary<string, List<string>>();
-        foreach (var (car, v) in All())
+        JObj all; try { all = (JObj)Json.Load(Path.Combine(folder, "skins.json"))!; } catch (Exception) { all = new JObj(); }
+        foreach (var (car, v) in all)
             if (v is JObj pics)
                 foreach (var (pic, e) in pics)
-                    if (e is JObj j && j.Truthy("on") && File.Exists(SkinFile(car, pic))) { if (!o.TryGetValue(car, out var l)) o[car] = l = new(); l.Add(pic); }
+                    if (e is JObj j && j.Truthy("on") && File.Exists(Path.Combine(folder, car, pic + ".png"))) { if (!o.TryGetValue(car, out var l)) o[car] = l = new(); l.Add(pic); }
         return o;
     }
 
@@ -691,14 +695,15 @@ public static class Skins
 
     /// a copy of the model with the skins written over its pictures, every stored size (same byte length; a plain-paint car first
     /// gets its picture slot, a little longer)
-    public static byte[] Apply(byte[] model, string car, IEnumerable<string> pics, Action<string>? log = null)
+    public static byte[] Apply(byte[] model, string car, IEnumerable<string> pics, Action<string>? log = null, string? folder = null)
     {
+        string File0(string c, string p) => folder == null ? SkinFile(c, p) : Path.Combine(folder, c, p + ".png");
         bool plain = IsPlain(car);
         if (plain) model = PlainSkin.AddSlot(model, IsDecal(car)) ?? throw new InvalidDataException(Nice(car) + ": no picture slot could be added");
         var o = (byte[])model.Clone();
         foreach (var pic in pics)
         {
-            var img = Rgba.Load(SkinFile(car, pic));
+            var img = Rgba.Load(File0(car, pic));
             if (plain) img = img.OnColour(200, 200, 200);          // its picture keeps no see-through: clear parts become light grey
             var lv = Levels(model, pic);
             int done = 0;
@@ -715,15 +720,17 @@ public static class Skins
     }
 
     /// the map build: the models of every car with a skin on, written over what the build already changed. Also notes them as installed
-    public static List<KeyValuePair<string, byte[]>> BuildFiles(IList<KeyValuePair<string, byte[]>> files, Func<string, byte[]> read, Action<string> log)
+    /// from: a skins folder to use instead of the player's (the copy of the last install, when skins are not ticked)
+    public static List<KeyValuePair<string, byte[]>> BuildFiles(IList<KeyValuePair<string, byte[]>> files, Func<string, byte[]> read, Action<string> log, string? from = null)
     {
         var o = new List<KeyValuePair<string, byte[]>>();
-        var on = OnNow();
+        var on = OnNow(from ?? Folder);
+        if (from != null) log("skins: not ticked - the skins of the last install are put in again (unchanged)");
         foreach (var (car, pics) in on)
         {
             string path = ModelPath(car);
             var bas = files.LastOrDefault(f => f.Key.Equals(path, StringComparison.OrdinalIgnoreCase)).Value ?? read(path);
-            o.Add(new(path, Apply(bas, car, pics, log)));
+            o.Add(new(path, Apply(bas, car, pics, log, from)));
         }
         if (on.Count > 0) log($"car skins: {on.Count} car(s) with your skin");
         var inst = LoadJson("installed.json"); inst["cars"] = on.Keys.Select(k => (object?)k).ToList();
@@ -755,6 +762,7 @@ public static class Skins
         var inst = LoadJson("installed.json"); inst["cars"] = on.Keys.Select(k => (object?)k).ToList();
         SaveJson("installed.json", inst);
         InstallNormal(on, log, step, made);
+        try { Installed.RememberSkins(); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { log("could not keep a copy of the installed skins: " + e.Message); }
         return (on.Count, back);
     }
 

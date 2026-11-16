@@ -131,6 +131,7 @@ public static class CarModel
     {
         el = el.ToLowerInvariant();
         if (el.Contains("tyre")) return "tyre";
+        if (el.Contains("brakelight")) return "light";     // "brake" alone means a wheel's disc / caliper
         if (el.Contains("alloyrim") || el.Contains("brake") || el.Contains("hubcap") || el.Contains("rim")) return "rim";
         if (el.Contains("glass") || el.Contains("window") || el.Contains("screen")) return "glass";
         if (el.Contains("light") || el.Contains("lamp")) return "light";
@@ -346,7 +347,7 @@ public static class CarModel
         foreach (var c in Corners)
         {
             if (!refCar.Centre.TryGetValue(c, out var at) || !src.Centre.TryGetValue(c, out var frm)) continue;
-            double[] to = { at[0] + Math.Sign(at[0]) * fit.Num("track") / 2, at[1], at[2] + Math.Sign(at[2]) * fit.Num("wb") / 2 };
+            double[] to = { at[0] + Math.Sign(at[0]) * CarGlb.Track(fit, c.StartsWith("back")) / 2, at[1], at[2] + Math.Sign(at[2]) * fit.Num("wb") / 2 };
             foreach (var kind in new[] { "tyre", "rim" })
                 if (src.Tris.TryGetValue(kind + "|" + c, out var l))
                     foreach (var arr in l)
@@ -369,6 +370,10 @@ public static class CarGlb
     /// the game model every imported body is written into: the one with the most room (about 14,600 triangles), whatever the class.
     /// (GlbBody stays the class's start car for a new car's handling.)
     public const string Container = "Bowler_Nemesis_Stock";
+
+    /// how much wider (m) the front / rear wheels sit than the body car's: fit["track"] = front, fit["track_r"] = rear
+    /// (a car from before the rear had its own number: the rear follows the front)
+    public static double Track(JObj fit, bool rear) => rear && fit.ContainsKey("track_r") ? fit.Num("track_r") : fit.Num("track");
     static readonly Dictionary<int, int> TypeSize = new() { [6] = 12, [0xB] = 4, [8] = 4, [9] = 8, [0xA] = 4 };
     static readonly double[] BuriedBox = { -0.01, -20.0, -0.01, 0.01, -19.99, 0.01 };
     static readonly Regex Level = new("\\x1c\\x00\\x00\\x00(....)(....)\\x01\\x00\\x00\\x00(....)DXT1\\x00\\x00\\x00\\x00\\x03\\x00\\x00\\x00RA\\x00\\x00(....)", RegexOptions.Singleline | RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -741,13 +746,24 @@ public static class CarGlb
                     moved++;
                 }
         }
-        int head = M.VStreams.Min(v => v.Start), done = 0;
+        // each light's box is in the file twice: in the element list (before the vertex data) and in the part list at the end
+        // (after it). The game puts the glowing brake / rear light trails at the centre of that second one, so both go under
+        // the ground, or the old car's light trails float behind the new body.
+        int head = M.VStreams.Min(v => v.Start), tail = M.VStreams.Max(v => v.Start + v.Count * v.Bytes), done = 0;
         var nw = Box6(BuriedBox);
         foreach (var e in M.AllElements)
         {
             if (CarModel.Kind(e.Name) != "light") continue;
             var old = Box6(e.Box);
-            if (!old.AsSpan().SequenceEqual(nw)) done += Replace(d, old, nw, head);
+            if (old.AsSpan().SequenceEqual(nw)) continue;
+            done += Replace(d, old, nw, head);
+            // the second copy's numbers are rounded a little differently: matched within 1 mm
+            for (int i = tail; i + 24 <= d.Length; i++)
+            {
+                int k = 0;
+                while (k < 6 && Math.Abs(BitConverter.ToSingle(d, i + 4 * k) - e.Box[k]) < 0.001) k++;
+                if (k == 6) { nw.CopyTo(d, i); done++; i += 20; }
+            }
         }
         log($"   the body car's lights hidden ({moved} points + {done} boxes put under the ground)");
     }
@@ -927,6 +943,172 @@ public static class CarGlb
     }
 }
 
+/// where the exhaust flames come out: the car record's exhaustEmitters (a list of points in the car model's own space, x = side,
+/// y = up, z = forward). A custom car copies its body car's record, so its flames sit where that car's pipes are; car["exhaust"]
+/// = [[x, y, z], ...] puts them where this car's pipes are (any number of pipes; added ones copy the last game one's settings).
+public static class CarExhaust
+{
+    static Db? _db;
+    static readonly object _lock = new();
+
+    /// a game car's flame points (empty if it has none or can't be read)
+    public static List<double[]> Game(string car)
+    {
+        try
+        {
+            lock (_lock)
+            {
+                _db ??= new Db(File.ReadAllBytes(Path.Combine(Paths.Unpacked, "xt", "amax.bin")));
+                return _db.Cars().TryGetValue(car, out int i) ? Read(_db, i) : new();
+            }
+        }
+        catch (Exception e) when (e is IOException or InvalidDataException or KeyNotFoundException or InvalidOperationException) { return new(); }
+    }
+
+    static (int Field, int Pos) Offsets(Db db, int obj)
+    {
+        var b0 = db.K.Objects[obj].Blocks[0];
+        int fOff = db.Field(b0.Type, "exhaustEmitters").Off;
+        int blk = B.U16(db.Data, b0.Offset + fOff);
+        if (blk == 0xFFFF) return (fOff, -1);
+        int et = db.K.Objects[obj].Blocks[blk].Type;
+        var pf = db.K.AllFields(et).First(f => f.Name == "position");
+        return (fOff, pf.Offset + db.K.FieldOffset(pf.Type, "vx"));
+    }
+
+    internal static List<double[]> Read(Db db, int obj)
+    {
+        var o = new List<double[]>();
+        var (fOff, pos) = Offsets(db, obj);
+        if (pos < 0) return o;
+        var ob = db.K.Objects[obj]; int a = ob.Blocks[0].Offset + fOff;
+        int blk = B.U16(db.Data, a), first = B.U16(db.Data, a + 2), cnt = (int)B.U32(db.Data, a + 4);
+        var eb = ob.Blocks[blk];
+        for (int j = first; j < first + cnt; j++)
+        {
+            int e = eb.Offset + j * eb.Size + pos;
+            o.Add(new double[] { B.F32(db.Data, e), B.F32(db.Data, e + 4), B.F32(db.Data, e + 8) });
+        }
+        return o;
+    }
+
+    /// the record (object obj of amax.bin) with these flame points instead of its own
+    public static byte[] Write(byte[] amaxD, int obj, List<double[]> pts)
+    {
+        var db = new Db(amaxD);
+        var (fOff, pos) = Offsets(db, obj);
+        if (pos < 0 || pts.Count == 0) throw new InvalidDataException("this car has no exhaust flames to move");
+        return KslfWrite.EditObject(amaxD, obj, c =>
+        {
+            int a = c.Blocks[0] + fOff;
+            int blk = B.U16(c.Data.A, a), first = B.U16(c.Data.A, a + 2), cnt = (int)B.U32(c.Data.A, a + 4);
+            int size = c.Types[c.Rows[blk][0]].Size;
+            var items = new List<byte[]>();
+            for (int j = 0; j < pts.Count; j++)
+            {
+                var e = c.Data.A.AsSpan(c.Blocks[blk] + (first + Math.Min(j, cnt - 1)) * size, size).ToArray();
+                for (int k = 0; k < 3; k++) B.Put(e, pos + 4 * k, (float)pts[j][k]);
+                items.Add(e);
+            }
+            if (pts.Count <= cnt)
+                for (int j = 0; j < pts.Count; j++) items[j].CopyTo(c.Data.A, c.Blocks[blk] + (first + j) * size);
+            else
+            {
+                first = c.Rows[blk][1];
+                c.Insert(blk, first, items.SelectMany(x => x).ToArray());
+                a = c.Blocks[0] + fOff;
+            }
+            c.Data.Put(a + 2, (ushort)first); c.Data.Put(a + 4, (uint)pts.Count);
+        });
+    }
+
+    /// (look only) the flame points of the cars whose names start with one of these
+    public static List<string> Dump(byte[] amax, string[] starts)
+    {
+        var db = new Db(amax);
+        return db.Cars().Where(c => starts.Any(c.Key.StartsWith)).Select(c => $"{c.Key}: " + string.Join("  ", Read(db, c.Value).Select(p => $"({p[0]:0.000}, {p[1]:0.000}, {p[2]:0.000})"))).ToList();
+    }
+
+    /// how many pipes a car may have: a replacer as many as the game car it replaces, a new car 2
+    public static int Max(JObj car) => car.Truthy("replace") ? Math.Max(1, Game(car.Str("replace")!).Count) : 2;
+
+    /// where this car's flames come out: its own spots, else the game car's (the replaced car, else the body car); never more than Max
+    public static List<double[]> Points(JObj car)
+    {
+        var p = Of(car) ?? Game(car.Truthy("replace") ? car.Str("replace")! : car.Str("base")!);
+        return p.Take(Max(car)).ToList();
+    }
+
+    /// the points to write in the build, or null to leave the record's own (no own spots and not more than Max of them)
+    public static List<double[]>? ToWrite(JObj car, int gameCount) => Of(car) != null || gameCount > Max(car) ? Points(car) : null;
+
+    /// the points a car's JSON asks for (null = the game's)
+    public static List<double[]>? Of(JObj car)
+    {
+        var arr = car.Arr("exhaust");
+        if (arr == null || arr.Count == 0) return null;
+        var o = new List<double[]>();
+        foreach (var p in arr)
+            if (p is List<object?> l && l.Count >= 3) o.Add(new[] { Convert.ToDouble(l[0]), Convert.ToDouble(l[1]), Convert.ToDouble(l[2]) });
+        return o.Count > 0 ? o : null;
+    }
+}
+
+/// a custom car's own maker logo (shown in the garage / car select instead of the body car's maker's). The picture goes into the
+/// menu pack (\ui\data\ui_frontend.bpr) like the game's logos: 256 x 128 + 128 x 64, DXT5 (with see-through). The car gets a copy
+/// of its maker record (AmaxManufacturer) whose UiTexture names that picture; the maker's name stays.
+public static class CarLogo
+{
+    public const string Folder = "logos";                          // maps\cars\logos\ (next to the imported bodies)
+    public const int W = 256, H = 128;
+    public static string FilePath(string file) => Path.Combine(Paths.Tracks, "cars", Folder, file);
+    public static string TexName(int car) => $"man_bmb_{car}";
+
+    /// the picture fitted (whole, centred, see-through around it) into w x h, as RGBA bytes
+    public static byte[] Rgba(string path, int w, int h)
+    {
+        using var src = new Bitmap(path);
+        using var bm = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(bm))
+        {
+            g.Clear(Color.Transparent);
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+            double k = Math.Min((double)w / src.Width, (double)h / src.Height);
+            int dw = Math.Max(1, (int)Math.Round(src.Width * k)), dh = Math.Max(1, (int)Math.Round(src.Height * k));
+            g.DrawImage(src, (w - dw) / 2, (h - dh) / 2, dw, dh);
+        }
+        var o = new byte[w * h * 4];
+        var d = bm.LockBits(new Rectangle(0, 0, w, h), System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        try
+        {
+            var row = new byte[w * 4];
+            for (int y = 0; y < h; y++)
+            {
+                System.Runtime.InteropServices.Marshal.Copy(d.Scan0 + y * d.Stride, row, 0, row.Length);
+                for (int x = 0; x < w; x++) { int a = 4 * (y * w + x); o[a] = row[4 * x + 2]; o[a + 1] = row[4 * x + 1]; o[a + 2] = row[4 * x]; o[a + 3] = row[4 * x + 3]; }
+            }
+        }
+        finally { bm.UnlockBits(d); }
+        return o;
+    }
+
+    /// (look only) each car whose name starts with one of these: its maker record and the logo picture it names
+    public static List<string> Dump(byte[] amax, string[] starts)
+    {
+        var db = new Db(amax); var o = new List<string>();
+        foreach (var (n, i) in db.Cars().Where(c => starts.Any(c.Key.StartsWith)))
+        {
+            int mo = db.ObjOfUid(db.RefUid(i, "Manufacturer"));
+            o.Add($"{n}: maker {db.Name(mo)} -> {db.K.Top(db.K.Objects[mo])["UiTexture"]}");
+        }
+        return o;
+    }
+
+    /// the game's logo picture data: 256 x 128 then 128 x 64, DXT5
+    public static byte[] Picture(string path) => B.Concat(Sky.Dxt5(Rgba(path, W, H), W, H), Sky.Dxt5(Rgba(path, W / 2, H / 2), W / 2, H / 2));
+}
+
 public static class CarIcon
 {
     public const string Auto = "auto"; const int Wide = 480;
@@ -1088,7 +1270,7 @@ public static class CarIcon
 
 public static partial class CarBuild
 {
-    const uint Uid0 = 0xCA400000, Loc0 = 0x4D440000; const double DriverDown = 1.5;
+    const uint Uid0 = 0xCA400000, LogoUid0 = 0xCA4F0000, Loc0 = 0x4D440000; const double DriverDown = 1.5;
     static readonly (string Stat, string[] Fields)[] Trend =
     {
         ("speed", new[] { "friction.airFriction", "gears.finalRatio" }), ("acceleration", new[] { "engine.engineTorque_Rpm.yScale" }),
@@ -1199,7 +1381,7 @@ public static partial class CarBuild
             bool glbBody = car.Truthy("body_glb");
             if (glbBody) rb = rp.ObjOfUid(amax.RefUid(amax.Cars()[CarGlb.Container], "dynamics"));     // its wheels sit where the container's do
             var fit = car.Truthy("body_glb") ? car.Obj("glb_fit") ?? new JObj() : new JObj();
-            foreach (var (f, d) in new[] { ("geometry.wheelBase", fit.Num("wb")), ("geometry.trackWidthFront", fit.Num("track")), ("geometry.trackWidthRear", fit.Num("track")) })
+            foreach (var (f, d) in new[] { ("geometry.wheelBase", fit.Num("wb")), ("geometry.trackWidthFront", CarGlb.Track(fit, false)), ("geometry.trackWidthRear", CarGlb.Track(fit, true)) })
                 if (d != 0 || replacing || glbBody) rpVals[f] = rp.Get(rb, f) + d;
             rpD = KslfWrite.CloneObjectAny(rpD, ri, null, dynUid, (data, pool, blocks) =>
             {
@@ -1228,6 +1410,18 @@ public static partial class CarBuild
             int wm = amax.ObjOfUid(amax.RefUid(amax.Cars().GetValueOrDefault(wheels, bi), "wheelModel"));
             int fnOff = amax.Field(amax.K.Objects[wm].Blocks[0].Type, "fileName").Off;
             amaxD = KslfWrite.CloneObjectAny(amaxD, wm, null, wheelUid, (data, pool, blocks) => { data.Put(blocks[0] + fnOff, (uint)pool.Len); pool.AddSz(name); });
+            // an own logo: a copy of the maker record (of the car it replaces, else of the body car) naming the car's logo picture
+            uint manUid = LogoUid0 + (uint)i;
+            bool logo = LogoFile(car) != null;
+            if (logo)
+            {
+                amax = new Db(amaxD);
+                int of = amax.Cars()[replacing ? replaceOf! : bas];
+                int mo = amax.ObjOfUid(amax.RefUid(of, "Manufacturer"));
+                int texOff = amax.Field(amax.K.Objects[mo].Blocks[0].Type, "UiTexture").Off;
+                amaxD = KslfWrite.CloneObjectAny(amaxD, mo, name + "_logo", manUid, (data, pool, blocks) => { data.Put(blocks[0] + texOff, (uint)pool.Len); pool.AddSz(CarLogo.TexName(i)); });
+                log($"   own logo {car.Str("logo")} (instead of the {amax.Name(mo)} logo)");
+            }
             amax = new Db(amaxD);
             bi = amax.Cars()[bas];
             int wi = amax.Cars().GetValueOrDefault(wheels, bi);
@@ -1235,6 +1429,7 @@ public static partial class CarBuild
             var sets = new Dictionary<string, double>(carVals);
             foreach (var f in new[] { "wheelScaleFront", "wheelScaleRear", "wheelDepthFront", "wheelDepthRear" }) sets[f] = amax.Get(wi, f);
             sets["wheelModel"] = amax.RowOfUid(wheelUid);
+            if (logo) sets["Manufacturer"] = amax.RowOfUid(manUid);
             var s2 = car.Obj("stats")!;
             long mph = CarsData.TopSpeed((int)car.Int("class"), s2.Int("speed"));
             sets["LocString"] = Loc0 + (uint)i; sets["dynamics"] = dynRow; sets["UiSpeed"] = s2.Int("speed"); sets["UiAcceleration"] = s2.Int("acceleration"); sets["UiDrift"] = s2.Int("drift");
@@ -1256,16 +1451,18 @@ public static partial class CarBuild
                     catch (InvalidOperationException) { }     // a field this game's record does not have
                 }
             // its own engine sound: copies of the engine's sound entries (the root pack gets the bank + .dat copies), the car points at it
-            int ownRow = -1, aiRow = -1;
-            if (OwnSoundFile(car) != null)
+            int ownRow = -1, aiRow = -1, wheelRow = -1, aiWheelRow = -1;
+            if (HasOwnSounds(car))
             {
                 try
                 {
                     rootSrc ??= new Pak(Paths.RootOriginal);
-                    var plans = OwnSound.MakePlans(EngineCar(car), i, rootSrc);
+                    var kinds = ExtraSoundFiles(car).Keys.Select(k => OwnSound.Kinds.First(q => q.Key == k).Bank).ToHashSet();
+                    var plans = OwnSound.MakePlans(EngineCar(car), i, rootSrc, kinds.Contains("common"));
+                    var wplans = kinds.Contains("wheel") ? OwnSound.MakeWheelPlans(EngineCar(car), i, rootSrc) : new();
                     int baseRow = (int)amax.Get(bi, "vehicleAudioEntity");
                     string ptype = amax.K.Types[amax.K.Refs[baseRow].Type].Name;
-                    foreach (var plan in plans)
+                    foreach (var plan in plans.Concat(wplans))
                     {
                         (audD, entD) = OwnSound.AddEntries(plan, audD ?? Rd("audio.bin"), entD ?? Rd("audioentities.bin"));
                         amaxD = KslfWrite.InsertUid(amaxD, plan.NewProxy, ptype, out _);
@@ -1274,6 +1471,7 @@ public static partial class CarBuild
                     ownRow = amax.RowOfUid(plans[0].NewProxy);
                     // the AI version: its own copy when the engine has one, else the full copy
                     aiRow = plans.Count > 1 ? amax.RowOfUid(plans[1].NewProxy) : ownRow;
+                    if (wplans.Count > 0) { wheelRow = amax.RowOfUid(wplans[0].NewProxy); aiWheelRow = wplans.Count > 1 ? amax.RowOfUid(wplans[1].NewProxy) : wheelRow; }
                     // the rows of the copied sound fields may have moved with the new row: read them again
                     if (si >= 0)
                     {
@@ -1289,9 +1487,9 @@ public static partial class CarBuild
                             catch (InvalidOperationException) { }
                         }
                     }
-                    sets["dynamics"] = amax.RowOfUid(dynUid); sets["wheelModel"] = amax.RowOfUid(wheelUid); paintRow = amax.RowOfUid(paintUid);
+                    sets["dynamics"] = amax.RowOfUid(dynUid); sets["wheelModel"] = amax.RowOfUid(wheelUid); paintRow = amax.RowOfUid(paintUid); if (logo) sets["Manufacturer"] = amax.RowOfUid(manUid);
                 }
-                catch (Exception e) when (e is IOException or InvalidDataException or InvalidOperationException or KeyNotFoundException) { log($"   own sound not used ({e.Message})"); ownRow = aiRow = -1; }
+                catch (Exception e) when (e is IOException or InvalidDataException or InvalidOperationException or KeyNotFoundException) { log($"   own sound not used ({e.Message})"); ownRow = aiRow = wheelRow = aiWheelRow = -1; }
             }
             int iconOff = amax.Field(vt, "UiIconName").Off;
             var amaxNow = amax;
@@ -1301,13 +1499,19 @@ public static partial class CarBuild
             {
                 if (!amax.Cars().TryGetValue(target, out int ti)) { log($"custom car {car.Str("name")}: the car to replace, {target}, was not found - skipped"); continue; }
                 if (!replaced.Add(target)) log($"   two of your cars replace the {target}: the last one wins");
-                var keep = new[] { "dynamics", "wheelScaleFront", "wheelScaleRear", "wheelDepthFront", "wheelDepthRear", "DriverOffset.vy" };
+                var keep = new[] { "dynamics", "wheelScaleFront", "wheelScaleRear", "wheelDepthFront", "wheelDepthRear", "DriverOffset.vy", "Manufacturer" };
                 amaxD = KslfWrite.EditObject(amaxD, ti, ctx =>
                 {
                     foreach (var f in keep) if (sets.TryGetValue(f, out double v)) amaxNow.Set(ctx.Data, ctx.Blocks[0], vt, f, v);
                     foreach (var (off, bytes) in soundBytes) for (int k = 0; k < bytes.Length; k++) ctx.Data[ctx.Blocks[0] + off + k] = bytes[k];
                     if (ownRow >= 0) { amaxNow.Set(ctx.Data, ctx.Blocks[0], vt, "vehicleAudioEntity", ownRow); amaxNow.Set(ctx.Data, ctx.Blocks[0], vt, "aiVehicleAudioEntity", aiRow); }
+                    if (wheelRow >= 0) { amaxNow.Set(ctx.Data, ctx.Blocks[0], vt, "dryWheelAudioEntity", wheelRow); amaxNow.Set(ctx.Data, ctx.Blocks[0], vt, "aiDryWheelAudioEntity", aiWheelRow); }
                 });
+                if (CarExhaust.ToWrite(car, CarExhaust.Game(target).Count) is { Count: > 0 } exR)
+                {
+                    try { amaxD = CarExhaust.Write(amaxD, new Db(amaxD).Cars()[target], exR); log($"   own exhaust flames: {exR.Count} pipe(s)"); }
+                    catch (Exception e) when (e is InvalidDataException or InvalidOperationException or KeyNotFoundException) { log($"   exhaust flames not moved ({e.Message})"); }
+                }
                 log($"custom car {car.Str("name")} replaces the {target}: body {bas}, wheels {wheels} (where this car has them), sound {(ownRow >= 0 ? "own" : si >= 0 ? sound : "the " + target + "'s")}; the rest of the handling and the stats stay the {target}'s");
                 continue;
             }
@@ -1316,12 +1520,18 @@ public static partial class CarBuild
                 foreach (var (f, v) in sets) amaxNow.Set(data, blocks[0], vt, f, v);
                 foreach (var (off, bytes) in soundBytes) for (int k = 0; k < bytes.Length; k++) data[blocks[0] + off + k] = bytes[k];
                 if (ownRow >= 0) { amaxNow.Set(data, blocks[0], vt, "vehicleAudioEntity", ownRow); amaxNow.Set(data, blocks[0], vt, "aiVehicleAudioEntity", aiRow); }
+                if (wheelRow >= 0) { amaxNow.Set(data, blocks[0], vt, "dryWheelAudioEntity", wheelRow); amaxNow.Set(data, blocks[0], vt, "aiDryWheelAudioEntity", aiWheelRow); }
                 data.Put(blocks[0] + iconOff, (uint)pool.Len); pool.AddSz(name);
                 int a0 = blocks[0] + pOff, pb = B.U16(data.A, a0), pf = B.U16(data.A, a0 + 2);
                 data.Put(blocks[pb] + 4 * pf, (uint)paintRow);
                 data.Put(a0 + 4, 1u);
             });
             added.Add(carUid);
+            if (CarExhaust.ToWrite(car, CarExhaust.Game(bas).Count) is { Count: > 0 } ex)
+            {
+                try { amaxD = CarExhaust.Write(amaxD, new Db(amaxD).ObjOfUid(carUid), ex); log($"   own exhaust flames: {ex.Count} pipe(s)"); }
+                catch (Exception e) when (e is InvalidDataException or InvalidOperationException or KeyNotFoundException) { log($"   exhaust flames not moved ({e.Message})"); }
+            }
             log($"custom car {car.Str("name")} ({name}, class {"ABCD"[(int)car.Int("class")]}, body {bas}, wheels {wheels}, sound {(si >= 0 ? sound : bas)}): {mph} mph");
             if (sound != null && sound != bas && si < 0) log($"   the sound car {sound} was not found - the body car's sound stays");
             if (car.Truthy("body_glb")) log($"   (imported body {car.Str("body_glb")} on the wheels of {bas} - written with the root pack)");
@@ -1471,6 +1681,30 @@ public static partial class CarBuild
 
     static string? OwnSoundFile(JObj car) => car.Truthy("sound_own") && File.Exists(OwnSound.FilePath(car.Str("sound_own")!)) ? OwnSound.FilePath(car.Str("sound_own")!) : null;
 
+    /// the other sound kinds this car changes whose file is there (kind key -> path)
+    public static Dictionary<string, string> ExtraSoundFiles(JObj car)
+    {
+        var o = new Dictionary<string, string>();
+        var sd = car.Obj("sounds");
+        if (sd == null) return o;
+        foreach (var k in OwnSound.Kinds)
+            if (sd.Truthy(k.Key) && File.Exists(OwnSound.FilePath(sd.Str(k.Key)!))) o[k.Key] = OwnSound.FilePath(sd.Str(k.Key)!);
+        return o;
+    }
+
+    static bool HasOwnSounds(JObj car) => OwnSoundFile(car) != null || ExtraSoundFiles(car).Count > 0;
+
+    /// all of a car's own sounds read (a file that can't be read is left out, with a line in the log)
+    static OwnSound.Sounds ReadOwnSounds(JObj car, Action<string>? log)
+    {
+        var s = new OwnSound.Sounds { Rpm = car.Num("sound_rpm", OwnSound.DefaultRpm) };
+        if (OwnSoundFile(car) is { } f) s.Engine = OwnSound.ReadWav(f);
+        foreach (var (k, path) in ExtraSoundFiles(car))
+            try { s.Extra[k] = OwnSound.ReadWav(path); }
+            catch (Exception e) when (e is IOException or InvalidDataException) { log?.Invoke($"custom car {car.Str("name")}: {Path.GetFileName(path)} not used ({e.Message})"); }
+        return s;
+    }
+
     /// the new names of the own-sound files, each first made as a copy of the game file it is made from (filled in later)
     public static IEnumerable<KeyValuePair<string, string>> SoundAliases(JObj wld, Pak src)
     {
@@ -1478,18 +1712,25 @@ public static partial class CarBuild
         var o = new List<KeyValuePair<string, string>>();
         for (int i = 0; i < cars.Count; i++)
         {
-            if (OwnSoundFile(cars[i]) == null) continue;
+            if (!HasOwnSounds(cars[i])) continue;
             try
             {
-                foreach (var plan in OwnSound.MakePlans(EngineCar(cars[i]), i, src))
+                var kinds = ExtraSoundFiles(cars[i]).Keys.Select(k => OwnSound.Kinds.First(q => q.Key == k).Bank).ToHashSet();
+                bool common = kinds.Contains("common"), first = true;
+                var plans = OwnSound.MakePlans(EngineCar(cars[i]), i, src, common);
+                if (kinds.Contains("wheel")) plans.AddRange(OwnSound.MakeWheelPlans(EngineCar(cars[i]), i, src));
+                foreach (var plan in plans)
                 {
                     o.Add(new(@"\audio\" + plan.NewBank.ToLowerInvariant() + ".baf", @"\audio\" + plan.Bank.ToLowerInvariant() + ".baf"));
+                    if (common && first) o.Add(new(@"\audio\" + plan.NewCommon.ToLowerInvariant() + ".baf", @"\audio\" + OwnSound.CommonBank.ToLowerInvariant() + ".baf"));
+                    first = false;
                     foreach (var d in plan.Dats) o.Add(new(@"\audio\dat\" + d.NewFile.ToLowerInvariant(), @"\audio\dat\" + d.OldFile.ToLowerInvariant()));
                 }
             }
             catch (Exception e) when (e is IOException or InvalidDataException or InvalidOperationException or KeyNotFoundException) { }
         }
-        return o;
+        // a file shared by the full and the AI copy (e.g. the gear sounds' .dat) only once
+        return o.GroupBy(q => q.Key, StringComparer.OrdinalIgnoreCase).Select(g => g.First()).ToList();
     }
 
     /// the root pack's files of the custom cars with their own engine sound: a bank copy with the player's sound + its .dat copies
@@ -1501,16 +1742,21 @@ public static partial class CarBuild
         for (int i = 0; i < cars.Count; i++)
         {
             var car = cars[i];
-            if (OwnSoundFile(car) is not { } file) { if (car.Truthy("sound_own")) log($"custom car {car.Str("name")}: its sound file {car.Str("sound_own")} is missing - the game sound stays"); continue; }
+            if (car.Truthy("sound_own") && OwnSoundFile(car) == null) log($"custom car {car.Str("name")}: its sound file {car.Str("sound_own")} is missing - the game engine sound stays");
+            if (!HasOwnSounds(car)) continue;
             try
             {
-                var wav = OwnSound.ReadWav(file);
-                foreach (var plan in OwnSound.MakePlans(EngineCar(car), i, src))
+                var snd = ReadOwnSounds(car, log);
+                if (!snd.Any) continue;
+                var plans = OwnSound.MakePlans(EngineCar(car), i, src, snd.Common);
+                if (snd.Wheel) plans.AddRange(OwnSound.MakeWheelPlans(EngineCar(car), i, src));
+                foreach (var plan in plans)
                 {
-                    var made = OwnSound.RootFiles(plan, src, wav, car.Num("sound_rpm", OwnSound.DefaultRpm)).ToList();
-                    list = OwnSound.AddToBankList(list ?? B.Latin1.GetString(src.Read(OwnSound.BankList) ?? throw new FileNotFoundException(OwnSound.BankList)), plan);
+                    var made = OwnSound.RootFiles(plan, src, snd).ToList();
+                    list = OwnSound.AddToBankList(list ?? B.Latin1.GetString(src.Read(OwnSound.BankList) ?? throw new FileNotFoundException(OwnSound.BankList)), plan, snd.Common);
                     o.AddRange(made);
-                    log($"custom car {car.Str("name")}: own engine sound {car.Str("sound_own")} on the {plan.Engine} engine (bank {plan.NewBank})");
+                    string what = string.Join(", ", (snd.Engine != null ? new[] { "engine " + car.Str("sound_own") } : Array.Empty<string>()).Concat(snd.Extra.Keys.Select(k => OwnSound.Kinds.First(q => q.Key == k).Label.ToLowerInvariant())));
+                    log($"custom car {car.Str("name")}: own sounds ({what}) on the {plan.Engine} engine (bank {plan.NewBank}{(snd.Common ? ", " + plan.NewCommon : "")})");
                 }
             }
             catch (Exception e) when (e is IOException or InvalidDataException or InvalidOperationException or KeyNotFoundException) { log($"custom car {car.Str("name")}: own sound not made ({e.Message}) - the game sound stays"); }
@@ -1529,7 +1775,23 @@ public static partial class CarBuild
     {
         var cars = WorldCars(wld); var names = InternalNames(cars);
         for (int i = 0; i < cars.Count; i++) frontend = Bpr.AliasPicture(frontend, names[i], cars[i].Str("icon")!);
+        for (int i = 0; i < cars.Count; i++)
+            if (LogoFile(cars[i]) is { } logo)
+            {
+                try { frontend = Bpr.SetPicture(frontend, CarLogo.TexName(i), CarLogo.Picture(logo), 5, 2, CarLogo.W, CarLogo.H); }
+                catch (Exception e) when (e is ArgumentException or IOException or OutOfMemoryException) { }   // a broken picture: AddCars already left the maker as it was
+            }
         return frontend;
+    }
+
+    /// the car's own logo picture, when it has one and the file is there
+    static string? LogoFile(JObj car)
+    {
+        if (!car.Truthy("logo")) return null;
+        string p = CarLogo.FilePath(car.Str("logo")!);
+        if (!File.Exists(p)) return null;
+        try { using var b = new Bitmap(p); return p; }
+        catch (Exception e) when (e is ArgumentException or IOException or OutOfMemoryException) { return null; }
     }
 }
 

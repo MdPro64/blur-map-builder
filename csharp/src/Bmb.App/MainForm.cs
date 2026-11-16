@@ -26,7 +26,7 @@ public sealed partial class MainForm : Form
     public readonly Panel Centre = new() { Dock = DockStyle.Fill, BackColor = Theme.Bg };
     readonly bool _test;
     readonly Button _build, _update;
-    Panel _lightPanel = null!; CarPanel _car = null!; SkinPanel _skins = null!;
+    Panel _lightPanel = null!; CarPanel _car = null!; SkinPanel _skins = null!; SharePanel _share = null!;
 
     public MainForm(bool test = false)
     {
@@ -38,7 +38,7 @@ public sealed partial class MainForm : Form
         DoubleBuffered = true;
         Map2 = new MapView(D, G); V3 = new View3D(this, D, G);
         G.Render += () => { if (Is3D) V3.Draw(); else Map2.Draw(); };
-        if (Doc.AutosaveNewer() && !test && MessageBox.Show("There are unsaved changes from last time (auto-save). Open them?", "Auto-save", MessageBoxButtons.YesNo) == DialogResult.Yes) { D.Load(); D.LoadAutosave(); D.Dirty = true; }
+        if (Doc.AutosaveNewer() && !test && TopMessage("There are unsaved changes from last time (auto-save). Open them?", "Auto-save", MessageBoxButtons.YesNo) == DialogResult.Yes) { D.Load(); D.LoadAutosave(); D.Dirty = true; }
         else D.Load();
         _build = Look.Tip(Theme.Btn("▶ Build + install", Build, Theme.Orange), "Build the maps and put them in the game (Ctrl+B)");
         _update = Theme.Btn("⟳ Check for updates", () => CheckUpdates(false));
@@ -91,6 +91,7 @@ public sealed partial class MainForm : Form
         {
             ("MAP", "Make your map: the road, the land, the light", new[] { ("2d", "▦ 2D map"), ("3d", "▲ 3D"), ("land", "⛰ Landscape"), ("surface", "▩ Surface"), ("collision", "⚠ Collision"), ("ai", "➿ AI path"), ("light", "☀ Lighting") }),
             ("CARS", "Your own cars and car paint (for every map)", new[] { ("car", "⛟ Custom car"), ("skins", "🎨 Car skins") }),
+            ("SHARE", "One file for another player: a map, a car or skins", new[] { ("share", "⇅ Export / Import") }),
         })
         {
             var g = new TabGroup(title);
@@ -141,8 +142,9 @@ public sealed partial class MainForm : Form
         _lightPanel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Theme.Bg, Visible = false };
         _car = new CarPanel(this) { Dock = DockStyle.Fill, Visible = false };
         _skins = new SkinPanel(this) { Dock = DockStyle.Fill, Visible = false };
+        _share = new SharePanel(this) { Dock = DockStyle.Fill, Visible = false };
         Centre.Controls.Add(G);
-        Centre.Controls.Add(_lightPanel); Centre.Controls.Add(_car); Centre.Controls.Add(_skins);
+        Centre.Controls.Add(_lightPanel); Centre.Controls.Add(_car); Centre.Controls.Add(_skins); Centre.Controls.Add(_share);
         V3.MakePanels(Centre);
         Foldable("left", _leftP, true); Foldable("right", _rightP, false);
         G.BringToFront();
@@ -469,6 +471,7 @@ public sealed partial class MainForm : Form
             case "light": Say($"LIGHTING of the location '{D.Loc.Str("name")}': pick a game city as the start, change what you like, Build + install, look in game"); break;
             case "car": Say("CUSTOM CAR: + New, pick a class and a body car, then spend the class's stat points"); break;
             case "skins": break;
+            case "share": Say("EXPORT / IMPORT: one file for another player - a map (with its pictures, 3D models and sky), a custom car (with its body, sounds and logo) or skins"); break;
             case "land": Say("LANDSCAPE (3D): left drag = use the tool, right drag = back to flat (Paint: remove the paint), middle drag = turn, Shift+middle = move, wheel = zoom.  Auto hills = hills all around the road"); break;
             case "surface": Say($"SURFACE: left drag = paint {(Map2.BrushKey == "bumps" ? "bumps" : Surface.Surfaces[Map2.BrushKey].Label)}, right drag = remove, middle drag = move the map, wheel = zoom.  Whole road: type / sides / varied asphalt on the bar"); break;
             case "ai": Say("AI PATH: the yellow line is where the AI cars drive (the band = their lane). Auto = made for you; Pen = draw it yourself (drag on the road; drawing over a part replaces that part)"); break;
@@ -490,7 +493,7 @@ public sealed partial class MainForm : Form
     void LoadBegin(string m)
     {
         _tabTime.Restart();
-        _loadName = m switch { "2d" => "2D map", "3d" => "3D view", "collision" => "Collision", "ai" => "AI path", "light" => "Lighting", "surface" => "Surface", "land" => "Landscape", "skins" => "Car skins", _ => "Custom car" };
+        _loadName = m switch { "2d" => "2D map", "3d" => "3D view", "collision" => "Collision", "ai" => "AI path", "light" => "Lighting", "surface" => "Surface", "land" => "Landscape", "skins" => "Car skins", "share" => "Export / Import", _ => "Custom car" };
         if (!IsHandleCreated) return;
         SendMessage(Handle, 0x000B, IntPtr.Zero, IntPtr.Zero);                 // WM_SETREDRAW off
         if (_tabMs.GetValueOrDefault(m, long.MaxValue) > ShowAfterMs) LoadShow(5);
@@ -531,12 +534,13 @@ public sealed partial class MainForm : Form
         LoadStep(20);
         V3.SetMode(m);
         LoadStep(60);
-        bool canvas = m is not ("light" or "car" or "skins");
-        _rightP.Visible = _rightSash.Visible = canvas; _leftP.Visible = _leftSash.Visible = m is not ("car" or "skins");
-        G.Visible = canvas; _lightPanel.Visible = m == "light"; _car.Visible = m == "car"; _skins.Visible = m == "skins"; _build.Visible = m != "skins";        // the skins have their own Build skins
+        bool canvas = m is not ("light" or "car" or "skins" or "share");
+        _rightP.Visible = _rightSash.Visible = canvas; _leftP.Visible = _leftSash.Visible = m is not ("car" or "skins" or "share");
+        G.Visible = canvas; _lightPanel.Visible = m == "light"; _car.Visible = m == "car"; _skins.Visible = m == "skins"; _share.Visible = m == "share"; _build.Visible = m != "skins";        // the skins have their own Build skins
         if (canvas) { G.BringToFront(); ActiveControl = G; G.Focus(); }
         else if (m == "light") { _lightPanel.BringToFront(); LightBuild(); }
         else if (m == "skins") { _skins.BringToFront(); _skins.Refresh2(); SkinNormalShow(Skins.Normal); }
+        else if (m == "share") { _share.BringToFront(); _share.Refresh2(); }
         else { _car.BringToFront(); _car.Refresh2(); }
         ResumeLayout(true);
         LoadStep(80);
@@ -630,6 +634,25 @@ public sealed partial class MainForm : Form
 
     void AfterWorldEdit() { D.Touched(); Tree(); Map2.Fit(); V3.Dirty(); Changed(); }
     bool TooMany() { if (D.TotalMaps < UiText.MaxMaps) return false; Msg("Too many maps", $"At most {UiText.MaxMaps} maps in total."); return true; }
+    /// a question while the program starts: the start-up picture covers the screen and stays on top, so it hides while the
+    /// question is up; the question gets a taskbar button (its owner) so it can always be found
+    public static DialogResult TopMessage(string text, string title, MessageBoxButtons b)
+    {
+        Splash.ShowNow(false);
+        try
+        {
+        using var owner = new Form
+        {
+            Text = "Blur Map Builder", Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath),
+            TopMost = true, ShowInTaskbar = true, FormBorderStyle = FormBorderStyle.None, StartPosition = FormStartPosition.Manual,
+            Size = new Size(1, 1), Opacity = 0, Location = Point.Add(Screen.FromPoint(Cursor.Position).WorkingArea.Location, new Size(Screen.FromPoint(Cursor.Position).WorkingArea.Width / 2, Screen.FromPoint(Cursor.Position).WorkingArea.Height / 2)),     // the question shows in the middle
+        };
+        owner.Show(); owner.Activate();
+        return MessageBox.Show(owner, text, title, b, MessageBoxIcon.Question);
+        }
+        finally { Splash.ShowNow(true); }
+    }
+
     public DialogResult Msg(string title, string text, MessageBoxButtons b = MessageBoxButtons.OK) => _test ? DialogResult.Yes : MessageBox.Show(this, text, title, b);
 
     List<object?> FreeSpot(JObj loc)
@@ -735,7 +758,7 @@ public sealed partial class MainForm : Form
     public string? PickFile(string title, string filter) => OpenFile(title, filter);
     public string? SaveAs(string title, string filter, string name) => SaveFile(title, filter, name);
 
-    void ExportMap()
+    public void ExportMap()
     {
         var m = D.Map;
         string? path = SaveFile("Export the map for another player", "Blur map|*.blurmap", World.Slug(m.Str("name")!) + Share.Ext);
@@ -750,7 +773,7 @@ public sealed partial class MainForm : Form
         catch (IOException e) { Msg("Export", "Could not write the file:\n" + e.Message); }
     }
 
-    void ImportMap()
+    public void ImportMap()
     {
         string? path = OpenFile("Import a map from another player", "Blur map|*.blurmap|All files|*.*");
         if (path == null) return;
@@ -782,6 +805,9 @@ public sealed partial class MainForm : Form
         }
         if (m.Obj("minimap") is { } mm && mm.Truthy("image")) { mm["image"] = saved.GetValueOrDefault(mm.Str("image")!, ""); if (!mm.Truthy("image")) mm["auto"] = true; }
         if (m.Truthy("picture")) { if (saved.TryGetValue(m.Str("picture")!, out var s)) m["picture"] = s; else m.Remove("picture"); }
+        int models = 0;
+        try { models = f.PlaceExtras(st); if (models > 0) { Bmb.Core.Layout.ReloadCatalog(); V3.FillLibrary(); } }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Say("Some files of the map could not be saved: " + e.Message, Theme.Bad); }
         D.Snapshot();
         var locs = D.World.Arr("locations")!;
         if (a == DialogResult.Yes)
@@ -801,7 +827,7 @@ public sealed partial class MainForm : Form
         D.Loc.Arr("maps")!.Add(m); D.Mi = D.Loc.Arr("maps")!.Count - 1;
         AfterWorldEdit();
         string who = f.Info.Str("made") != null ? $" (from {f.Info.Str("location")}, {f.Info.Str("made")})" : "";
-        Say($"Imported '{name}' into {D.Loc.Str("name")}{who} - press Build + install to race it", Theme.Good);
+        Say($"Imported '{name}' into {D.Loc.Str("name")}{who}{(models > 0 ? $", with {models} 3D model(s)" : "")} - press Build + install to race it", Theme.Good);
     }
 
     // ---- keys --------------------------------------------------------------------------------------------------------
