@@ -14,5 +14,7 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="..\..\assets\quickstart.lua" LogicalName="quickstart.lua" />
+    <Compile Include="..\..\local\*.cs" />
+    <EmbeddedResource Include="..\..\local\*.lua" LogicalName="%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

@@ -88,6 +88,7 @@ public static class Packs
     public static (int Packed, List<string> Missing) ExportCar(JObj car, string path)
     {
         var missing = new List<string>();
+        CarNetId.Pin(car);                 // its number goes with it: the same car online on the other PC
         if (File.Exists(path)) File.Delete(path);
         using var z = ZipFile.Open(path, ZipArchiveMode.Create);
         var done = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

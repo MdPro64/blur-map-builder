@@ -171,6 +171,16 @@ switch (cmd)
         }
         break;
     }
+    case "netidtest":       // netidtest GAME WORLD.json: the custom cars made in memory: each one's number (net_id) and uid (look only)
+    {
+        Paths.Init(args[1]);
+        var w = (JObj)Json.Load(args[2])!;
+        foreach (var c in w.Objs("cars")) Console.WriteLine($"{c.Str("name")}: net_id {(c.ContainsKey("net_id") ? c.Int("net_id").ToString() : "-")} -> slot {CarNetId.Of(c)} = {CarNetId.First + 4 * (uint)CarNetId.Of(c):X8}");
+        var files = new Dictionary<string, byte[]>();
+        CarBuild.AddCars(files, w, _ => { });
+        foreach (var l in CarNetId.Dump(files["gamedata/xt/amax.bin"])) Console.WriteLine("   built " + l);
+        break;
+    }
     case "exhausttest":     // exhausttest GAME WORLD.json: the custom cars made in memory: each one's flame points (look only)
     {
         Paths.Init(args[1]);
@@ -357,6 +367,53 @@ switch (cmd)
         Paths.Init(args[1]);
         using var gp = new Pak(args[2]);
         foreach (var l in CarSound.Dump(args.Skip(3), gp.Read(@"\gamedata\xt\amax.bin")!)) Console.WriteLine(l);
+        break;
+    }
+    case "install":         // install GAME: what the app's Build + install does (cars get their number first, as when the app loads the world)
+    {
+        Paths.Init(args[1]);
+        var w0 = World.Load();
+        if (CarNetId.PinAll(w0)) { World.Save(w0); Console.WriteLine("cars got their own number (world saved)"); }
+        var opt = new BuildOptions { Log = s => Console.WriteLine($"{sw.Elapsed.TotalSeconds,7:0.00}  {s}") };
+        Build.Run(opt);
+        Directory.CreateDirectory(Paths.PackDir);
+        foreach (var (src, name) in new[] { (Paths.GamedataOut, "gamedata.pak"), (Paths.RootOut, "root.pak"), (Paths.BootOut, "gamedata_boot.pak") })
+        {
+            string dst = Path.Combine(Paths.PackDir, name);
+            if (!File.Exists(src)) continue;
+            File.Copy(src, dst + ".new", true); File.Move(dst + ".new", dst, true);
+        }
+        if (opt.Built != null) Installed.Remember(opt.Built, opt);
+        Setup.RefreshPlugin();
+        Skins.InstallNormal(Console.WriteLine);
+        Console.WriteLine($"installed into {Paths.PackDir} in {sw.Elapsed.TotalSeconds:0.00} s");
+        break;
+    }
+    case "carsto":          // carsto FROMGAME TOGAME OUTDIR: every custom car of FROM exported as .blurcar into OUTDIR, and TO's cars replaced by them imported (a second player)
+    {
+        Paths.Init(args[1]);
+        var w1 = World.Load();
+        if (CarNetId.PinAll(w1)) World.Save(w1);
+        Directory.CreateDirectory(args[3]);
+        var files = new List<string>();
+        foreach (var c in w1.Objs("cars"))
+        {
+            string f = Path.Combine(args[3], Packs.Plain(c.Str("name") ?? "car") + Packs.CarExt);
+            var (n, miss) = Packs.ExportCar(c, f);
+            Console.WriteLine($"exported {c.Str("name")} (net_id {c.Int("net_id")}): {n} file(s){(miss.Count > 0 ? ", missing " + string.Join(", ", miss) : "")}");
+            files.Add(f);
+        }
+        Paths.Init(args[2]);
+        var w2 = World.Load();
+        var cars = new List<object?>(); w2["cars"] = cars;
+        foreach (var f in files)
+        {
+            var car = Packs.ImportCar(f);
+            CarNetId.Unique(car, cars.OfType<JObj>());
+            cars.Add(car);
+            Console.WriteLine($"imported {car.Str("name")} into {Paths.Game}: net_id {car.Int("net_id")}");
+        }
+        World.Save(w2);
         break;
     }
     case "build":           // build GAME MAPS WORK LEVELS [dry] [nocars] [noroot]
@@ -737,6 +794,94 @@ switch (cmd)
         string F(IEnumerable<float> v) => string.Join(" ", v.Select(x => x.ToString("0.###")));
         for (int i = 0; i < mi.ModelBoxes.Count; i++) Console.WriteLine($"model {i} @{mi.ModelRawAt[i]}: pre [{F(mi.ModelRaw[i])}] box [{string.Join(" ", mi.ModelBoxes[i].Select(x => x.ToString("0.###")))}] post [{F(mi.ModelRaw2[i])}]");
         foreach (var e in mi.AllElements) Console.WriteLine($"element {e.Name} parent {e.Parent} box [{string.Join(" ", e.Box.Select(x => x.ToString("0.###")))}] m [{F(e.M.Select(x => (float)x))}]");
+        break;
+    }
+    case "mpconfig":        // mpconfig GAME: the multiplayer config's AI fields (look only)
+    {
+        Paths.Init(args[1]);
+        foreach (var l in GameTweaks.Dump(File.ReadAllBytes(Path.Combine(Paths.Unpacked, "xt", "multiplayer.bin")))) Console.WriteLine(l);
+        break;
+    }
+    case "caruids":         // caruids GAME: every game car: uid, class (0 = A), multiplayer pick, name (look only)
+    {
+        Paths.Init(args[1]);
+        var kd = File.ReadAllBytes(Path.Combine(Paths.Unpacked, "xt", "amax.bin")); var kk = new Kslf(kd);
+        var mpk = new Kslf(File.ReadAllBytes(Path.Combine(Paths.Unpacked, "xt", "multiplayer.bin")));
+        var cfg = mpk.Objects.First(o => mpk.Types[o.Blocks[0].Type].Name == "MultiplayerConfig");
+        int voff = mpk.Types[cfg.Blocks[0].Type].Fields.First(f => f.Name == "vehicles").Offset;
+        int vat = cfg.Blocks[0].Offset + voff, vblk = B.U16(mpk.Data, vat), vfirst = B.U16(mpk.Data, vat + 2), vcnt = (int)B.U32(mpk.Data, vat + 4);
+        var picks = new HashSet<uint>();
+        for (int j = 0; j < vcnt; j++) picks.Add(mpk.Refs[B.U32(mpk.Data, cfg.Blocks[vblk].Offset + 4 * (vfirst + j))].Uid);
+        foreach (var (u, t, oi) in kk.Refs)
+        {
+            if (kk.Types[t].Name != "AmaxVehicle") continue;
+            var o = kk.Objects[oi]; var bb = o.Blocks[0];
+            var f = kk.AllFields(bb.Type).GroupBy(q => q.Name).ToDictionary(g => g.Key, g => g.Last());
+            Console.WriteLine($"{u:X8}	{B.I32(kd, bb.Offset + f["class"].Offset)}	{(picks.Contains(u) ? "mp" : "--")}	{B.Sz(o.Pool, (int)B.U32(kd, bb.Offset + f["Name"].Offset))}");
+        }
+        break;
+    }
+    case "aimods":        // aimods GAME on|off: only the AI-mods patch of Blur REBORN.exe (what Build + install does with the tweak)
+    {
+        Paths.Init(args[1]);
+        Console.WriteLine(GameTweaks.SetAiMods(args[2] == "on") ?? "nothing to change");
+        break;
+    }
+    case "harderai":        // harderai IN.csv OUT.csv: the multiplayer Hard AI file made harder (look only)
+    {
+        File.WriteAllText(args[2], GameTweaks.HarderAi(File.ReadAllText(args[1])));
+        break;
+    }
+    case "hudicons":        // hudicons IPF PICTURE.png OUTDIR: perk_icons.ipf read + written back (same bytes?), the shunt icon from PICTURE, both drawn (look only)
+    {
+        var ipf = File.ReadAllBytes(args[1]);
+        Console.WriteLine($"round trip same bytes: {HudIcons.RoundTrip(ipf)}");
+        Directory.CreateDirectory(args[3]);
+        HudIcons.Draw(ipf, "perk_shunt", Path.Combine(args[3], "shunt_game.png"));
+        var made = HudIcons.Make(ipf, k => k == "shunt" ? args[2] : null, Console.WriteLine)!;
+        Console.WriteLine($"made {made.Length} bytes (was {ipf.Length}); reads back: {HudIcons.RoundTrip(made)}");
+        HudIcons.Draw(made, "perk_shunt", Path.Combine(args[3], "shunt_mine.png"));
+        HudIcons.Draw(made, "perk_shunt_x2", Path.Combine(args[3], "shunt_x2_mine.png"));
+        HudIcons.Draw(made, "perk_barge", Path.Combine(args[3], "barge_untouched.png"));
+        break;
+    }
+    case "modelinfo":       // modelinfo PAK NAME: a model's streams, meshes, materials and textures (look only)
+    {
+        using var pk = new Pak(args[1]);
+        var md = CpModel.Read(pk.Read(args[2]) ?? throw new FileNotFoundException(args[2]));
+        Console.WriteLine($"fx: {string.Join(", ", md.FxFiles)}");
+        Console.WriteLine($"textures: {string.Join(", ", md.TexList.Select(t => $"{t.Name} {t.W}x{t.H} dxt{t.Dxt:X}"))}");
+        Console.WriteLine($"elements: {string.Join(", ", md.AllElements.Select(e => e.Name))}");
+        foreach (var v in md.VStreams) Console.WriteLine($"vstream: {v.Count} x {v.Bytes} bytes, def {string.Join(" ", v.Def.Select(q => $"{q.Type}/{q.Channel}/{q.Sub}"))}");
+        foreach (var m in md.MeshInfos) Console.WriteLine($"mesh: material {m.Material}, def {m.Definition}, faces {string.Join(" ", m.Data1.Select(q => $"{q.FaceCount}@{q.FaceOff} v{q.VCount}@{q.VOff}"))}, vstreams {string.Join(",", m.VStream)}");
+        Console.WriteLine($"bbox {string.Join(" ", md.BBox.Select(x => x.ToString("0.###")))}");
+        break;
+    }
+    case "roadicons":       // roadicons PAK OUTDIR KIND...: each road pickup's icon pictures as PNG + their sizes (look only)
+    {
+        using var pk = new Pak(args[1]);
+        Directory.CreateDirectory(args[2]);
+        foreach (var k in args.Skip(3))
+        {
+            var md = pk.Read(RoadIcons.ModelOf(k)) ?? throw new FileNotFoundException(k);
+            foreach (var l in RoadIcons.Dump(md, k)) Console.WriteLine(l);
+            RoadIcons.Decode(md, RoadIcons.Pic(k)).Save(Path.Combine(args[2], k + ".png"));
+            RoadIcons.Decode(md, RoadIcons.PicInverse(k)).Save(Path.Combine(args[2], k + "_inverse.png"));
+            if (args[2].Length > 0 && File.Exists(Path.Combine(args[2], "test.png")))
+            {
+                var made = RoadIcons.Make(md, k, Path.Combine(args[2], "test.png"), Console.WriteLine)!;
+                Console.WriteLine($"   made {made.Length} bytes (same: {made.Length == md.Length})");
+                RoadIcons.Decode(made, RoadIcons.Pic(k)).Save(Path.Combine(args[2], k + "_mine.png"));
+                RoadIcons.Decode(made, RoadIcons.PicInverse(k)).Save(Path.Combine(args[2], k + "_inverse_mine.png"));
+            }
+        }
+        break;
+    }
+    case "bprnames":        // bprnames PAK BPR: every picture name in a UI bundle with its record fields (look only)
+    {
+        using var pk = new Pak(args[1]);
+        var bp = Bpr.Parse(pk.Read(args[2]) ?? throw new FileNotFoundException(args[2]));
+        foreach (var r in bp.Recs) Console.WriteLine($"{bp.NameOf(r)}	{string.Join(",", r)}");
         break;
     }
     case "pakget":          // pakget PAK NAME OUT: one file out of a pack (look only)

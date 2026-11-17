@@ -135,6 +135,82 @@ The C# window keeps its own auto-save the same way as Python, and asks before cl
   those exhaust / intake loops were never replaced, so e.g. the M3's exhaust stayed the game's. Checked: `bmbcli kindtest`
   (BMW_V8: all 28 sounds changed + 14 in the shared copy; Focus RS / Audi TT: spool, air, blow-off). `bmbcli bankwaves GAME ALL`
   lists every bank's sound names.
+- **AI mods (Game tweaks switch `ai_mods`, 2026-11-17, not released, not tested in game):** `GameTweaks.SetAiMods` writes 2 byte
+  patches into the existing Blur REBORN.exe at Build + install (off = original bytes back; anything else there = left alone):
+  file 0x7F9502 the AI's call to OfflineValues -> new code in the int3 gap at 0x9F2F20 (VA 0xDF3B20) that, in custom races
+  with Mods on, calls FillOutLevelStateCar with a loadout. Round 2 (the player's shop rules; round 1 showed nothing in game):
+  slot 1 = Drifter for AI 0-1, Front Runner for the rest; slot 2 = Splash Damage / Decoy Drop / Shielding Efficiency; slot 3
+  = Silent Running / Mastermine / ECM, from fixed random tables (same on every PC). The gap patch is now 224 bytes; round 1
+  bytes are upgraded in place. Two counters in unused .tls memory (VA 0x1259F00 AI set up, 0x1259F04 AI given mods) are
+  read with `scratch/aimods_counters.ps1` while the game runs; CLI `aimods GAME on|off` patches only the exe.
+  Round 3 (the Drifter AI never slid: AI drive with extra grip forces, `g_AiCorneringBoost` 2.25 at VA 0x1134A7C and
+  `g_AiTorqueHack` at 0x1134A44, used in the AI steering-forces helper 0x4BDBA0): the setup code also sets the Drifter
+  cars' bits (VA 0x1259F08); the helper's only call (0x4C2B7A, in the AI driving step, car number = its argument) goes
+  to drift code in the zero tail of .text (VA 0xE52880): fast + hard steering -> handbrake tap, then until the corner
+  ends 3x turn force and 0.35x grip help. Settings at VA 0x1259F20 change live: `aimods_counters.ps1 -Set ...`.
+  Untested in game; tuning expected.
+  Research + addresses: `scratch/ai_mods_research.md`. Every player needs the same setting. Backups: `Blur REBORN
+  (before ai mods).exe` in both test copies.
+- **Released 2.6.1 (2026-11-17):** Russian fix, Game tweaks tab (more AI, harder AI, AI use mods = Front Runner + 2
+  random mods), lasting car numbers online, REBORN normal-start fix. Power-up icons ON HOLD (`PowerupIcons.OnHold`: the
+  section is hidden and no picture is built; they did not work in game). Full robot: English 252/252; Russian 251/252, the
+  one fail (Auto bumps) is leftover test data: the saved scratch map keeps the last run's bumps + seed, so a second run in
+  any language makes the same bumps (English failed the same way on its second run).
+- **Drifter AI ON HOLD (2026-11-17, user):** every AI gets Front Runner in slot 1 for now (setup code compares the AI
+  number with 0 instead of 2, so the Drifter bits, drift driving, speed keeper and drift-car swap never run). The drift
+  parts stay in the exe for later: drift code VA 0xE52880, speed keeper 0xDF6790 (forward push setting 0x1259F38),
+  drift-car swap 0xDEEE60 + table 0xDF3F58 (A Mustang GT-R, B Challenger Tuner, C Shelby GT500, D ACS1 Coupe).
+- **Russian bug, ALSO IN 2.6.0 (fixed 2026-11-17):** one ru.txt entry ("Could not import this file:
+{}") was written
+  over 3 lines, so its English became "{}" and matched every text: the whole window showed "Не удалось импортировать
+  файл:". The entry is removed (line 138 has it right) and Lang.Use now skips any entry whose English is only "{}".
+- **Icons "back to normal" (2026-11-17):** checked: user 2's packs have the player's icons (perk_icons.ipf 418728 bytes vs
+  551894 original); the player's shunt picture is an arrow almost like the game's own. User 1 has no pictures set.
+- **Held icons, round 3:** still empty in game after round 2 - the quads turned the wrong way: the game draws only
+  triangles turning like its own (cross product > 0 in u, v); fixed in `HudIcons.Quad`, checked on the installed file.
+- **Game tweaks, round 2 (2026-11-17, not released):** user tested: Hard AI + 19 AI work. Held icons were empty (also in the
+  race settings' power-up options): the 3 floats at the shape header + 4 are NOT a colour (a black picture made the icon
+  vanish) - now one shape, header untouched, from `PowerupIcons.Silhouette` (see-through left out; a picture with light and
+  clearly darker parts: only the light parts, dark = holes; one shade = all filled). Road icons: card = dark silhouette,
+  inverse = white silhouette (the game tints them). "Also in normal Blur" (tweaks.json `icons_normal`): `Skins.InstallNormal`
+  now builds normal Blur's cache root.pak = original + skins (if on) + icons (if on), and runs after every Build + install.
+  Build + install has a 4th card "Game tweaks" (Installed: work\installed\tweaks = tweaks.json + powerups\; not ticked =
+  `GameTweaks.From` = that copy) and a tag per card (REBORN ONLY / REBORN + NORMAL BLUR IF ON). AI with mods (e.g. Drifter
+  for 1-2 AI): NOT possible from data - network AI get `mUpgrades.OfflineValues()` in the game code; needs a code patch.
+- **Done after 2.6.0 (not released yet): GAME TWEAKS tab** (group GAME between CARS and SHARE; Blur REBORN only, settings in
+  `<data>\tweaks.json`, pictures in `<data>\powerups\`). `GameTweaks.cs`: "More AI" sets multiplayer.bin MultiplayerConfig
+  `max_ai_per_console` 4 -> 19 (the network custom race AI count = min(free places, the race's Add AI, players x that));
+  quickstart.lua adds 19 to the custom race "Add AI" list (2..18) when target.lua has `ai_max = 19`. "Harder AI" rewrites
+  `gamedata\events\multiplayer_hard.csv` (per section 9 rows: to, distance, max track speed, min track speed, on, group,
+  skill template, power-up template, blank): max speed 1.0, min 0.65, skill template 70 (= bossbattlet5_hard's). Icons:
+  `HudIcons.cs` = held icons (`\ui\data\ipf\perk_icons.ipf`, vector: per power-up a group of a frame + symbol shapes, colour
+  = 3 floats at header+4; the picture becomes <= 6 colour shapes of blocks, 72 grid; `_x2` = one white shape);
+  `RoadIcons.cs` = road pickups (`\models\perks\pickups\<kind>pickup.model`: pictures icon_<kind>_01 + _inverse, 256 DXT1 9
+  mips, data right after "DXT1" 0 3; the card keeps its glow, the old symbol is filled). No bolt road model exists. Test
+  commands: mpconfig, harderai, hudicons, roadicons, bprnames, modelinfo. NOT tested in game yet: the 19th AI entry, skill
+  template 70 in multiplayer, the tint of coloured icons, and whether root.pak beats boot.pak for the road pickups (they are in
+  both; if not, REBORN needs its own boot.pak: "cache/boot.pak" is at 0xAB23F4 in the exe).
+- **Done after 2.6.0 (not released yet): Play / Build only see Blur running from their OWN game folder** (`Play.GameRunning`
+  checks the process path), so a second game copy on the same PC (J:lur - user 2) can run beside it. New test commands:
+  `bmbcli install GAME` (= Build + install, cars pinned first) and `bmbcli carsto FROMGAME TOGAME OUTDIR` (FROM's cars
+  exported as .blurcar and imported into TO, replacing TO's cars: a second player). Two-player test setup on one PC:
+  J:lur - user 2 = a copy of user 1; its Blur REBORN.exe has the game's Windows-wide lock / event names changed (BlurMutex,
+  MutexThreadPause, EventSignalQuit, StatusDirtyEvent, LayerStatusDirtyEvent, StartLoading, FinishedLoading, BaseDevice,
+  DvcMutex, MemTrack, TimingMgr, ViewMutex: last letter -> 2), else the 2nd copy quits, loads forever, or freezes at race start; the original is kept as "Blur REBORN (original).exe". Both copies share the Blur save in AppData (backup: J:lur save backup).
+- **Done after 2.6.0 (not released yet): a lasting number per custom car (online).** Online, Blur sends only each
+  player's car uid (and paint uid); a uid the other game does not have shows as "Downloadable Content". Before, a custom
+  car's uid was 0xCA400000 + 4 * its place in the list, so different players' cars clashed. Now each car has `net_id`
+  (CarNetId.cs): new on New / Copy, kept by .blurcar export / import (an import that clashes with a car you have gets a
+  new one), and cars from before get a random one the first time the app loads them (world saved at once; not from the
+  name: every player's "My car" would clash). A .blurcar from 2.6.0 has no net_id: re-export it with the new version. Uids = 0xCA400000 + 4 * net_id
+  (car, physics, paint, wheels); a clash with a game uid or an earlier car moves to the next free slot. Sound / logo uids
+  stay per list place (local only). Checked with `bmbcli netidtest GAME WORLD.json`. Players must Build + install cars once.
+- **Fixed after 2.6.0 (not released yet):** a normal start of Blur REBORN went to the custom LAN lobby by itself when the map
+  builder was closed before the game (amax\plugins\quickstart	arget.lua stayed `enabled = true`). Now the target goes back to
+  off 3 minutes after the game is seen, when the game closes, or when the map builder closes; the Map Tester does the same.
+- **Done after 2.6.0 (not released yet):** the import-body warning no longer uses a fixed 10,000 triangles. It shows only
+  when `CarUi.Fits` says the body does not fit the Bowler container, and gives the real numbers (points needed / room, about
+  14,600 triangles). `CarUi.GlbMaxTris` is now worked out from the container's room (also used by the "Export a game car" hint).
 - **Build + install: what to install** (2026-11-16): a window ticks Maps / Custom cars / Car skins (the changed ones pre-ticked).
   An unticked part goes in exactly as the last install had it: `Installed.cs` keeps copies in `work\installed\` (maps.json =
   the locations, cars.json, skins\ = skins.json + the pictures that are on), written after every good install (and by Build

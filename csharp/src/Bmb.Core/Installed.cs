@@ -12,6 +12,39 @@ public static class Installed
     public static bool HasMaps => File.Exists(MapsFile);
     public static bool HasCars => File.Exists(CarsFile);
     public static bool HasSkins => File.Exists(Path.Combine(SkinDir, "skins.json"));
+    public static string TweaksDir => Path.Combine(Dir, "tweaks");
+    public static bool HasTweaks => File.Exists(Path.Combine(TweaksDir, "tweaks.json"));
+
+    /// the game tweaks (settings + the power-up pictures with their size) of a data folder, to see if anything changed
+    static string TweaksState(string data)
+    {
+        string t = Path.Combine(data, "tweaks.json");
+        var o = new List<string> { File.Exists(t) ? Json.Dumps(Json.Load(t), -1) : "{}" };
+        foreach (var (key, _) in PowerupIcons.Kinds) { var f = new FileInfo(Path.Combine(data, "powerups", key + ".png")); o.Add(f.Exists ? $"{key}:{f.Length}:{f.LastWriteTimeUtc.Ticks}" : key + ":-"); }
+        return string.Join("|", o);
+    }
+
+    public static bool TweaksChanged() { try { return !HasTweaks || TweaksState(Paths.Data) != TweaksState(TweaksDir); } catch (Exception) { return true; } }
+
+    /// the data folder the build reads the tweaks from: the current ones (null), or (not ticked) the last install's copy
+    public static string? TweaksFrom(BuildOptions opt) => !opt.Tweaks && HasTweaks ? TweaksDir : null;
+
+    /// the tweaks as they are now become the installed copy (the pictures keep their file time)
+    public static void RememberTweaks()
+    {
+        string tmp = TweaksDir + ".new";
+        if (Directory.Exists(tmp)) Directory.Delete(tmp, true);
+        Directory.CreateDirectory(Path.Combine(tmp, "powerups"));
+        string t = Path.Combine(Paths.Data, "tweaks.json");
+        if (File.Exists(t)) File.Copy(t, Path.Combine(tmp, "tweaks.json"), true); else File.WriteAllText(Path.Combine(tmp, "tweaks.json"), "{}");
+        foreach (var (key, _) in PowerupIcons.Kinds)
+        {
+            string src = Path.Combine(Paths.Data, "powerups", key + ".png");
+            if (File.Exists(src)) { string dst = Path.Combine(tmp, "powerups", key + ".png"); File.Copy(src, dst, true); File.SetLastWriteTimeUtc(dst, File.GetLastWriteTimeUtc(src)); }
+        }
+        if (Directory.Exists(TweaksDir)) Directory.Delete(TweaksDir, true);
+        Directory.Move(tmp, TweaksDir);
+    }
 
     static string Key(object? v) => Json.Dumps(v, -1);
 
@@ -61,6 +94,7 @@ public static class Installed
         Json.Save(builtWorld["locations"], MapsFile);
         Json.Save(builtWorld["cars"] ?? new List<object?>(), CarsFile);
         if (opt.Skins || !HasSkins) RememberSkins();
+        if (opt.Tweaks || !HasTweaks) RememberTweaks();
     }
 
     /// the skins as they are now (their list + the pictures that are on) become the installed copy

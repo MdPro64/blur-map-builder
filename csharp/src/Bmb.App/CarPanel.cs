@@ -613,6 +613,7 @@ public sealed class CarPanel : Panel
     {
         _f.D.Snapshot();
         var car = CarUi.NewCar();
+        car["net_id"] = CarNetId.New();
         var names = Cars().OfType<JObj>().Select(c => c.Str("name")).ToHashSet();
         int n = 1;
         while (names.Contains(car.Str("name"))) { n++; car["name"] = $"My car {n}"; }
@@ -629,6 +630,7 @@ public sealed class CarPanel : Panel
         _f.D.Snapshot();
         var c = Share.Copy(c0);
         string nm = c.Str("name") + " copy"; c["name"] = nm[..Math.Min(24, nm.Length)];
+        c["net_id"] = CarNetId.New();      // a copy is another car online
         Cars().Add(c);
         Sel = Cars().Count - 1;
         _f.D.Touched(); _f.Changed();
@@ -989,7 +991,11 @@ public sealed class CarPanel : Panel
         int n;
         try { n = CarModel.ReadGlbBody(path).Tri.Length / 9; }
         catch (Exception e) when (e is not OutOfMemoryException) { _f.Say("This .glb can't be used: " + e.Message); return; }
-        if (n > CarUi.GlbMaxTris && _f.Msg("Car body", $"This body has {n} triangles - more than {CarUi.GlbMaxTris}.\n\nA car body this detailed may not fit: the game car's model only has room for about {CarUi.GlbMaxTris}, the rest would be missing (holes).\n\nMake it smaller in your 3D program first (Blender: Decimate modifier), or import it anyway?", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
+        // the real room check (the body car's model), not a fixed number: warn only when it does not fit
+        bool fits = true; int p = 0, v = 0, max = 0;
+        try { fits = CarUi.Fits(CarGlb.Container, path); p = CarUi.Need(path).P; v = CarUi.Room(CarGlb.Container).V; max = CarUi.GlbMaxTris; }
+        catch (Exception e) when (e is not OutOfMemoryException) { }
+        if (!fits && _f.Msg("Car body", $"This body is too big for the car model: it has {n} triangles and needs {p} points, the model has room for {v} points (about {max} triangles).\n\nThe parts that don't fit would be missing in the game (holes).\n\nMake it smaller in your 3D program first (Blender: Decimate modifier), or import it anyway?", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
         string folder = Path.Combine(Paths.Tracks, "cars");
         Directory.CreateDirectory(folder);
         string name = Path.GetFileName(path), dst = Path.Combine(folder, name);

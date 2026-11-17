@@ -476,7 +476,24 @@ local function fast_tick()
 	end
 end
 
+-- Game tweaks "More AI racers" (target.ai_max = 19): the custom race menu's "Add AI" list goes 2..18; the numbers above
+-- are added once to each new list (the game itself caps the AI by free places and its per-player limit)
+local function ai_list_tick()
+	local g = cur_gui() or GUI
+	if type(g) ~= "table" or g.ai_padding_id == nil or g.ai_padding_id == M.ai_list_id then
+		return
+	end
+	M.ai_list_id = g.ai_padding_id
+	for n = 19, T.ai_max do
+		UIButtons.AddItem(g.ai_padding_id, n, "GAME_NUM_" .. n, true)
+	end
+	log("AI list: up to " .. T.ai_max)
+end
+
 local function tick()
+	if type(T.ai_max) == "number" and T.ai_max > 18 then
+		pcall(ai_list_tick)
+	end
 	if not M.fast_done and T.fast then
 		local ok, err = pcall(fast_tick)
 		if not ok then
@@ -581,7 +598,7 @@ end
 function M.GoScreen(screen, _opts)
 	local s = string.lower(tostring(screen))
 	M.last_screen = s
-	if T.fast and not M.fast_done then
+	if (T.fast and not M.fast_done) or (type(T.ai_max) == "number" and T.ai_max > 18) then
 		start_ticking()
 	end
 	if not T.enabled or (not T.record and (not T.auto or M.step < 0)) then
@@ -616,7 +633,7 @@ function M.init()
 		T = t
 	end
 	log("target: " .. table.concat(T.city_names or {}, "/") .. " > " .. table.concat(T.route_names or {}, "/"))
-	if (T.enabled and (T.auto or T.record)) or T.fast then
+	if (T.enabled and (T.auto or T.record)) or T.fast or (type(T.ai_max) == "number" and T.ai_max > 18) then
 		pcall(start_ticking)
 	end
 	return true

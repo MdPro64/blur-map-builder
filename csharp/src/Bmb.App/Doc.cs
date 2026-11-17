@@ -23,6 +23,8 @@ public sealed class Doc
     public void Load()
     {
         World = Bmb.Core.World.Load();
+        // cars from before get their own number, saved at once (the build reads the saved world)
+        try { if (CarNetId.PinAll(World) && File.Exists(Paths.WorldFile)) Bmb.Core.World.Save(World); } catch (Exception) { }
         Bmb.Core.World.AssignIds(World);
         Clamp();
         _undo.Clear(); _redo.Clear();
@@ -33,7 +35,16 @@ public sealed class Doc
 
     public void LoadAutosave()
     {
+        var saved = World;
         World = (JObj)Json.Load(Autosave)!;
+        try
+        {
+            // a car also in the saved world (same name) takes its number: the same car keeps one number
+            var had = saved.Objs("cars").Where(c => c.Str("name") != null && c.ContainsKey("net_id")).GroupBy(c => c.Str("name")!).ToDictionary(g => g.Key, g => g.First()["net_id"]);
+            foreach (var c in World.Objs("cars")) if (!c.ContainsKey("net_id") && c.Str("name") is { } n && had.TryGetValue(n, out var id)) c["net_id"] = id;
+            CarNetId.PinAll(World);
+        }
+        catch (Exception) { }
         Bmb.Core.World.AssignIds(World);
         Clamp();
     }

@@ -261,6 +261,7 @@ public static class Setup
         using var s = Assembly.GetExecutingAssembly().GetManifestResourceStream("quickstart.lua")!;
         using var ms = new MemoryStream(); s.CopyTo(ms);
         var d = ms.ToArray();
+        try { LocalHooks.PluginFiles(Plugins); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
         if (File.Exists(dst) && File.ReadAllBytes(dst).AsSpan().SequenceEqual(d)) return;
         Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
         File.WriteAllBytes(dst, d);

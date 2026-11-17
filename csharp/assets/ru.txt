@@ -1307,9 +1307,6 @@ Export the skins for another player ||| Экспорт скинов для др�
 Import skins from another player ||| Импорт скинов от другого игрока
 Exported {} with {} file(s) to {}{} ||| {} экспортирована, файлов: {}, в {}{}
 Could not export: {} ||| Не удалось экспортировать: {}
-Could not import this file:
-{} ||| Не удалось импортировать файл:
-{}
 Imported the car '{}'{}. See it in the Custom car tab; Build + install to drive it. ||| Машина '{}' импортирована{}. Она во вкладке Custom car; Build + install, чтобы ездить.
 Exported {} skin picture(s) of the {} to {} ||| Экспортировано картинок скинов: {}, машина {}, в {}
 Imported {} skin picture(s) of the {}. See them in the Car skins tab; Build + install (or Build skins) to see them in game. ||| Импортировано картинок скинов: {}, машина {}. Они во вкладке Car skins; Build + install (или Build skins), чтобы увидеть в игре.
@@ -1331,3 +1328,41 @@ Pick something ||| Выберите что-нибудь
 Quick: only the skinned cars change. ||| Быстро: меняются только машины со скинами.
 Turn on at least one. ||| Включите хотя бы одно.
 The parts that are off stay as they are in the game. ||| Выключенные части остаются в игре как есть.
+This body is too big for the car model: it has {} triangles and needs {} points, the model has room for {} points (about {} triangles).\n\nThe parts that don't fit would be missing in the game (holes).\n\nMake it smaller in your 3D program first (Blender: Decimate modifier), or import it anyway? ||| Этот кузов слишком большой для модели машины: в нём {} треугольников и нужно {} точек, а в модели место для {} точек (около {} треугольников).\n\nЧасти, которые не поместятся, будут отсутствовать в игре (дыры).\n\nСначала уменьшите его в 3D-программе (Blender: модификатор Decimate) или всё равно импортировать?
+GAME TWEAKS ||| НАСТРОЙКИ ИГРЫ
+Only Blur REBORN gets these - normal Blur stays as it is. Press Build + install to use them. ||| Только для Blur REBORN - обычный Blur не меняется. Нажмите Build + install, чтобы применить.
+🏁  AI racers  (LAN and private games) ||| 🏁  Соперники-ИИ  (LAN и приватные игры)
+More AI racers: up to 19 AI with you alone (the game allows 4 per player) ||| Больше соперников-ИИ: до 19 ИИ, если вы один (игра даёт 4 на игрока)
+In the game: custom race settings > Add AI (now up to 19). One player + 19 AI = 20 racers, 2 players + 18 AI ... ||| В игре: настройки своей гонки > Add AI (теперь до 19). Один игрок + 19 ИИ = 20 гонщиков, 2 игрока + 18 ИИ ...
+Harder AI: Hard is harder than the game's Hard (full speed, the hardest boss's driving skill) ||| Сложнее ИИ: Hard сложнее, чем в игре (полная скорость, умение самого сильного босса)
+In the game: custom race settings > AI: Hard. ||| В игре: настройки своей гонки > AI: Hard.
+Playing a private game with friends? They need Blur REBORN with the same tweaks too: every game drives some of the AI. ||| Играете приватно с друзьями? Им тоже нужен Blur REBORN с теми же настройками: каждая игра ведёт часть ИИ.
+⚡  Power-up icons ||| ⚡  Значки бонусов
+Your own picture for a power-up: the icon you hold (bottom of the screen) and the one floating on the road. A PNG with a see-through background looks best. ||| Своя картинка для бонуса: значок, который вы держите (внизу экрана), и тот, что парит над дорогой. Лучше всего PNG с прозрачным фоном.
+The game colours each power-up (Shunt red, Nitro green ...): white or grey pictures look closest to what you made. The Bolt has no icon on the road - only the held one changes. ||| Игра красит каждый бонус (Shunt красный, Nitro зелёный ...): белые или серые картинки выглядят ближе всего к задуманному. У Bolt нет значка на дороге - меняется только тот, что вы держите.
+⇩ Picture... ||| ⇩ Картинка...
+Game's icon ||| Значок игры
+your picture ||| ваша картинка
+the game's icon ||| значок игры
+Saved. Build + install to put it into Blur REBORN ||| Сохранено. Build + install, чтобы это попало в Blur REBORN
+The {} icon has your picture. Build + install to see it in Blur REBORN ||| У значка {} теперь ваша картинка. Build + install, чтобы увидеть в Blur REBORN
+This picture can't be used: {} ||| Эту картинку нельзя использовать: {}
+The {} icon is the game's again (after Build + install) ||| Значок {} снова как в игре (после Build + install)
+Picture for the {} icon ||| Картинка для значка {}
+⚙ Game tweaks ||| ⚙ Настройки игры
+GAME ||| ИГРА
+Blur REBORN settings: AI racers, power-up icons ||| Настройки Blur REBORN: соперники-ИИ, значки бонусов
+GAME TWEAKS: more and harder AI racers, your own power-up icons - for Blur REBORN only. Build + install to use them ||| НАСТРОЙКИ ИГРЫ: больше и сложнее соперники-ИИ, свои значки бонусов - только для Blur REBORN. Build + install, чтобы применить
+Game tweaks ||| Настройки игры
+AI: REBORN only.  Power-up icons: normal Blur too if on ||| ИИ: только REBORN.  Значки бонусов: и в обычном Blur, если включено
+REBORN ONLY ||| ТОЛЬКО REBORN
+REBORN + NORMAL BLUR IF ON ||| REBORN + ОБЫЧНЫЙ BLUR, ЕСЛИ ВКЛ.
+BLUR REBORN ONLY ||| ТОЛЬКО BLUR REBORN
+BLUR REBORN  +  NORMAL BLUR (if turned on below) ||| BLUR REBORN  +  ОБЫЧНЫЙ BLUR (если включено ниже)
+Also in normal Blur (Blur.exe): its icons change too - only on this PC, other players still see the game's icons ||| И в обычном Blur (Blur.exe): его значки тоже меняются - только на этом ПК, другие игроки видят значки игры
+They go into Blur REBORN; the power-up icons can go into normal Blur too (this PC only). Press Build + install to use them. ||| Они идут в Blur REBORN; значки бонусов можно поставить и в обычный Blur (только на этом ПК). Нажмите Build + install, чтобы применить.
+Power-up icons in normal Blur ||| Значки бонусов в обычном Blur
+AI use mods: every AI gets Front Runner, plus a random 2nd and 3rd slot mod ||| ИИ используют моды: у каждого ИИ - Front Runner, плюс случайный мод 2-го и 3-го слота
+In the game: custom race settings > Mods: On. This changes Blur REBORN.exe a little (turn it off to put it back). ||| В игре: настройки своей гонки > Mods: On. Это немного меняет Blur REBORN.exe (выключите, чтобы вернуть как было).
+They go into Blur REBORN. Press Build + install to use them. ||| Они идут в Blur REBORN. Нажмите Build + install, чтобы применить.
+AI racers: more, harder, with mods ||| ИИ-гонщики: больше, сильнее, с модами

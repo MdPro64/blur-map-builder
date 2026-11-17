@@ -44,6 +44,7 @@ public static class Lang
             int at = line.IndexOf(" ||| ", StringComparison.Ordinal);
             if (at <= 0) continue;
             string en = line[..at].Replace("\\n", "\n"), to = line[(at + 5)..].Replace("\\n", "\n");
+            if (en.Replace("{}", "").Trim().Length == 0) continue;    // a broken line ("{} ||| ...") would match every text
             if (en.Contains("{}")) forms.Add((en, to)); else _exact[en] = to;
         }
         foreach (var (en, to) in forms.OrderByDescending(f => f.En.Replace("{}", "").Length))

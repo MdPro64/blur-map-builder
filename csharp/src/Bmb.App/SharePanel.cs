@@ -102,6 +102,7 @@ public sealed class SharePanel : Panel
         while (names.Contains(name)) name = $"{bas} ({n++})";
         car["name"] = name;
         string note = "";
+        if (!CarNetId.Unique(car, Cars())) note = " - you already have this car (same number), so this copy gets its own number: online it is not the other player's car";
         if (car.Truthy("replace") && Cars().Any(c => c.Str("replace") == car.Str("replace")))
         {
             note = $" - the {Skins.Nice(car.Str("replace")!)} is already replaced by another of your cars, so this one is added as a new car";

@@ -12,7 +12,7 @@ public sealed class BuildOptions
 {
     public bool Dry; public bool NoCars; public bool NoRoot; public Action<string> Log = Console.WriteLine;
     /// the parts to update (an unticked one goes in as the last install had it - see Installed)
-    public bool Maps = true, Cars = true, Skins = true;
+    public bool Maps = true, Cars = true, Skins = true, Tweaks = true;
     /// the world that was built (before ids were filled in): kept as the installed copy after a good install
     public JObj? Built;
 }
@@ -767,6 +767,8 @@ public static class Build
         }
         if (!opt.NoCars) frontend = CarBuild.MenuPictures(frontend, wld);
         Add(FrontendBpr, frontend);
+        files.AddRange(HudIcons.RootFiles(n => src.Read(n), log));          // game tweaks: own power-up icons (held)
+        files.AddRange(RoadIcons.RootFiles(n => src.Read(n), log));         // game tweaks: own power-up icons (on the road)
         files.AddRange(Skins.BuildFiles(files, n => src.Read(n)!, log, Installed.SkinsFrom(opt)));      // the player's car skins, over whatever the build changed in those models
         // a later entry replaces an earlier one of the same name (Python's dict)
         var uniq = new Dictionary<string, byte[]>();
@@ -939,6 +941,7 @@ public static class Build
         }
         f["gamedata/xt/loc/cityandroutenames.loc"] = Loc.Write(f["gamedata/xt/loc/cityandroutenames.loc"], names, null);
         if (!opt.NoCars) CarBuild.AddCars(f, wld, log);
+        GameTweaks.Apply(f, log);
         f["gamedata/xt/ui.bin"] = AddMapShapes(R("xt", "ui.bin"), locs.Select(lc => lc.Str("city_name")!.ToLowerInvariant()));
         f["gamedata/xt/loc/common.loc"] = Loc.Write(R("xt", "loc", "common.loc"), null, null);
         int li = 0;
@@ -969,6 +972,7 @@ public static class Build
         {
             var boot = new List<KeyValuePair<string, byte[]>>();
             foreach (var n in new[] { "gamedata/xt/audio.bin", "gamedata/xt/audioentities.bin" }) if (f.TryGetValue(n, out var d)) boot.Add(new(n, d));
+            LocalHooks.BootFiles(boot);
             if (boot.Count > 0) { Pak.ReplaceFiles(Paths.BootOriginal, Paths.BootOut, boot); log($"boot pack: {Paths.BootOut} (the sound tables of the own sounds)"); }
             else File.Copy(Paths.BootOriginal, Paths.BootOut, true);
         }

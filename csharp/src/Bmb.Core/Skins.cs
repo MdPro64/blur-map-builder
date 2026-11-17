@@ -761,7 +761,7 @@ public static class Skins
         }
         var inst = LoadJson("installed.json"); inst["cars"] = on.Keys.Select(k => (object?)k).ToList();
         SaveJson("installed.json", inst);
-        InstallNormal(on, log, step, made);
+        InstallNormal(log, step, made);
         try { Installed.RememberSkins(); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { log("could not keep a copy of the installed skins: " + e.Message); }
         return (on.Count, back);
     }
@@ -775,9 +775,13 @@ public static class Skins
     public static bool InNormalNow => LoadJson("installed.json").Truthy("normal");
     public static string NormalPack => Path.Combine(Paths.Cache, "root.pak");
 
-    static void InstallNormal(Dictionary<string, List<string>> on, Action<string> log, Action<string>? step = null, Dictionary<string, byte[]>? made = null)
+    /// normal Blur's cache\root.pak = the player's original + (opt-in) the skins + (opt-in, Game tweaks) the power-up icons.
+    /// Nothing wanted any more: the original back. Called by Build skins and after every Build + install
+    public static void InstallNormal(Action<string> log, Action<string>? step = null, Dictionary<string, byte[]>? made = null)
     {
-        bool want = Normal && on.Count > 0;
+        var on = Normal ? OnNow() : new Dictionary<string, List<string>>();
+        bool icons = GameTweaks.IconsNormal(GameTweaks.Load()) && PowerupIcons.Any();
+        bool want = on.Count > 0 || icons;
         if (!want && !InNormalNow) return;
         string pack = NormalPack, tmp = pack + ".skins.tmp";
         Directory.CreateDirectory(Paths.Cache);
@@ -785,9 +789,15 @@ public static class Skins
         {
             // the same skinned cars as Blur REBORN's (made once)
             var files = on.Select(kv => new KeyValuePair<string, byte[]>(ModelPath(kv.Key), made != null && made.TryGetValue(ModelPath(kv.Key), out var m) ? m : Apply(ModelBytes(kv.Key), kv.Key, kv.Value))).ToList();
+            if (icons)
+            {
+                using var orig = new Pak(Paths.RootOriginal);
+                files.AddRange(HudIcons.RootFiles(n => orig.Read(n), log));
+                files.AddRange(RoadIcons.RootFiles(n => orig.Read(n), log));
+            }
             step?.Invoke("Writing normal Blur's pack...");
             Pak.ReplaceFiles(Paths.RootOriginal, tmp, files);
-            log($"normal Blur: {on.Count} car(s) with your skin in {pack}");
+            log($"normal Blur: {(on.Count > 0 ? $"{on.Count} car(s) with your skin" : "no skins")}{(icons ? ", your power-up icons" : "")} in {pack}");
         }
         else
         {

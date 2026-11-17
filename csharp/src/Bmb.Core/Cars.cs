@@ -1270,7 +1270,7 @@ public static class CarIcon
 
 public static partial class CarBuild
 {
-    const uint Uid0 = 0xCA400000, LogoUid0 = 0xCA4F0000, Loc0 = 0x4D440000; const double DriverDown = 1.5;
+    const uint LogoUid0 = 0xCA4F0000, Loc0 = 0x4D440000; const double DriverDown = 1.5;
     static readonly (string Stat, string[] Fields)[] Trend =
     {
         ("speed", new[] { "friction.airFriction", "gears.finalRatio" }), ("acceleration", new[] { "engine.engineTorque_Rpm.yScale" }),
@@ -1358,10 +1358,11 @@ public static partial class CarBuild
         var names = InternalNames(cars);
         var added = new List<uint>();
         var replaced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var netUids = CarNetId.Uids(cars, amaxD, rpD, vehD);      // each car's lasting number (the same on every PC: online play)
         for (int i = 0; i < cars.Count; i++)
         {
             var car = cars[i]; string name = names[i];
-            uint carUid = Uid0 + 4 * (uint)i, dynUid = carUid + 1, paintUid = carUid + 2, wheelUid = carUid + 3;
+            uint carUid = netUids[i], dynUid = carUid + 1, paintUid = carUid + 2, wheelUid = carUid + 3;
             var picks = CarsData.ClassCars((int)car.Int("class")).Select(x => x.Name).ToList();
             if (!picks.Contains(car.Str("base")!))
             {

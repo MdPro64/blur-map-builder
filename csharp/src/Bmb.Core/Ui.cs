@@ -184,7 +184,9 @@ public static class CarUi
     }
 
     public static bool Fits(string bas, string glb) { var (v, i) = Room(bas); var (p, t) = Need(glb); return v >= 1.1 * p && i >= 2.3 * t; }
-    public const int GlbMaxTris = 10_000;
+    /// about how many triangles an imported body can have (the room in the body car's model; a body with many sharp edges
+    /// or UV seams needs more points, so Fits is the real check)
+    public static int GlbMaxTris { get { var (v, i) = Room(CarGlb.Container); return (int)(Math.Min(v / 1.1, i / 2.3) / 100) * 100; } }
 
     public static string Mini(JObj car) { lock (_lock) return CarIcon.Choice(Root, car); }
     public static List<string> MiniShapes() { lock (_lock) return CarIcon.GameShapes(Root).Keys.OrderBy(s => s, StringComparer.Ordinal).ToList(); }
@@ -1247,6 +1249,7 @@ public static class Play
         World.AssignIds(world);
         string text = $"-- written by the track designer ({DateTime.Now:yyyy-MM-dd HH:mm}): the map the QuickStart plugin opens a custom LAN race on\n" +
             $"return {{\n\tenabled = {(on ? "true" : "false")},\n\tfast = {(Fast ? "true" : "false")},\n\tauto = true,\n\tcity_names = {LuaList(new[] { loc.Str("name"), loc.Str("city_name") })},\n\troute_names = {LuaList(new[] { m.Str("name"), m.Str("route_name") })},\n" +
+            (GameTweaks.AiPerPlayer(GameTweaks.Load()) >= GameTweaks.MaxRacers - 1 ? $"\tai_max = {GameTweaks.MaxRacers - 1},\n" : "") +
             $"\tcity_uid = {Signed32(loc.Int("city_uid"))},\n\troute_uid = {Signed32(m.Int("route_uid"))},\n\tlaps = {(m.Truthy("laps") ? m.Int("laps") : 1)},\n}}\n";
         try
         {
@@ -1257,7 +1260,21 @@ public static class Play
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return e.Message; }
     }
 
-    public static bool GameRunning() => System.Diagnostics.Process.GetProcessesByName("Blur").Length > 0 || System.Diagnostics.Process.GetProcessesByName("Blur REBORN").Length > 0;
+    /// Blur running from THIS game folder (another copy of the game, e.g. a second player's folder on the same PC, does not count)
+    public static bool GameRunning()
+    {
+        string mine = Paths.Game.Length > 0 ? Path.GetFullPath(Paths.Game).TrimEnd('\\') : "";
+        foreach (var n in new[] { "Blur", "Blur REBORN" })
+            foreach (var p in System.Diagnostics.Process.GetProcessesByName(n))
+                try
+                {
+                    string? f = p.MainModule?.FileName;
+                    if (f == null || mine.Length == 0 || string.Equals(Path.GetDirectoryName(f)!.TrimEnd('\\'), mine, StringComparison.OrdinalIgnoreCase)) return true;
+                }
+                catch (Exception) { return true; }          // can't see where it runs from: count it
+                finally { p.Dispose(); }
+        return false;
+    }
 }
 
 // ---- Path scatter ------------------------------------------------------------------------------------------------------

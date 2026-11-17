@@ -26,7 +26,7 @@ public sealed partial class MainForm : Form
     public readonly Panel Centre = new() { Dock = DockStyle.Fill, BackColor = Theme.Bg };
     readonly bool _test;
     readonly Button _build, _update;
-    Panel _lightPanel = null!; CarPanel _car = null!; SkinPanel _skins = null!; SharePanel _share = null!;
+    Panel _lightPanel = null!; CarPanel _car = null!; SkinPanel _skins = null!; SharePanel _share = null!; TweaksPanel _tweaks = null!;
 
     public MainForm(bool test = false)
     {
@@ -48,7 +48,7 @@ public sealed partial class MainForm : Form
         LoadLayout();
         Shown += (_, _) => { ApplySizes(true); FitTop(); Map2.Fit(); Tree(); Refresh2(); SetMode("2d"); Startup(); };
         FormClosing += Closing2;
-        FormClosed += (_, _) => { if (_restart) Restart(); };
+        FormClosed += (_, _) => { try { LanOff(); } catch (Exception) { } if (_restart) Restart(); };
         ResizeEnd += (_, _) => { FitPanels(); SaveLayoutState(); if (Mode == "light") LightBuild(); };
         SizeChanged += (_, _) => { if (IsHandleCreated) { FitTop(); FitPanels(); } };
     }
@@ -91,6 +91,7 @@ public sealed partial class MainForm : Form
         {
             ("MAP", "Make your map: the road, the land, the light", new[] { ("2d", "▦ 2D map"), ("3d", "▲ 3D"), ("land", "⛰ Landscape"), ("surface", "▩ Surface"), ("collision", "⚠ Collision"), ("ai", "➿ AI path"), ("light", "☀ Lighting") }),
             ("CARS", "Your own cars and car paint (for every map)", new[] { ("car", "⛟ Custom car"), ("skins", "🎨 Car skins") }),
+            ("GAME", "Blur REBORN settings: AI racers, power-up icons", new[] { ("tweaks", "⚙ Game tweaks") }),
             ("SHARE", "One file for another player: a map, a car or skins", new[] { ("share", "⇅ Export / Import") }),
         })
         {
@@ -143,8 +144,9 @@ public sealed partial class MainForm : Form
         _car = new CarPanel(this) { Dock = DockStyle.Fill, Visible = false };
         _skins = new SkinPanel(this) { Dock = DockStyle.Fill, Visible = false };
         _share = new SharePanel(this) { Dock = DockStyle.Fill, Visible = false };
+        _tweaks = new TweaksPanel(this) { Dock = DockStyle.Fill, Visible = false };
         Centre.Controls.Add(G);
-        Centre.Controls.Add(_lightPanel); Centre.Controls.Add(_car); Centre.Controls.Add(_skins); Centre.Controls.Add(_share);
+        Centre.Controls.Add(_lightPanel); Centre.Controls.Add(_car); Centre.Controls.Add(_skins); Centre.Controls.Add(_share); Centre.Controls.Add(_tweaks);
         V3.MakePanels(Centre);
         Foldable("left", _leftP, true); Foldable("right", _rightP, false);
         G.BringToFront();
@@ -471,6 +473,7 @@ public sealed partial class MainForm : Form
             case "light": Say($"LIGHTING of the location '{D.Loc.Str("name")}': pick a game city as the start, change what you like, Build + install, look in game"); break;
             case "car": Say("CUSTOM CAR: + New, pick a class and a body car, then spend the class's stat points"); break;
             case "skins": break;
+            case "tweaks": Say("GAME TWEAKS: more and harder AI racers, your own power-up icons - for Blur REBORN only. Build + install to use them"); break;
             case "share": Say("EXPORT / IMPORT: one file for another player - a map (with its pictures, 3D models and sky), a custom car (with its body, sounds and logo) or skins"); break;
             case "land": Say("LANDSCAPE (3D): left drag = use the tool, right drag = back to flat (Paint: remove the paint), middle drag = turn, Shift+middle = move, wheel = zoom.  Auto hills = hills all around the road"); break;
             case "surface": Say($"SURFACE: left drag = paint {(Map2.BrushKey == "bumps" ? "bumps" : Surface.Surfaces[Map2.BrushKey].Label)}, right drag = remove, middle drag = move the map, wheel = zoom.  Whole road: type / sides / varied asphalt on the bar"); break;
@@ -493,7 +496,7 @@ public sealed partial class MainForm : Form
     void LoadBegin(string m)
     {
         _tabTime.Restart();
-        _loadName = m switch { "2d" => "2D map", "3d" => "3D view", "collision" => "Collision", "ai" => "AI path", "light" => "Lighting", "surface" => "Surface", "land" => "Landscape", "skins" => "Car skins", "share" => "Export / Import", _ => "Custom car" };
+        _loadName = m switch { "2d" => "2D map", "3d" => "3D view", "collision" => "Collision", "ai" => "AI path", "light" => "Lighting", "surface" => "Surface", "land" => "Landscape", "skins" => "Car skins", "share" => "Export / Import", "tweaks" => "Game tweaks", _ => "Custom car" };
         if (!IsHandleCreated) return;
         SendMessage(Handle, 0x000B, IntPtr.Zero, IntPtr.Zero);                 // WM_SETREDRAW off
         if (_tabMs.GetValueOrDefault(m, long.MaxValue) > ShowAfterMs) LoadShow(5);
@@ -534,13 +537,14 @@ public sealed partial class MainForm : Form
         LoadStep(20);
         V3.SetMode(m);
         LoadStep(60);
-        bool canvas = m is not ("light" or "car" or "skins" or "share");
-        _rightP.Visible = _rightSash.Visible = canvas; _leftP.Visible = _leftSash.Visible = m is not ("car" or "skins" or "share");
-        G.Visible = canvas; _lightPanel.Visible = m == "light"; _car.Visible = m == "car"; _skins.Visible = m == "skins"; _share.Visible = m == "share"; _build.Visible = m != "skins";        // the skins have their own Build skins
+        bool canvas = m is not ("light" or "car" or "skins" or "share" or "tweaks");
+        _rightP.Visible = _rightSash.Visible = canvas; _leftP.Visible = _leftSash.Visible = m is not ("car" or "skins" or "share" or "tweaks");
+        G.Visible = canvas; _lightPanel.Visible = m == "light"; _car.Visible = m == "car"; _skins.Visible = m == "skins"; _share.Visible = m == "share"; _tweaks.Visible = m == "tweaks"; _build.Visible = m != "skins";        // the skins have their own Build skins
         if (canvas) { G.BringToFront(); ActiveControl = G; G.Focus(); }
         else if (m == "light") { _lightPanel.BringToFront(); LightBuild(); }
         else if (m == "skins") { _skins.BringToFront(); _skins.Refresh2(); SkinNormalShow(Skins.Normal); }
         else if (m == "share") { _share.BringToFront(); _share.Refresh2(); }
+        else if (m == "tweaks") { _tweaks.BringToFront(); _tweaks.Refresh2(); }
         else { _car.BringToFront(); _car.Refresh2(); }
         ResumeLayout(true);
         LoadStep(80);
@@ -866,7 +870,7 @@ public sealed partial class MainForm : Form
         if (key == Keys.Escape && !Is3D) { Map2.Escape(); return true; }
         if (typing) return base.ProcessCmdKey(ref msg, k);
         if (Is3D) return V3.Key(key, ctrl, shift, alt) || base.ProcessCmdKey(ref msg, k);
-        if (Mode is "light" or "car" or "skins") return base.ProcessCmdKey(ref msg, k);
+        if (Mode is "light" or "car" or "skins" or "share" or "tweaks") return base.ProcessCmdKey(ref msg, k);
         if (alt) return base.ProcessCmdKey(ref msg, k);
         var tool = key switch { Keys.S => "select", Keys.M => "move", Keys.A => "add", Keys.I => "insert", Keys.E => "erase", Keys.R => "row", Keys.P => "single", Keys.B => "branch", Keys.L => "split", Keys.D => "measure", Keys.W => "wall", _ => null };
         if (tool != null) { SetTool(tool); return true; }
@@ -958,7 +962,7 @@ public sealed partial class MainForm : Form
         if (W < 50) return;
         // the 3D tab on a narrow window: the object list goes first, the middle stays usable
         V3.Narrow(W < 1240);
-        bool canvas = Mode is not ("light" or "car" or "skins");
+        bool canvas = Mode is not ("light" or "car" or "skins" or "share" or "tweaks");
         _rightP.Visible = _rightSash.Visible = canvas && !(Mode == "3d" && W < 1700);     // 3D has its own two panels: the view needs the room
         var shown = _panels.Where(p => !p.Height && p.C.Visible && (p.C.Parent?.Visible ?? false)).ToList();
         int total = shown.Where(p => !Folded(p.Name)).Sum(p => Sz(p.Name, p.Default));
