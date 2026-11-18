@@ -190,7 +190,7 @@ public static class HudIcons
         if (!PowerupIcons.Any()) yield break;
         var src = read(File);
         if (src == null) { log("power-up icons: the game's icon file is missing - skipped"); yield break; }
-        var made = Make(src, PowerupIcons.FileOf, log);
+        var made = Make(src, PowerupIcons.AnyOf, log);
         if (made != null) yield return new(File, made);
     }
 

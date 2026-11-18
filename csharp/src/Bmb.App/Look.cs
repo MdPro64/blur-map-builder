@@ -83,7 +83,8 @@ public static class Look
         {
             bool sel = (e.State & DrawItemState.Selected) != 0 && (e.State & DrawItemState.ComboBoxEdit) == 0;
             using (var b = new SolidBrush(sel ? Theme.Blue : Theme.Field)) e.Graphics.FillRectangle(b, e.Bounds);
-            if (e.Index >= 0) TextRenderer.DrawText(e.Graphics, Lang.T(c.GetItemText(c.Items[e.Index])), c.Font, e.Bounds, c.Enabled ? (sel ? Color.White : Theme.Text) : Color.Gray, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            var r = new Rectangle(e.Bounds.X + 6, e.Bounds.Y, e.Bounds.Width - 6, e.Bounds.Height);
+            if (e.Index >= 0) TextRenderer.DrawText(e.Graphics, Lang.T(c.GetItemText(c.Items[e.Index])), c.Font, r, c.Enabled ? (sel ? Color.White : Theme.Text) : Color.Gray, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
         };
     }
 
@@ -132,6 +133,47 @@ public sealed class RoundButton : Button
     protected override void OnMouseLeave(EventArgs e) { _hot = false; _down = false; Invalidate(); base.OnMouseLeave(e); }
     protected override void OnMouseDown(MouseEventArgs e) { _down = true; Invalidate(); base.OnMouseDown(e); }
     protected override void OnMouseUp(MouseEventArgs e) { _down = false; Invalidate(); base.OnMouseUp(e); }
+}
+
+/// a drop-down in the program's look: closed = a rounded box like the buttons (lighter under the mouse) with a ▾; open = the
+/// dark list with the blue line under the mouse (Look.DarkCombo). Windows' own grey / white box is never drawn
+public sealed class DarkComboBox : ComboBox
+{
+    bool _hot;
+    public DarkComboBox()
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        DropDownStyle = ComboBoxStyle.DropDownList; FlatStyle = FlatStyle.Flat;
+        BackColor = Theme.Panel2; ForeColor = Theme.Text; Font = Theme.Ui; ItemHeight = 20;
+        Look.DarkCombo(this);
+    }
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        Color under = Theme.Bg;
+        for (var q = Parent; q != null; q = q.Parent) if (q.BackColor.A == 255) { under = q.BackColor; break; }
+        g.Clear(under);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        var fill = !Enabled ? Theme.Panel : _hot || DroppedDown ? Theme.GlassHi : Theme.Glass;
+        using (var p = Look.RoundPath(new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f), Look.Radius))
+        {
+            using (var b = new SolidBrush(fill)) g.FillPath(b, p);
+            using var pen = new Pen(Focused ? Theme.Blue : Color.FromArgb(60, Theme.Head));
+            g.DrawPath(pen, p);
+        }
+        string text = SelectedIndex >= 0 ? Lang.T(GetItemText(Items[SelectedIndex])) : "";
+        TextRenderer.DrawText(g, text, Font, new Rectangle(8, 0, Width - 30, Height), Enabled ? Theme.Text : Color.Gray,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        float cx = Width - 14, cy = Height / 2f;
+        using var ab = new SolidBrush(Enabled ? Theme.Head : Color.Gray);
+        g.FillPolygon(ab, new[] { new PointF(cx - 5, cy - 2.5f), new PointF(cx + 5, cy - 2.5f), new PointF(cx, cy + 3.5f) });
+    }
+    protected override void OnMouseEnter(EventArgs e) { _hot = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { _hot = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnSelectedIndexChanged(EventArgs e) { Invalidate(); base.OnSelectedIndexChanged(e); }
+    protected override void OnDropDownClosed(EventArgs e) { Invalidate(); base.OnDropDownClosed(e); }
+    protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
+    protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
 }
 
 /// a group of top tabs: a rounded box, a little lighter than the bar, its name in small letters at the left

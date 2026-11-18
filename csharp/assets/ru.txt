@@ -1339,7 +1339,7 @@ In the game: custom race settings > AI: Hard. ||| В игре: настройк�
 Playing a private game with friends? They need Blur REBORN with the same tweaks too: every game drives some of the AI. ||| Играете приватно с друзьями? Им тоже нужен Blur REBORN с теми же настройками: каждая игра ведёт часть ИИ.
 ⚡  Power-up icons ||| ⚡  Значки бонусов
 Your own picture for a power-up: the icon you hold (bottom of the screen) and the one floating on the road. A PNG with a see-through background looks best. ||| Своя картинка для бонуса: значок, который вы держите (внизу экрана), и тот, что парит над дорогой. Лучше всего PNG с прозрачным фоном.
-The game colours each power-up (Shunt red, Nitro green ...): white or grey pictures look closest to what you made. The Bolt has no icon on the road - only the held one changes. ||| Игра красит каждый бонус (Shunt красный, Nitro зелёный ...): белые или серые картинки выглядят ближе всего к задуманному. У Bolt нет значка на дороге - меняется только тот, что вы держите.
+The game colours each power-up (Shunt red, Nitro green ...): white or grey pictures look closest to what you made. ||| Игра красит каждый бонус (Shunt красный, Nitro зелёный ...): белые или серые картинки выглядят ближе всего к задуманному.
 ⇩ Picture... ||| ⇩ Картинка...
 Game's icon ||| Значок игры
 your picture ||| ваша картинка
@@ -1366,3 +1366,65 @@ AI use mods: every AI gets Front Runner, plus a random 2nd and 3rd slot mod ||| 
 In the game: custom race settings > Mods: On. This changes Blur REBORN.exe a little (turn it off to put it back). ||| В игре: настройки своей гонки > Mods: On. Это немного меняет Blur REBORN.exe (выключите, чтобы вернуть как было).
 They go into Blur REBORN. Press Build + install to use them. ||| Они идут в Blur REBORN. Нажмите Build + install, чтобы применить.
 AI racers: more, harder, with mods ||| ИИ-гонщики: больше, сильнее, с модами
+Your own picture for a power-up: in the menu, floating on the road and held behind your car. ||| Своя картинка для бонуса: в меню, на дороге и у машины сзади.
+Symbol: your picture's shape on the game's card (a PNG with a see-through background looks best).  Whole icon: your picture fills the whole card (4:3) - another shape is made smaller to fit, never stretched or cut. ||| Символ: форма вашей картинки на карточке игры (лучше PNG с прозрачным фоном).  Весь значок: картинка заполняет всю карточку (4:3) - другая форма уменьшается, чтобы поместиться, без растягивания и обрезки.
+The game colours each power-up (Shunt red, Nitro green ...), so only the light and dark of your picture show. The menu always shows a shape. Bolt (2 left) / (1 left): only the Bolt held behind the car. ||| Игра красит каждый бонус (Shunt красный, Nitro зелёный ...), поэтому видны только светлые и тёмные места картинки. В меню всегда видна форма. Bolt (осталось 2) / (осталось 1): только Bolt у машины сзади.
+⇩ Symbol... ||| ⇩ Символ...
+⇩ Whole icon... ||| ⇩ Весь значок...
+your symbol ||| ваш символ
+your whole icon ||| ваш значок целиком
+Bolt (3) ||| Bolt (3)
+Bolt (2 left) ||| Bolt (осталось 2)
+Bolt (1 left) ||| Bolt (осталось 1)
+Your picture becomes pure white, like the game's own icons: the game colours each power-up (Shunt red, Nitro green ...). Bolt (2 left) / (1 left): only the Bolt held behind the car. ||| Картинка становится чисто белой, как значки самой игры: игра красит каждый бонус (Shunt красный, Nitro зелёный ...). Bolt (осталось 2) / (осталось 1): только Bolt у машины сзади.
+your symbol   {} ||| ваш символ   {}
+your whole icon   {} ||| ваш значок целиком   {}
+⚠ not 4:3 ({} x {}): its sides are cut off ||| ⚠ не 4:3 ({} x {}): края слева и справа обрезаны
+⚠ not 4:3 ({} x {}): its top and bottom are cut off ||| ⚠ не 4:3 ({} x {}): верх и низ обрезаны
+⚠ not square ({} x {}): it is made smaller to fit ||| ⚠ не квадрат ({} x {}): уменьшена, чтобы поместиться
+⚠ not 4:3 ({} x {}): made smaller to fit ||| ⚠ не 4:3 ({} x {}): уменьшена, чтобы поместиться
+⚡  Power-up icons  (.blurpowerups) ||| ⚡  Значки бонусов  (.blurpowerups)
+All your power-up pictures from the Game tweaks tab (symbol or whole icon, Bolt 3 / 2 / 1). Importing replaces only the power-ups the file has. ||| Все ваши картинки бонусов из вкладки Game tweaks (символ или значок целиком, Bolt 3 / 2 / 1). Импорт заменяет только бонусы, которые есть в файле.
+⇧ Export power-up icons... ||| ⇧ Экспорт значков бонусов...
+⇩ Import power-up icons... ||| ⇩ Импорт значков бонусов...
+Give a power-up your own picture first (Game tweaks tab) ||| Сначала дайте бонусу свою картинку (вкладка Game tweaks)
+Export the power-up icons for another player ||| Экспорт значков бонусов для другого игрока
+Import power-up icons from another player ||| Импорт значков бонусов от другого игрока
+Exported the pictures of {} power-up(s) to {} ||| Экспортированы картинки бонусов: {}, в {}
+Imported the power-up icons: {}. See them in the Game tweaks tab; Build + install to see them in game. ||| Импортированы значки бонусов: {}. Они во вкладке Game tweaks; Build + install, чтобы увидеть в игре.
+A map with its menu picture, minimap, your 3D models on it and its location's lighting + sky picture. ||| Карта с картинкой меню, мини-картой, вашими 3D-моделями на ней, светом и небом её локации.
+IN GAME ||| В ИГРЕ
+A new car in the car list, or one of the game's cars swapped for yours ||| Новая машина в списке или замена одной из машин игры на вашу
+A game car's body, or your own 3D model (.glb) ||| Кузов машины из игры или ваша 3D модель (.glb)
+Wheels (any game car's) ||| Колёса (любой машины из игры)
+Fit the body on the wheels ||| Подгонка кузова к колёсам
+Front width ||| Ширина спереди
+Rear width ||| Ширина сзади
+Length ||| Длина
+Reset fit ||| Сбросить подгонку
+Turn 90°  (now {}°) ||| Повернуть на 90°  (сейчас {}°)
+your body: {} ||| ваш кузов: {}
+LOOK ||| ВНЕШНИЙ ВИД
+Paint, maker logo and the icons the menus show ||| Краска, логотип марки и значки в меню
+Main colour ||| Основной цвет
+Second colour ||| Второй цвет
+Colour {}: click to change ||| Цвет {}: нажмите, чтобы изменить
+EXHAUST FLAMES ||| ПЛАМЯ ВЫХЛОПА
+Where the flames come out - drag the orange dots in the preview ||| Откуда выходит пламя - перетаскивайте оранжевые точки в окне машины
+STATS ||| ХАРАКТЕРИСТИКИ
+Each one stays inside the class's range; all together inside its point budget ||| Каждая в пределах класса; все вместе - в пределах очков класса
+Build + install puts your cars in the game (car select: their class). ||| Сборка + установка добавляет ваши машины в игру (выбор машины: их класс).
+a replaced car keeps the game car's paints (pick them in game) ||| заменённая машина сохраняет краски машины из игры (выбирайте их в игре)
+an imported body keeps its own colours (from its .glb) ||| импортированный кузов сохраняет свои цвета (из его .glb)
+Or drag in the preview: the wheels (width / length), the dot on top of the body (move), the dot on its nose (size). Right-drag moves the view, the wheel zooms. ||| Или перетаскивайте в окне машины: колёса (ширина / длина), точку на крыше (сдвиг), точку на носу (размер). Правая кнопка двигает вид, колесо мыши - масштаб.
+Back to the game car's own body (your imported .glb is not used) ||| Вернуть кузов машины из игры (ваш .glb не используется)
+Turn the body a quarter round (when it comes in facing the wrong way) ||| Повернуть кузов на четверть оборота (если он смотрит не туда)
+Back to the automatic fit ||| Вернуть автоматическую подгонку
+Back to the maker's logo of the body car ||| Вернуть логотип марки машины-основы
+drag = turn the car,  right-drag = move,  mouse wheel = zoom.   Handles: blue circles = wheels,  orange = move the body,  diamond = its size,  fire = exhaust flames ||| перетаскивание = поворот машины,  правая кнопка = сдвиг,  колесо мыши = масштаб.   Ручки: синие круги = колёса,  оранжевая = сдвиг кузова,  ромб = его размер,  огонь = пламя выхлопа
+drag = turn the car,  right-drag = move,  mouse wheel = zoom.   Fire dots = exhaust flames (drag them) ||| перетаскивание = поворот машины,  правая кнопка = сдвиг,  колесо мыши = масштаб.   Огненные точки = пламя выхлопа (их можно двигать)
+game logo ||| логотип игры
+Your own 3D car model (.glb, from Blender ...). It sits on the wheels of this car; fit it below or drag the handles in the preview ||| Ваша 3D модель машины (.glb, из Blender ...). Она ставится на колёса этой машины; подгоните её ниже или перетаскивайте ручки в окне машины
+Save a game car's own model as a .glb - every part its own object, like the game - to change it in Blender and import it back as a body ||| Сохранить модель машины из игры как .glb - каждая деталь отдельным объектом, как в игре - чтобы изменить её в Blender и импортировать обратно как кузов
+3D MODEL ||| 3D МОДЕЛЬ
+The body fits ({} of {} points of room used). ||| Кузов помещается (занято {} из {} точек).

@@ -39,13 +39,12 @@ public sealed class CarPanel : Panel
     readonly Panel[] _paint = { new() { Width = 34, Height = 22, BorderStyle = BorderStyle.FixedSingle, Cursor = Cursors.Hand }, new() { Width = 34, Height = 22, BorderStyle = BorderStyle.FixedSingle, Cursor = Cursors.Hand } };
     readonly Button[] _paintB = new Button[2];
     readonly Button _bodyBtn;
-    readonly FlowLayoutPanel _fitRow = new() { AutoSize = true, WrapContents = true, BackColor = Theme.Bg, Visible = false };
-    readonly Label _fitLabel = new() { AutoSize = true, ForeColor = Theme.Text, Visible = false }, _roomLabel = new() { AutoSize = true, ForeColor = Theme.Text, Visible = false, MaximumSize = new Size(900, 0) };
+    readonly Label _roomLabel = new() { AutoSize = true, ForeColor = Theme.Text, MaximumSize = new Size(900, 0) };
     readonly Label _points = new() { AutoSize = true, ForeColor = Theme.Text, Font = new Font("Segoe UI", 11f, FontStyle.Bold) }, _top = new() { AutoSize = true, ForeColor = Theme.Text };
     readonly Dictionary<string, Label> _vals = new();
     readonly Panel _chart = new() { Width = 520, Height = 46 * 5, BackColor = Theme.Bg, Cursor = Cursors.Hand };
     readonly PictureBox _view = new() { Dock = DockStyle.Fill, BackColor = ColorTranslator.FromHtml("#060a14"), SizeMode = PictureBoxSizeMode.CenterImage, Cursor = Cursors.SizeWE };
-    readonly Label _hint = new() { Dock = DockStyle.Bottom, Height = 18, Text = "drag = turn the car", ForeColor = ColorTranslator.FromHtml("#7f8a96"), BackColor = Theme.Bg };
+    readonly Label _hint = new() { Dock = DockStyle.Bottom, Height = 50, Padding = new Padding(6, 2, 6, 0), Text = "drag = turn the car", ForeColor = ColorTranslator.FromHtml("#7f8a96"), BackColor = Theme.Bg };
     readonly Panel _left = new() { Dock = DockStyle.Left, Width = 240, BackColor = Theme.Panel }, _viewBox = new() { Dock = DockStyle.Right, Width = 460, BackColor = Theme.Bg };
     readonly FlowLayoutPanel _controls = new() { Dock = DockStyle.Fill, AutoScroll = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Theme.Bg, Padding = new Padding(10) };
     readonly List<Control> _needCar = new();
@@ -70,7 +69,7 @@ public sealed class CarPanel : Panel
         _f = f; BackColor = Theme.Bg;
         Look.DarkScroll(_controls, _list);
         RoundList.Dress(_list, 26);
-        _bodyBtn = Theme.Btn("Use the game body", GameBody);
+        _bodyBtn = Theme.Btn("↺ Use the game body", GameBody);
         // left: the list
         var head = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, BackColor = Theme.Panel, Padding = new Padding(8) };
         head.Controls.Add(new Label { Text = "MY CARS", AutoSize = true, ForeColor = Theme.Head, Font = Theme.Bold });
@@ -84,7 +83,7 @@ public sealed class CarPanel : Panel
         _controls.Resize += (_, _) => top.MaximumSize = new Size(Math.Max(300, Math.Min(1100, _controls.ClientSize.Width - 30)), 0);
         Control Col(string title, Control c, int w = 0)
         {
-            var p = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Theme.Bg, Margin = new Padding(0, 0, 14, 4) };
+            var p = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = new Padding(0, 0, 14, 4) };
             p.Controls.Add(new Label { Text = title, AutoSize = true, ForeColor = ColorTranslator.FromHtml("#9aa8b8") });
             p.Controls.Add(c);
             return p;
@@ -102,23 +101,95 @@ public sealed class CarPanel : Panel
         Look.Tip(_tabSound, "The car's engine sound");
         top.Controls.Add(tabs);
         _controls.Controls.Add(top); _wide.Add(top);
-        _controls.Controls.Add(new Label { AutoSize = false, Height = 1, Width = 1100, BackColor = Theme.Glass, Margin = new Padding(0, 6, 0, 8) });
-        var look = new FlowLayoutPanel { AutoSize = true, WrapContents = true, BackColor = Theme.Bg, MaximumSize = new Size(1100, 0) };
+        _controls.Controls.Add(_line);
+        // the Body page: cards, one per job (the 3D model, the look, the flames, new car or replace)
+        foreach (var cb in new[] { _base, _icon }) { cb.FormattingEnabled = true; cb.Format += (_, e) => { if (e.ListItem is string s) e.Value = Skins.Nice(s); }; }
         _base.SelectionChangeCommitted += (_, _) => BaseChanged();
-        look.Controls.Add(Col("Body (a game car of this class)", _base));
         _icon.SelectionChangeCommitted += (_, _) => Set("icon", _icon.SelectedItem as string);
-        look.Controls.Add(Col("Menu icon", _icon));
         _mini.SelectionChangeCommitted += (_, _) => Set("mini_icon", (string)_mini.SelectedItem! == MiniAuto ? CarIcon.Auto : _mini.SelectedItem as string);
-        look.Controls.Add(Col("Mini icon (car list)", _mini));
-        look.Controls.Add(_miniPic);
-        _bodyPage.Controls.Add(look); _wide.Add(look);
-        // a car replacer: this car's look and sound on a game car, instead of a new car
-        var rRow = new FlowLayoutPanel { AutoSize = true, WrapContents = true, BackColor = Theme.Bg, MaximumSize = new Size(1100, 0) };
         _replace.SelectionChangeCommitted += (_, _) => { int i = _replace.SelectedIndex; ReplacePicked(i > 0 && i < _replaceCars.Count ? _replaceCars[i] : null); };
         Look.Tip(_replace, "Pick a game car: in game it gets this car's body, wheels and sound (online too, on your screen). Its handling and stats stay the game car's.");
-        rRow.Controls.Add(Col("Replace a game car (see your car online too)", _replace));
-        _bodyPage.Controls.Add(rRow); _wide.Add(rRow);
-        _bodyPage.Controls.Add(_replaceNote);
+        _wheels.SelectionChangeCommitted += (_, _) => Set("wheels", _wheels.SelectedItem as string);
+        _wheels.DrawMode = DrawMode.OwnerDrawFixed;
+        _wheels.DrawItem += WheelItem;
+        _wheels.DropDownClosed += (_, _) => WheelHoverHide();
+        _wheels.FormattingEnabled = true; _wheels.Format += (_, e) => { if (e.ListItem is string s) e.Value = Skins.Nice(s); };
+        _base.Width = _wheels.Width = 260;
+
+        // 0. a new car, or a game car replaced
+        var repC = Card("🎮  IN GAME", "A new car in the car list, or one of the game's cars swapped for yours");
+        CardRow(repC).Controls.Add(Col("Replace a game car (see your car online too)", _replace));
+        _replaceNote.Margin = new Padding(0, 2, 0, 0);
+        repC.Controls.Add(_replaceNote); _wideIn.Add(_replaceNote);
+
+        // 1. the 3D model: a game car's body or your own .glb
+        var model = Card("🚗  3D MODEL", "A game car's body, or your own 3D model (.glb)");
+        var mRow = CardRow(model);
+        mRow.Controls.Add(Col("Body (a game car of this class)", _base));
+        mRow.Controls.Add(Col("Wheels (any game car's)", _wheels));
+        var bRow = CardRow(model);
+        bRow.Controls.Add(Look.Tip(Theme.Btn("⇩ Import body (.glb)", ImportBody, Theme.Blue), "Your own 3D car model (.glb, from Blender ...). It sits on the wheels of this car; fit it below or drag the handles in the preview"));
+        Button? exp = null;
+        exp = Look.Tip(Theme.Btn("⇧ Export a game car (.glb)", () => ExportMenu(exp!)), "Save a game car's own model as a .glb - every part its own object, like the game - to change it in Blender and import it back as a body");
+        bRow.Controls.Add(exp);
+        bRow.Controls.Add(Look.Tip(_bodyBtn, "Back to the game car's own body (your imported .glb is not used)"));
+        _glbNote.Margin = new Padding(4, 8, 0, 0); bRow.Controls.Add(_glbNote);
+        // the fit of an imported body: steppers that show their numbers
+        _fitBox.Controls.Add(_roomLabel);
+        _roomLabel.Margin = new Padding(0, 6, 0, 6);
+        _fitBox.Controls.Add(new Label { Text = "Fit the body on the wheels", AutoSize = true, ForeColor = Theme.Head, Font = Theme.Bold, Margin = new Padding(0, 4, 0, 2) });
+        var fBody = Row2(); var fWheels = Row2();
+        fBody.Controls.Add(RowTitle("Body"));
+        fWheels.Controls.Add(RowTitle("Wheels"));
+        foreach (var (label, key, step) in new[] { ("Size", "size", 0.02), ("Forward", "fwd", 0.03), ("Up", "up", 0.02), ("Front width", "track", 0.02), ("Rear width", "track_r", 0.02), ("Length", "wb", 0.02) })
+        {
+            string k = key; double s = step;
+            var st = Stepper(label, k, s);
+            (k is "track" or "track_r" or "wb" ? fWheels : fBody).Controls.Add(st);
+            if (k is "track" or "track_r" or "wb") _spacing.Add(st);
+        }
+        _turnBtn = Look.Tip(Theme.Btn("↻ Turn 90°", () => Fit("turn", 90)), "Turn the body a quarter round (when it comes in facing the wrong way)");
+        var reset = Look.Tip(Theme.Btn("↺ Reset fit", () => Fit(null, 0)), "Back to the automatic fit");
+        var fBtns = Row2(); fBtns.Margin = new Padding(72, 2, 0, 0);
+        fBtns.Controls.Add(_turnBtn); fBtns.Controls.Add(reset);
+        _fitBox.Controls.Add(fBody); _fitBox.Controls.Add(fWheels); _fitBox.Controls.Add(fBtns);
+        _fitBox.Controls.Add(Hint("Or drag in the preview: the wheels (width / length), the dot on top of the body (move), the dot on its nose (size). Right-drag moves the view, the wheel zooms."));
+        model.Controls.Add(_fitBox);
+
+        // 2. the look: paint, logo, icons
+        var lookC = Card("🎨  LOOK", "Paint, maker logo and the icons the menus show");
+        var pRow = CardRow(lookC);
+        pRow.Controls.Add(RowTitle("Paint"));
+        for (int i = 0; i < 2; i++)
+        {
+            int k = i;
+            _paint[i].Width = 44; _paint[i].Height = 28;
+            _paint[i].Margin = new Padding(4, 4, 2, 0); _paint[i].Click += (_, _) => Paint(k); pRow.Controls.Add(Look.Tip(_paint[i], $"Colour {k + 1}: click to change"));
+            _paintB[i] = Theme.Btn(k == 0 ? "Main colour" : "Second colour", () => Paint(k)); _paintB[i].Margin = new Padding(2, 3, 12, 3); pRow.Controls.Add(_paintB[i]);
+        }
+        _paintNote.Margin = new Padding(0, 9, 0, 0); pRow.Controls.Add(_paintNote);
+        var logoRow = CardRow(lookC);
+        logoRow.Controls.Add(RowTitle("Logo"));
+        _logoPic.Margin = new Padding(4, 0, 8, 0); _logoPic.BackColor = Theme.Panel2;
+        _logoPic.Paint += (_, e) => { if (_logoPic.Image == null) TextRenderer.DrawText(e.Graphics, Lang.T("game logo"), Theme.Small, _logoPic.ClientRectangle, Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter); };
+        logoRow.Controls.Add(_logoPic);
+        logoRow.Controls.Add(Look.Tip(Theme.Btn("⇩ Import logo (.png)", ImportLogo), "A picture of the maker logo, best a .png with a see-through background. Shown in the garage and car select."));
+        logoRow.Controls.Add(Look.Tip(Theme.Btn("↺ Game logo", () => { if (Car()?.Truthy("logo") == true) { Set("logo", null); _f.Say("The car shows its maker's game logo again", Theme.Good); } }), "Back to the maker's logo of the body car"));
+        logoRow.Controls.Add(_logoNote);
+        var iRow = CardRow(lookC);
+        iRow.Controls.Add(Col("Menu icon", _icon));
+        iRow.Controls.Add(Col("Mini icon (car list)", _mini));
+        _miniPic.Margin = new Padding(0, 14, 0, 0);
+        iRow.Controls.Add(_miniPic);
+
+        // 3. the exhaust flames
+        var flameC = Card("🔥  EXHAUST FLAMES", "Where the flames come out - drag the orange dots in the preview");
+        var flameRow = CardRow(flameC);
+        flameRow.Controls.Add(Look.Tip(Theme.Btn("+ Pipe", () => FlamePipes(1)), "One more exhaust pipe"));
+        flameRow.Controls.Add(Look.Tip(Theme.Btn("− Pipe", () => FlamePipes(-1)), "One exhaust pipe less"));
+        flameRow.Controls.Add(Look.Tip(Theme.Btn("↺ Game spots", () => { Set("exhaust", null); }), "Back to where the game car's pipes are"));
+        flameRow.Controls.Add(_flameNote);
+
         // the sound page
         _soundPage.Controls.Add(new Label { Text = "ENGINE SOUND", AutoSize = true, ForeColor = Theme.Head, Font = Theme.Bold, Margin = new Padding(0, 2, 0, 4) });
         var sRow = new FlowLayoutPanel { AutoSize = true, WrapContents = true, BackColor = Theme.Bg, MaximumSize = new Size(1100, 0) };
@@ -170,58 +241,16 @@ public sealed class CarPanel : Panel
         _soundPage.Controls.Add(new Label { Text = "Each one is a .wav of just that sound. Turbo and supercharger sounds are only heard on engines that have them (pick one in the list above); the gear, pop, damage and tyre sounds work on every car. Sounds that play once (blow-off, gear shift, gear crunch, pops) keep your recording's length - keep them short; the others loop, so 1-3 seconds of a steady sound is best.", AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = ColorTranslator.FromHtml("#9aa8b8"), Margin = new Padding(0, 4, 0, 10) });
         _soundPage.Controls.Add(_soundNow);
         _controls.Controls.Add(_bodyPage); _controls.Controls.Add(_soundPage);
-        var paint = new FlowLayoutPanel { AutoSize = true, WrapContents = true, BackColor = Theme.Bg, Margin = new Padding(0, 10, 0, 0), MaximumSize = new Size(1100, 0) };
-        paint.Controls.Add(Theme.Lbl("Paint"));
-        for (int i = 0; i < 2; i++)
-        {
-            int k = i;
-            _paint[i].Margin = new Padding(8, 4, 2, 0); _paint[i].Click += (_, _) => Paint(k); paint.Controls.Add(_paint[i]);
-            _paintB[i] = Theme.Btn($"colour {i + 1}", () => Paint(k)); paint.Controls.Add(_paintB[i]);
-        }
-        paint.Controls.Add(Theme.Lbl("Wheels"));
-        _wheels.SelectionChangeCommitted += (_, _) => Set("wheels", _wheels.SelectedItem as string);
-        _wheels.DrawMode = DrawMode.OwnerDrawFixed;
-        _wheels.DrawItem += WheelItem;
-        _wheels.DropDownClosed += (_, _) => WheelHoverHide();
-        paint.Controls.Add(_wheels);
-        paint.Controls.Add(Theme.Btn("⇩ Import body (.glb)", ImportBody));
-        Button? exp = null;
-        exp = Look.Tip(Theme.Btn("⇧ Export a game car (.glb)", () => ExportMenu(exp!)), "Save a game car's own model as a .glb, to change it in Blender and import it back as a body");
-        paint.Controls.Add(exp);
-        paint.Controls.Add(_bodyBtn);
-        _bodyPage.Controls.Add(paint); _wide.Add(paint); _wide.Add(_fitRow);
-        _fitRow.Controls.Add(new Label { Text = "Fit the body on the wheels:", AutoSize = true, ForeColor = Theme.Head, Margin = new Padding(0, 6, 8, 0) });
-        foreach (var (label, key, step) in new[] { ("Size", "size", 0.02), ("Forward", "fwd", 0.03), ("Up", "up", 0.02), ("Front wheels side to side", "track", 0.02), ("Rear wheels side to side", "track_r", 0.02), ("front to back", "wb", 0.02) })
-        {
-            string k = key; double s = step;
-            var trio = new Control[] { Theme.Lbl(label), Theme.Btn("−", () => Fit(k, -s)), Theme.Btn("+", () => Fit(k, s)) };
-            _fitRow.Controls.AddRange(trio);
-            if (k is "track" or "track_r" or "wb") _spacing.AddRange(trio);
-        }
-        _fitRow.Controls.Add(Theme.Btn("↻ Turn 90°", () => Fit("turn", 90))); _fitRow.Controls.Add(Theme.Btn("Reset", () => Fit(null, 0)));
-        _bodyPage.Controls.Add(_fitRow); _bodyPage.Controls.Add(_fitLabel); _bodyPage.Controls.Add(_roomLabel);
-        var logoRow = new FlowLayoutPanel { AutoSize = true, WrapContents = true, BackColor = Theme.Bg, Margin = new Padding(0, 10, 0, 0) };
-        logoRow.Controls.Add(Theme.Lbl("Logo"));
-        logoRow.Controls.Add(_logoPic);
-        logoRow.Controls.Add(Look.Tip(Theme.Btn("⇩ Import logo (.png)", ImportLogo), "A picture of the maker logo, best a .png with a see-through background. Shown in the garage and car select."));
-        logoRow.Controls.Add(Theme.Btn("Game logo", () => { if (Car()?.Truthy("logo") == true) { Set("logo", null); _f.Say("The car shows its maker's game logo again", Theme.Good); } }));
-        logoRow.Controls.Add(_logoNote);
-        _bodyPage.Controls.Add(logoRow); _wide.Add(logoRow);
-        var flameRow = new FlowLayoutPanel { AutoSize = true, WrapContents = true, BackColor = Theme.Bg, Margin = new Padding(0, 10, 0, 0) };
-        flameRow.Controls.Add(Look.Tip(Theme.Lbl("Exhaust flames"), "Where the flames come out of the exhaust. Drag the orange dots in the car preview"));
-        flameRow.Controls.Add(Look.Tip(Theme.Btn("+ Pipe", () => FlamePipes(1)), "One more exhaust pipe"));
-        flameRow.Controls.Add(Look.Tip(Theme.Btn("− Pipe", () => FlamePipes(-1)), "One exhaust pipe less"));
-        flameRow.Controls.Add(Look.Tip(Theme.Btn("↺ Game spots", () => { Set("exhaust", null); }), "Back to where the game car's pipes are"));
-        flameRow.Controls.Add(_flameNote);
-        _bodyPage.Controls.Add(flameRow); _wide.Add(flameRow);
-        _controls.Controls.Add(new Label { Text = "STATS  (each one stays inside the class's range; all together inside its point budget)", AutoSize = true, ForeColor = Theme.Head, Font = Theme.Bold, Margin = new Padding(0, 14, 0, 2) });
-        _controls.Controls.Add(_points);
-        var body = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Theme.Bg };
-        var rows = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Theme.Bg };
+        // the stats (a new car only: a replaced game car keeps its own)
+        var statC = Card("📊  STATS", "Each one stays inside the class's range; all together inside its point budget", _controls);
+        _points.Margin = new Padding(0, 2, 0, 4);
+        statC.Controls.Add(_points);
+        var body = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+        var rows = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = new Padding(0) };
         foreach (var (key, label) in CarUi.StatRows)
         {
             string k = key;
-            var r = new FlowLayoutPanel { Width = 200, Height = RowH, WrapContents = false, BackColor = Theme.Bg, Margin = new Padding(0) };
+            var r = new FlowLayoutPanel { Width = 200, Height = RowH, WrapContents = false, Margin = new Padding(0) };
             r.Controls.Add(new Label { Text = label, AutoSize = false, Width = 90, Height = 30, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Theme.Text });
             r.Controls.Add(Theme.Btn("−", () => Step(k, -1)));
             var v = new Label { Text = "", AutoSize = false, Width = 30, Height = 30, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Theme.Orange, Font = new Font("Segoe UI", 12f, FontStyle.Bold) };
@@ -230,14 +259,16 @@ public sealed class CarPanel : Panel
             rows.Controls.Add(r);
         }
         typeof(Panel).GetProperty("DoubleBuffered", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(_chart, true);
+        _chart.BackColor = Theme.Panel;
         _chart.Paint += ChartPaint;
         _chart.MouseDown += (_, e) => ChartClick(e);
         _chart.MouseMove += (_, e) => { if (e.Button == MouseButtons.Left) ChartClick(e); };
         body.Controls.Add(rows); body.Controls.Add(_chart);
-        _controls.Controls.Add(body);
-        _controls.Controls.Add(new Label { Text = "grey ticks = the class's cars,  blue line = class average,  box = class range,  orange = yours  (click or drag on a bar)", AutoSize = true, ForeColor = ColorTranslator.FromHtml("#9aa8b8") });
-        _controls.Controls.Add(_top);
-        _controls.Controls.Add(new Label { Text = "Build + install puts your cars in the game (car select: their class).  The game finds a car's 3D model by its body car.", AutoSize = true, ForeColor = ColorTranslator.FromHtml("#9aa8b8"), Margin = new Padding(0, 14, 0, 0) });
+        statC.Controls.Add(body);
+        statC.Controls.Add(Hint("grey ticks = the class's cars,  blue line = class average,  box = class range,  orange = yours  (click or drag on a bar)"));
+        _top.Margin = new Padding(0, 4, 0, 0);
+        statC.Controls.Add(_top);
+        _controls.Controls.Add(new Label { Text = "Build + install puts your cars in the game (car select: their class).", AutoSize = true, ForeColor = ColorTranslator.FromHtml("#9aa8b8"), Margin = new Padding(2, 4, 0, 0) });
         _viewBox.Controls.Add(_view);
         var cams = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, WrapContents = false, BackColor = Theme.Bg, Padding = new Padding(6, 2, 0, 2) };
         void Cam(string text, string tip, double yaw, double pitch) => cams.Controls.Add(Look.Tip(Theme.Btn(text, () => { OrbitStop(); _yaw = yaw; _pitch = pitch; ZoomReset(); Draw(true); }), tip));
@@ -290,14 +321,71 @@ public sealed class CarPanel : Panel
         var ls = f.PanelSash(DockStyle.Left, "car_list", _left, 240);
         Controls.Add(right); Controls.Add(ls); Controls.Add(_left);
         right.BringToFront();
-        _controls.Resize += (_, _) => { foreach (var c in _wide) c.MaximumSize = new Size(Math.Max(_controls.ClientSize.Width - 30, 300), 0); };
-        foreach (var c in new Control[] { _name, _base, _icon, _mini, _wheels, paint, _chart, _sound, sRow, oRow }) _needCar.Add(c);
+        _controls.Resize += (_, _) => FitWidths();
+        _wideIn.Add(_roomLabel);
+        foreach (var c in new Control[] { _name, _base, _icon, _mini, _wheels, pRow, _chart, _sound, sRow, oRow }) _needCar.Add(c);
         _statsCtrls = _controls.Controls.Cast<Control>().SkipWhile(c => c != _soundPage).Skip(1).ToList();
         ShowPage(_soundTab);
         foreach (var r in _cls) _needCar.Add(r);
     }
 
     readonly List<Control> _wide = new();
+    readonly List<Control> _cards = new(), _wideIn = new();        // the cards (all one width) and what wraps inside them
+
+    /// every card as wide as the room (at most 1100), the rows inside them wrap at its inside width
+    void FitWidths()
+    {
+        int w = Math.Max(Math.Min(_controls.ClientSize.Width - 30, 1100), 320);
+        _controls.SuspendLayout();
+        foreach (var c in _wide) c.MaximumSize = new Size(w, 0);
+        _line.Width = w;
+        foreach (var c in _cards) { c.MinimumSize = new Size(w, 0); c.MaximumSize = new Size(w, 0); }
+        foreach (var c in _wideIn) c.MaximumSize = new Size(w - 30, 0);
+        _controls.ResumeLayout();
+    }
+    readonly FlowLayoutPanel _fitBox = new() { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = new Padding(0, 4, 0, 0), Visible = false };
+    readonly Dictionary<string, Label> _fitVals = new();
+    readonly Label _line = new() { AutoSize = false, Height = 1, Width = 600, BackColor = Theme.Glass, Margin = new Padding(0, 6, 0, 8) };
+    readonly Label _glbNote = new() { AutoSize = true, ForeColor = Theme.Good, UseMnemonic = false };
+    readonly Label _paintNote = new() { AutoSize = true, ForeColor = ColorTranslator.FromHtml("#9aa8b8") };
+    Button _turnBtn = null!;
+    static readonly Color Muted = ColorTranslator.FromHtml("#9aa8b8");
+
+    /// a card: a darker box with a title and a short line under it; everything of one job goes in it
+    FlowLayoutPanel Card(string title, string sub, Control? into = null)
+    {
+        var c = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Theme.Panel, Padding = new Padding(14, 10, 14, 12), Margin = new Padding(0, 0, 0, 10) };
+        c.Controls.Add(new Label { Text = title, AutoSize = true, ForeColor = Theme.Head, Font = new Font("Segoe UI", 10.5f, FontStyle.Bold), Margin = new Padding(0, 0, 0, 0), UseMnemonic = false });
+        c.Controls.Add(new Label { Text = sub, AutoSize = true, ForeColor = Muted, Margin = new Padding(0, 0, 0, 6) });
+        (into ?? _bodyPage).Controls.Add(c); _cards.Add(c);
+        return c;
+    }
+
+    FlowLayoutPanel CardRow(FlowLayoutPanel card)
+    {
+        var r = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Margin = new Padding(0, 2, 0, 4) };
+        card.Controls.Add(r); _wideIn.Add(r);
+        return r;
+    }
+
+    FlowLayoutPanel Row2() { var r = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Margin = new Padding(0, 0, 0, 2) }; _wideIn.Add(r); return r; }
+
+    static Label RowTitle(string t) => new() { Text = t, AutoSize = false, Width = 72, Height = 34, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Theme.Text, Font = Theme.Bold };
+
+    Label Hint(string t) { var l = new Label { Text = t, AutoSize = true, ForeColor = Muted, Margin = new Padding(0, 4, 0, 0) }; _wideIn.Add(l); return l; }
+
+    /// one fit number: its name, − , the number now, +
+    Control Stepper(string label, string key, double step)
+    {
+        var p = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Theme.Panel2, Padding = new Padding(6, 1, 2, 1), Margin = new Padding(0, 2, 6, 2) };
+        p.Controls.Add(new Label { Text = label, AutoSize = false, Width = 78, Height = 32, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Muted, Margin = new Padding(0, 1, 0, 0) });
+        var minus = Theme.Btn("−", () => Fit(key, -step)); minus.Margin = new Padding(1, 3, 1, 3);
+        var v = new Label { AutoSize = false, Width = 46, Height = 30, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Theme.Orange, Font = Theme.Bold, Margin = new Padding(0, 2, 0, 0) };
+        var plus = Theme.Btn("+", () => Fit(key, step)); plus.Margin = new Padding(1, 3, 1, 3);
+        p.Controls.Add(minus); p.Controls.Add(v); p.Controls.Add(plus);
+        _fitVals[key] = v;
+        return p;
+    }
 
     public void Page(bool sound) => ShowPage(sound);
 
@@ -549,6 +637,7 @@ public sealed class CarPanel : Panel
     public async Task<bool> TestWheelMenu()
     {
         bool ok = true;
+        ShowPage(false); _controls.ScrollControlIntoView(_wheels); await Task.Delay(150); Application.DoEvents();     // as a user sees it: the list on screen
         foreach (var car in new[] { "RatRod_NA_Stock", "Ford_MustangGTR_Stock", "Audi_TT_Stock" })
         {
             _wheels.Focus();
@@ -711,12 +800,21 @@ public sealed class CarPanel : Panel
         _bodyBtn.Enabled = glb || rep; _base.Enabled = !glb;
         foreach (var r in _cls) r.Enabled = !rep;     // a replaced car keeps its game class
 
-        foreach (var b in _paintB) b.Enabled = !glb && !rep;     // a replaced car keeps its game paints (you pick them in game)
-        _fitRow.Visible = _fitLabel.Visible = _roomLabel.Visible = glb;
+        bool paintable = !glb && !rep;
+        foreach (var b in _paintB) b.Enabled = paintable;     // a replaced car keeps its game paints (you pick them in game)
+        foreach (var p in _paint) p.Cursor = paintable ? Cursors.Hand : Cursors.Default;
+        _paintNote.Text = rep ? "a replaced car keeps the game car's paints (pick them in game)" : glb ? "an imported body keeps its own colours (from its .glb)" : "";
+        _fitBox.Visible = glb;
+        _glbNote.Text = glb ? "✔ your body: " + c.Str("body_glb") : "";
+        _base.Enabled = !glb;
         if (glb)
         {
             var q = c.Obj("glb_fit") ?? new JObj();
-            _fitLabel.Text = $"size x{q.Num("size", 1.0):0.00}, forward {q.Num("fwd"):+0.00;-0.00;+0.00} m, up {q.Num("up"):+0.00;-0.00;+0.00} m, turned {q.Int("turn")}°, wheels front {CarGlb.Track(q, false):+0.00;-0.00;+0.00} / rear {CarGlb.Track(q, true):+0.00;-0.00;+0.00} / length {q.Num("wb"):+0.00;-0.00;+0.00} m";
+            string S(double v) => v.ToString("+0.00;-0.00;0.00");
+            _fitVals["size"].Text = "x" + q.Num("size", 1.0).ToString("0.00");
+            _fitVals["fwd"].Text = S(q.Num("fwd")); _fitVals["up"].Text = S(q.Num("up"));
+            _fitVals["track"].Text = S(CarGlb.Track(q, false)); _fitVals["track_r"].Text = S(CarGlb.Track(q, true)); _fitVals["wb"].Text = S(q.Num("wb"));
+            _turnBtn.Text = $"↻ Turn 90°  (now {q.Int("turn")}°)";
             RoomText(c);
         }
         for (int i = 0; i < 2; i++) _paint[i].BackColor = ColorTranslator.FromHtml((string)c.Arr("paint")![i]!);
@@ -737,12 +835,12 @@ public sealed class CarPanel : Panel
         if (c.Truthy("replace"))
         {
             string n = Skins.Nice(c.Str("replace")!);
-            _replaceNote.Text = $"In game the {n} gets this car's body, wheels and sound - online too, on your screen (other players see the normal {n}). Its wheels sit where yours do; the rest of its handling, its stats and class stay the {n}'s. It is not added as a new car. You see it after Build + install.";
+            _replaceNote.Visible = true; _replaceNote.Text = $"In game the {n} gets this car's body, wheels and sound - online too, on your screen (other players see the normal {n}). Its wheels sit where yours do; the rest of its handling, its stats and class stay the {n}'s. It is not added as a new car. You see it after Build + install.";
             _replaceNote.ForeColor = ColorTranslator.FromHtml("#ffd27a");
         }
         else
         {
-            _replaceNote.Text = "Off: your car is added to the game as a new car, with the stats you give it.";
+            _replaceNote.Text = ""; _replaceNote.Visible = false;
             _replaceNote.ForeColor = ColorTranslator.FromHtml("#9aa8b8");
         }
         if (_statsCtrls.Count > 0) ShowPage(_soundTab);
@@ -843,7 +941,7 @@ public sealed class CarPanel : Panel
     void Paint(int i)
     {
         var c = Car();
-        if (c == null || c.Truthy("body_glb")) return;
+        if (c == null || c.Truthy("body_glb") || c.Truthy("replace")) return;
         using var d = new ColorDialog { FullOpen = true, Color = ColorTranslator.FromHtml((string)c.Arr("paint")![i]!) };
         if (d.ShowDialog(this) != DialogResult.OK) return;
         string col = $"#{d.Color.R:x2}{d.Color.G:x2}{d.Color.B:x2}";
@@ -935,7 +1033,7 @@ public sealed class CarPanel : Panel
     {
         var old = _logoPic.Image; _logoPic.Image = null; old?.Dispose();
         string? file = c.Truthy("logo") ? c.Str("logo") : null;
-        if (file == null) { _logoNote.Text = "the maker's game logo"; _logoNote.ForeColor = Theme.Text; return; }
+        if (file == null) { _logoNote.Text = "the maker's game logo"; _logoNote.ForeColor = Muted; return; }
         string p = CarLogo.FilePath(file);
         try
         {
@@ -1060,7 +1158,7 @@ public sealed class CarPanel : Panel
                         _bodyLo = new double[] { 1e30, 1e30, 1e30 }; _bodyHi = new double[] { -1e30, -1e30, -1e30 };
                         for (int i = 0; i < gt.Length; i++) { _bodyLo[i % 3] = Math.Min(_bodyLo[i % 3], gt[i]); _bodyHi[i % 3] = Math.Max(_bodyHi[i % 3], gt[i]); }
                     }
-                    _hint.Text = Car()?.Truthy("body_glb") == true ? "drag = turn the car,  blue circles = wheels,  orange = move the body,  diamond = its size,  fire = exhaust flames" : "drag = turn the car,  fire dots = exhaust flames";
+                    _hint.Text = Car()?.Truthy("body_glb") == true ? "drag = turn the car,  right-drag = move,  mouse wheel = zoom.   Handles: blue circles = wheels,  orange = move the body,  diamond = its size,  fire = exhaust flames" : "drag = turn the car,  right-drag = move,  mouse wheel = zoom.   Fire dots = exhaust flames (drag them)";
                     PictureDone?.Invoke();
                 });
         });

@@ -6,7 +6,9 @@ public static class Paths
     public const string Version = "2.6.1";
     /// game = the player's Blur folder (read only here); data = its "Blur Map Builder" folder; maps / outDir = where maps are read and packs go
     public static string Game = "", Data = "", Base = "", Unpacked = "", GamedataOriginal = "", RootOriginal = "", LevelTemplate = "", Addon = "",
-        Catalog = "", ModelCache = "", Work = "", Tracks = "", Logs = "", Levels = "", PackDir = "", FeWork = "", GamedataOut = "", RootOut = "", WorldFile = "", Cache = "", BootOriginal = "", BootOut = "";
+        Catalog = "", ModelCache = "", Work = "", Tracks = "", Logs = "", Levels = "", PackDir = "", FeWork = "", GamedataOut = "", RootOut = "", WorldFile = "", Cache = "", BootOriginal = "", BootOut = "",
+        // boot.pak (the race's power-up pickups, shared by Blur and Blur REBORN): its original kept in base, REBORN's own in rebrn\
+        BootPakOriginal = "", BootPakOut = "";
 
     public static void Init(string game, string? maps = null, string? work = null, string? packDir = null, string? levels = null)
     {
@@ -18,6 +20,7 @@ public static class Paths
         Work = work ?? Path.Combine(Data, "work"); Tracks = maps ?? Path.Combine(Data, "maps"); Logs = Path.Combine(Data, "logs");
         Levels = levels ?? Path.Combine(game, "levels"); PackDir = packDir ?? Path.Combine(game, "rebrn");
         FeWork = Path.Combine(Work, "flat_earth"); GamedataOut = Path.Combine(Work, "gamedata_track.pak"); RootOut = Path.Combine(Work, "root_track.pak"); BootOut = Path.Combine(Work, "gamedata_boot_track.pak");
+        BootPakOriginal = Path.Combine(Base, "boot.pak.original"); BootPakOut = Path.Combine(Work, "boot_track.pak");
         WorldFile = Path.Combine(Tracks, "world.json");
     }
 }

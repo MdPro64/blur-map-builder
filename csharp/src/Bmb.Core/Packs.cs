@@ -1,5 +1,5 @@
 // One-file packages for sharing with other players: a car (.blurcar = the car + its imported body, own sounds and logo) and
-// the skins of a game car (.blurskin = its pictures + which are on). The map (.blurmap) is in Share. Each is a zip; reading
+// the skins of a game car (.blurskin = its pictures + which are on), the power-up icons (.blurpowerups). The map (.blurmap) is in Share. Each is a zip; reading
 // one never trusts its paths: every file goes into the program's own folders under a plain name.
 using System.IO.Compression;
 using System.Text;
@@ -8,7 +8,7 @@ namespace Bmb.Core;
 
 public static class Packs
 {
-    public const string CarExt = ".blurcar", SkinExt = ".blurskin";
+    public const string CarExt = ".blurcar", SkinExt = ".blurskin", IconExt = ".blurpowerups";
     const int Format = 1;
     const long MaxEntry = 200L * 1024 * 1024;
 
@@ -168,5 +168,60 @@ public static class Packs
             n++;
         }
         return (car, n);
+    }
+
+    // ---- the power-up icons -------------------------------------------------------------------------------------------
+
+    /// all the player's power-up pictures (symbol or whole icon per power-up, and their shape notes) into one .blurpowerups.
+    /// Returns how many power-ups have a picture
+    public static int ExportIcons(string path)
+    {
+        string dir = PowerupIcons.OwnFolder;
+        if (File.Exists(path)) File.Delete(path);
+        using var z = ZipFile.Open(path, ZipArchiveMode.Create);
+        var icons = new JObj(); int n = 0;
+        foreach (var (key, _) in PowerupIcons.Kinds)
+        {
+            bool any = false;
+            foreach (var name in PowerupIcons.FileNames(key))
+            {
+                string src = Path.Combine(dir, name);
+                if (!File.Exists(src)) continue;
+                z.CreateEntryFromFile(src, "icons/" + name);
+                icons[key] = new JObj { ["file"] = name, ["warning"] = PowerupIcons.Warning(key) };
+                any = true;
+            }
+            if (any) n++;
+        }
+        Text(z, "icons.json", Json.Dumps(icons, 1));
+        Text(z, "info.json", Json.Dumps(new JObj { ["format"] = (long)Format, ["kind"] = "powerups", ["made"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm"), ["app"] = "Blur Map Builder" }, 1));
+        return n;
+    }
+
+    /// a .blurpowerups read: each power-up in it gets that picture (its other picture, if any, goes); the power-ups not in
+    /// the file keep theirs. Only real pictures of the known power-ups are taken. Returns the names of the power-ups set
+    public static List<string> ImportIcons(string path)
+    {
+        var f = Open(path, IconExt);
+        var icons = JsonOf(f, "icons.json", "power-up icons");
+        var done = new List<string>();
+        string dir = PowerupIcons.OwnFolder;
+        Directory.CreateDirectory(dir);
+        foreach (var (key, nice) in PowerupIcons.Kinds)
+        {
+            if (icons.Obj(key) is not { } it) continue;
+            string? name = it.Str("file");
+            if (name == null || !PowerupIcons.FileNames(key).Contains(name)) continue;
+            if (!f.TryGetValue("icons/" + name, out var data)) continue;
+            try { using var ms = new MemoryStream(data); using var bm = new System.Drawing.Bitmap(ms); }       // a real picture?
+            catch (ArgumentException) { continue; }
+            foreach (var other in PowerupIcons.FileNames(key)) { string o = Path.Combine(dir, other); if (File.Exists(o)) File.Delete(o); }
+            File.WriteAllBytes(Path.Combine(dir, name), data);
+            string? warn = it.Str("warning");
+            PowerupIcons.SetWarning(key, warn is { Length: > 0 and < 200 } ? warn : null);
+            done.Add(nice);
+        }
+        if (done.Count == 0) throw new ImportProblem("no power-up pictures inside");
+        return done;
     }
 }

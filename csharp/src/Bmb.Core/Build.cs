@@ -767,8 +767,9 @@ public static class Build
         }
         if (!opt.NoCars) frontend = CarBuild.MenuPictures(frontend, wld);
         Add(FrontendBpr, frontend);
-        files.AddRange(HudIcons.RootFiles(n => src.Read(n), log));          // game tweaks: own power-up icons (held)
-        files.AddRange(RoadIcons.RootFiles(n => src.Read(n), log));         // game tweaks: own power-up icons (on the road)
+        files.AddRange(HudIcons.RootFiles(n => src.Read(n), log));          // game tweaks: own power-up icons (menu)
+        files.AddRange(HeldIcons.RootFiles(n => src.Read(n), log));         // (held, behind the car in the race)
+        files.AddRange(RoadIcons.RootFiles(n => src.Read(n), _ => { }));    // and the pickups (also in boot.pak: the race reads some from each)
         files.AddRange(Skins.BuildFiles(files, n => src.Read(n)!, log, Installed.SkinsFrom(opt)));      // the player's car skins, over whatever the build changed in those models
         // a later entry replaces an earlier one of the same name (Python's dict)
         var uniq = new Dictionary<string, byte[]>();
@@ -977,6 +978,34 @@ public static class Build
             else File.Copy(Paths.BootOriginal, Paths.BootOut, true);
         }
         if (!opt.NoRoot) BuildRoot(wld, opt);
+        BuildBootPak(log);
+    }
+
+    /// game tweaks: the own power-up icons on the road live in boot.pak's pickup models (the race reads them from there, not
+    /// from root.pak). With pictures: REBORN's boot.pak = the game's + those models (BootPakOut); without: no BootPakOut
+    static void BuildBootPak(Action<string> log)
+    {
+        if (File.Exists(Paths.BootPakOut)) File.Delete(Paths.BootPakOut);
+        if (!PowerupIcons.Any()) return;
+        if (!File.Exists(Paths.BootPakOriginal)) { log("power-up icons on the road: the game's boot.pak copy is missing (restart the map builder) - skipped"); return; }
+        List<KeyValuePair<string, byte[]>> files;
+        using (var orig = new Pak(Paths.BootPakOriginal)) files = RoadIcons.RootFiles(n => orig.Read(n), log).ToList();
+        if (files.Count == 0) return;
+        Pak.ReplaceFiles(Paths.BootPakOriginal, Paths.BootPakOut, files);
+        log($"boot pack: {Paths.BootPakOut} (your power-up icons on the road)");
+    }
+
+    /// Install step: rebrn\boot.pak = the build's (own road icons) or the game's own again (a hard link to the kept original)
+    public static void InstallBootPak(Action<string> log)
+    {
+        if (!File.Exists(Paths.BootPakOriginal)) return;
+        string dst = Path.Combine(Paths.PackDir, "boot.pak");
+        if (File.Exists(Paths.BootPakOut))
+        {
+            File.Copy(Paths.BootPakOut, dst + ".new", true);
+            File.Move(dst + ".new", dst, true);
+        }
+        else Setup.LinkOrCopy(Paths.BootPakOriginal, dst);
     }
 }
 

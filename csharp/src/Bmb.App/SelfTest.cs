@@ -143,6 +143,26 @@ public sealed partial class MainForm
             File.WriteAllLines(Path.Combine(outDir, "ui_timing.txt"), rep);
             return;
         }
+        if (Environment.GetEnvironmentVariable("BMB_ONLY") == "carui")
+        {
+            // pictures of the Custom car tab: a plain car, an imported body, a replaced car, scrolled down (look only, on the scratch copy)
+            var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            Size = new Size(1500, 950);
+            SetMode("car"); await Pump(300);
+            if (_car.Car() == null) { _car.GetType().GetMethod("Add", flags)!.Invoke(_car, null); await Pump(300); }
+            _car.Page(false); await Pump(600); Shot("carui_plain");
+            var scr = (FlowLayoutPanel)_car.GetType().GetField("_controls", flags)!.GetValue(_car)!;
+            scr.AutoScrollPosition = new Point(0, 2000); await Pump(300); Shot("carui_plain_down"); scr.AutoScrollPosition = new Point(0, 0);
+            if (Environment.GetEnvironmentVariable("BMB_TEST_GLB") is { } tg && File.Exists(tg))
+            {
+                TestFile = tg; _car.GetType().GetMethod("ImportBody", flags)!.Invoke(_car, null); await Pump(1500); Shot("carui_glb");
+                Size = new Size(1100, 760); await Pump(800); Shot("carui_glb_small"); Size = new Size(1500, 950);
+                Undo(); await Pump(300);
+            }
+            _car.GetType().GetMethod("ReplacePicked", flags)!.Invoke(_car, new object?[] { CarUi.Pickable()[3].Name }); await Pump(800); Shot("carui_replace");
+            Undo(); await Pump(200);
+            Application.Exit(); return;
+        }
         if (Environment.GetEnvironmentVariable("BMB_ONLY") == "tour")
         {
             // pictures of every tab only (for looking at the UI); nothing is changed or built

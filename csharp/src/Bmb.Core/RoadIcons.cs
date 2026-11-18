@@ -4,9 +4,11 @@ namespace Bmb.Core;
 
 public static class RoadIcons
 {
-    public static string ModelOf(string key) => $"\\models\\perks\\pickups\\{key}pickup.model";
-    public static string Pic(string key) => $"icon_{key}_01";
-    public static string PicInverse(string key) => $"icon_{key}_01_inverse";
+    /// the game's own name for a power-up's road pickup: the Bolt's is "xp" (xppickup.model, icon_xp_01: three arrows)
+    static string Game(string key) => key == "bolt" ? "xp" : key;
+    public static string ModelOf(string key) => $"\\models\\perks\\pickups\\{Game(key)}pickup.model";
+    public static string Pic(string key) => $"icon_{Game(key)}_01";
+    public static string PicInverse(string key) => $"icon_{Game(key)}_01_inverse";
 
     static int Blocks(int w, int h) => Math.Max(1, (w + 3) / 4) * Math.Max(1, (h + 3) / 4);
 
@@ -53,27 +55,31 @@ public static class RoadIcons
 
     /// the pickup model with the player's picture: on the card (the old symbol filled with the card around it) and as the
     /// "inverse" (the symbol alone, light on black). Same byte length. Null = this model can't be changed
+    // + the middle of the card (inside its frame, above its bottom shine): rebuilt from its two sides, so no trace of the old
+    // symbol's glow stays (all pickups share one card layout)
+    const int GlowR = 12, GlowLit = 24, MidX0 = 26, MidX1 = 230, MidY0 = 86, MidY1 = 214;
     public static byte[]? Make(byte[] model, string key, string png, Action<string> log)
     {
         var fi = Find(model, Pic(key)); var fv = Find(model, PicInverse(key));
         if (fi == null || fv == null || fi.Value.W != 256 || fv.Value.W != 256) { log($"   power-up icon {key}: the road model has no icon picture - left as it is"); return null; }
         var card = Decode(model, Pic(key)); var inv = Decode(model, PicInverse(key));
         int W = card.W, H = card.H;
-        // the old symbol: where the inverse is lit (a little wider), filled along each row from the card on its two sides
+        // the old symbol AND its soft glow on the card (the "halo" left round a new picture, 2026-11-17): where the inverse is
+        // even faintly lit, GlowR pixels wider, filled along each row from the card on its two sides
         var mask = new bool[W * H];
         for (int y = 0; y < H; y++)
             for (int x = 0; x < W; x++)
             {
                 bool lit = false;
-                for (int dy = -3; dy <= 3 && !lit; dy++)
-                    for (int dx = -3; dx <= 3 && !lit; dx++)
+                for (int dy = -GlowR; dy <= GlowR && !lit; dy++)
+                    for (int dx = -GlowR; dx <= GlowR && !lit; dx++)
                     {
                         int xx = x + dx, yy = y + dy;
                         if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
                         int s = (yy * W + xx) * 4;
-                        lit = inv.Px[s] + inv.Px[s + 1] + inv.Px[s + 2] > 90;
+                        lit = inv.Px[s] + inv.Px[s + 1] + inv.Px[s + 2] > GlowLit;
                     }
-                mask[y * W + x] = lit;
+                mask[y * W + x] = lit || (x >= MidX0 && x <= MidX1 && y >= MidY0 && y <= MidY1);
             }
         for (int y = 0; y < H; y++)
             for (int x = 0; x < W; x++)
@@ -116,16 +122,50 @@ public static class RoadIcons
         return o;
     }
 
-    /// the build: the road pickups with the player's pictures, for REBORN's root pack (the bolt has no road model of its own)
+    // the card on the 256 x 256 road picture (4:3, like a whole-icon picture)
+    const int CardX0 = 18, CardX1 = 238, CardY0 = 78, CardY1 = 246;
+
+    /// the road pickup with a WHOLE-icon picture: its brightness fills the card (the game tints it like its own icon), in
+    /// both the card and its inverse picture; the soft glow round the card stays
+    public static byte[]? MakeWhole(byte[] model, string key, string png, Action<string> log)
+    {
+        var fi = Find(model, Pic(key)); var fv = Find(model, PicInverse(key));
+        if (fi == null || fv == null || fi.Value.W != 256 || fv.Value.W != 256) { log($"   power-up icon {key}: the road model has no icon picture - left as it is"); return null; }
+        var card = Decode(model, Pic(key)); var inv = Decode(model, PicInverse(key));
+        int w = CardX1 - CardX0, h = CardY1 - CardY0, W = card.W;
+        var light = PowerupIcons.Light(png, w, h);
+        foreach (var img in new[] { card, inv })
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    // round the corners like the game's card (radius 18)
+                    int dx = Math.Max(0, Math.Max(18 - x, x - (w - 1 - 18))), dy = Math.Max(0, Math.Max(18 - y, y - (h - 1 - 18)));
+                    if (dx * dx + dy * dy > 18 * 18) continue;
+                    int d = ((CardY0 + y) * W + CardX0 + x) * 4;
+                    byte v = (byte)Math.Round(255 * light[x, y]);
+                    img.Px[d] = img.Px[d + 1] = img.Px[d + 2] = v;
+                }
+        var o = (byte[])model.Clone();
+        foreach (var (f, img) in new[] { (fi.Value, card), (fv.Value, inv) })
+        {
+            var enc = Skins.Encode(img, f.Fmt, f.Mips, f.Size);
+            if (enc.Length != f.Size) { log($"   power-up icon {key}: unexpected picture size - left as it is"); return null; }
+            enc.CopyTo(o, f.At);
+        }
+        return o;
+    }
+
+    /// the build: the road pickups with the player's pictures (they go into boot.pak AND root.pak: the race reads some from each)
     public static IEnumerable<KeyValuePair<string, byte[]>> RootFiles(Func<string, byte[]?> read, Action<string> log)
     {
         foreach (var (key, _) in PowerupIcons.Kinds)
         {
-            string? png = PowerupIcons.FileOf(key);
-            if (png == null) continue;
+            if (PowerupIcons.HeldOnly(key)) continue;
+            string? png = PowerupIcons.FileOf(key), whole = PowerupIcons.WholeOf(key);
+            if (png == null && whole == null) continue;
             var md = read(ModelOf(key));
-            if (md == null) { if (key != "bolt") log($"   power-up icon {key}: no road model - only the held icon changes"); continue; }
-            var made = Make(md, key, png, log);
+            if (md == null) { log($"   power-up icon {key}: no road model - only the held icon changes"); continue; }
+            var made = whole != null ? MakeWhole(md, key, whole, log) : Make(md, key, png!, log);
             if (made != null) { log($"   power-up icon {key}: your picture on the road"); yield return new(ModelOf(key), made); }
         }
     }

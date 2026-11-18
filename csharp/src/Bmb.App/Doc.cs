@@ -213,8 +213,7 @@ public static class Theme
 
     public static ComboBox Combo(int width = 120)
     {
-        var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = width, BackColor = Field, ForeColor = Text, FlatStyle = FlatStyle.Flat, Font = Ui };
-        Look.DarkCombo(c);
+        var c = new DarkComboBox { Width = width };
         c.MouseWheel += (_, e) => ((HandledMouseEventArgs)e).Handled = true;
         return c;
     }

@@ -48,7 +48,7 @@ public sealed partial class MainForm : Form
         LoadLayout();
         Shown += (_, _) => { ApplySizes(true); FitTop(); Map2.Fit(); Tree(); Refresh2(); SetMode("2d"); Startup(); };
         FormClosing += Closing2;
-        FormClosed += (_, _) => { try { LanOff(); } catch (Exception) { } if (_restart) Restart(); };
+        FormClosed += (_, _) => { try { LanOff(); } catch (Exception) { } if (_restart) try { Restart(); } catch (Exception) { } };    // (the catch here too: a missing part fails before Restart runs)
         ResizeEnd += (_, _) => { FitPanels(); SaveLayoutState(); if (Mode == "light") LightBuild(); };
         SizeChanged += (_, _) => { if (IsHandleCreated) { FitTop(); FitPanels(); } };
     }
@@ -422,9 +422,14 @@ public sealed partial class MainForm : Form
 
     void Restart()
     {
-        var p = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false };
-        foreach (var a in Environment.GetCommandLineArgs().Skip(1)) p.ArgumentList.Add(a);
-        Process.Start(p);
+        // never a crash report on the way out: at worst the player starts it again by hand
+        try
+        {
+            var p = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false };
+            foreach (var a in Environment.GetCommandLineArgs().Skip(1)) p.ArgumentList.Add(a);
+            Process.Start(p);
+        }
+        catch (Exception) { }
     }
 
     void FitTop()
@@ -762,15 +767,16 @@ public sealed partial class MainForm : Form
     public string? PickFile(string title, string filter) => OpenFile(title, filter);
     public string? SaveAs(string title, string filter, string name) => SaveFile(title, filter, name);
 
-    public void ExportMap()
+    /// a map (default: the open one) of a location into a .blurmap
+    public void ExportMap(JObj? map = null, JObj? loc = null)
     {
-        var m = D.Map;
+        var m = map ?? D.Map; var l = loc ?? D.Loc;
         string? path = SaveFile("Export the map for another player", "Blur map|*.blurmap", World.Slug(m.Str("name")!) + Share.Ext);
         if (path == null) return;
         try
         {
-            var lt = D.Loc.Obj("lighting");
-            int n = Share.Export(m, D.Loc.Str("name")!, path, new JObj { ["lighting"] = lt != null ? Share.Copy(lt) : null, ["surface_feel"] = Surface.LocFeel(D.World, D.Loc) });
+            var lt = l.Obj("lighting");
+            int n = Share.Export(m, l.Str("name")!, path, new JObj { ["lighting"] = lt != null ? Share.Copy(lt) : null, ["surface_feel"] = Surface.LocFeel(D.World, l) });
             string pics = n > 0 ? $", {n} picture(s)" : "";
             Say($"Exported '{m.Str("name")}' with its lighting + grip -> {path} ({new FileInfo(path).Length / 1024.0:0.0} KB{pics}). Send this file; the other player uses Import map.", Theme.Good);
         }

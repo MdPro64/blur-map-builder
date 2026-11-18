@@ -156,6 +156,31 @@ The C# window keeps its own auto-save the same way as Python, and asks before cl
   section is hidden and no picture is built; they did not work in game). Full robot: English 252/252; Russian 251/252, the
   one fail (Auto bumps) is leftover test data: the saved scratch map keeps the last run's bumps + seed, so a second run in
   any language makes the same bumps (English failed the same way on its second run).
+- **Power-up icons, round 4 (2026-11-17, dev only, OnHold = false here; 2.6.1 shipped with them on hold):** user 1 test
+  with numbers 1-8: the power-up options MENU shows them (perk_icons.ipf in root.pak works), the ROAD did not: the race
+  reads the pickup models from cacheoot.pak (loaded first). Fix: Blur REBORN reads rebrn/boot.pak (new ExePatch at
+  0xAB23F4; setup backs up cacheoot.pak as baseoot.pak.original and links rebrnoot.pak to it); the build writes
+  workoot_track.pak with the own pickup models (`Build.BuildBootPak` / `InstallBootPak`), road icons are no longer put in
+  root. Normal Blur (icons_normal): cacheoot.pak = original + models, put back when off (`Skins.InstallNormalBoot`,
+  installed.json normal_boot). Bolt's road pickup is the game's "xp" pickup (xppickup.model, icon_xp_01). The new
+  ExePatch makes setup rerun once: MakeReborn rewrites Blur REBORN.exe from Blur.exe (AI mods come back at the next build).
+- **Power-up icons, round 5 (2026-11-17, dev):** the road needs the pickup models in BOTH boot.pak and root.pak (the race
+  reads Barge/Mine/Nitro/Repair from boot, Shunt/Shock/Shield/Bolt from root). The road card's middle is rebuilt from its
+  sides (old symbol's glow gone). The HELD icons (behind the car) are not perk_icons.ipf: they are `perk_sheet` (DXT1 card)
+  + `perk_sheet_inverted` (DXT5 symbol) in \ui\data\ui_common.bpr, 128x1024, 96 px per cell (mine, barge, shunt, shock,
+  nitro, bolt 1, bolt 3, shield, repair, bolt 2) + `perk_sheet_support` (bolt 4/3/2/1, star): `HeldIcons.cs`.
+- **Power-up icons, round 6 (2026-11-17, dev):** user: held icons work. Added: (1) WHOLE icon per power-up (`<key>.whole.png`,
+  cut from the middle to 4:3 = 256x192, never stretched): its brightness fills the road card (`RoadIcons.MakeWhole`) and the
+  held card (`HeldIcons.DrawWhole`; not-selected = same, alpha 130); the game still tints it; the menu (vector ipf) uses the
+  picture's shape. (2) Bolt (2 left) / (1 left) kinds `bolt2` / `bolt1`, held only (road + menu use the Bolt of 3).
+  (3) The held NOT-SELECTED look like the game's: perk_sheet_inverted = white, alpha = a glowing card with the symbol cut out
+  dark (alpha 100, black) + brighter glow round it; SELECTED (perk_sheet) = white symbol with soft light round it.
+- **Updater restart crash (2.6.0 -> 2.6.1, fixed after 2.6.1, not released):** after Update now, 2.6.0 showed a crash
+  report (FileNotFound System.Diagnostics.Process in MainForm.Restart) and again on close. The update itself was fine (new
+  exe in place, old one .old). Cause: a single-file exe reads its parts from its own file when first used; the swap had
+  already replaced the file. Fix: `Updates.Install` uses Process / ProcessStartInfo before the swap, and the restart is
+  wrapped in try/catch (also around the call: the missing part fails while Restart is compiled). Only updates FROM 2.6.1
+  on get the fix; 2.6.0 users: press OK and start the map builder again.
 - **Drifter AI ON HOLD (2026-11-17, user):** every AI gets Front Runner in slot 1 for now (setup code compares the AI
   number with 0 instead of 2, so the Drifter bits, drift driving, speed keeper and drift-car swap never run). The drift
   parts stay in the exe for later: drift code VA 0xE52880, speed keeper 0xDF6790 (forward push setting 0x1259F38),
@@ -476,3 +501,8 @@ its collision is the same, and I still don't know the cause.
 - The splash is a see-through window over the whole screen, on its own thread, in the light-painting style of the user's reference video: an orange and a green stroke swoop in from the screen edges and each draw half of a rounded neon frame around the picture; the tails fade, the frame stays lit and flashes when it closes, then everything fades. Points every 3 px for smooth lines. A click on the picture ends it sooner. Built; the user checks the look.
 - Splash Lab (`splash_lab.bat` / `--splash-lab`, src/Bmb.App/SplashLab.cs): sliders for speed, stroke count (1-6, the frame is shared out between them, each swoops in from the nearest screen edge), thickness, taper, glow, tail, gap, hold, and a colour per stroke; Play shows the real splash, Replay loops. Save writes `splash_style.json` next to the exe and the start-up reads it. Before a release: bake the user's saved values into SplashStyle's defaults (the json isn't shipped). `reopen.bat` closes and reopens the app on J.
 - 2026-11-16: the user's lab look is baked into SplashStyle's defaults (2 strokes, speed 0.79, thick 1.13, glow 2.16, gap 0.19) and goes out in the next push. The start sound is now a style setting (Sound) too. The Splash Lab stays OURS ONLY: no button or menu, only `--splash-lab`; don't ship or push `splash_lab.bat` / `reopen.bat`, and don't mention the lab in release notes. If the user saves again (e.g. the sound), re-bake from bin/Release/net10.0-windows/splash_style.json.
+
+### Custom car tab layout + game-car export by parts (2026-11-17)
+- The Body page is now cards: IN GAME (new car or replace), 3D MODEL (body + wheels pickers, import / export / game body; an imported body shows its fit as steppers with their numbers: Body = size / forward / up, Wheels = front width / rear width / length, then Turn 90° (shows the angle) and Reset fit), LOOK (paint with a note when it can't be changed, logo with a "game logo" placeholder, menu + mini icon), EXHAUST FLAMES, then the STATS card. Body, wheels and menu icon lists show nice names (Skins.Nice through the combo Format event). Russian lines added.
+- Look-only pictures: `BMB_ONLY=carui` self-test mode (`scratch/run_carui.sh`, add `BMB_LANG=ru`) saves carui_plain / _plain_down / _glb / _glb_small / _replace in scratch\ui.
+- Export a game car (.glb): every game part is its own object with the game's element name and tree (car > e_exterior > doors > mirrors; e_wheels > each wheel > tyre / rim / disc / caliper), a wheel's object point at its middle; looks are shared per kind. Import back still reads it as one body. CLI `carelements GAME CAR` lists a car's elements and meshes.

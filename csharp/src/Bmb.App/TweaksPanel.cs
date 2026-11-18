@@ -40,21 +40,23 @@ public sealed class TweaksPanel : Panel
         Control box = PowerupIcons.OnHold ? new Panel() : col;
         box.Controls.Add(Head("⚡  Power-up icons"));
         box.Controls.Add(Where("BLUR REBORN  +  NORMAL BLUR (if turned on below)", Theme.Good));
-        box.Controls.Add(Hint("Your own picture for a power-up: the icon you hold (bottom of the screen) and the one floating on the road. A PNG with a see-through background looks best."));
-        box.Controls.Add(Hint("The game colours each power-up (Shunt red, Nitro green ...): white or grey pictures look closest to what you made. The Bolt has no icon on the road - only the held one changes."));
+        box.Controls.Add(Hint("Your own picture for a power-up: in the menu, floating on the road and held behind your car."));
+        box.Controls.Add(Hint("Symbol: your picture's shape on the game's card (a PNG with a see-through background looks best).  Whole icon: your picture fills the whole card (4:3) - another shape is made smaller to fit, never stretched or cut."));
+        box.Controls.Add(Hint("Your picture becomes pure white, like the game's own icons: the game colours each power-up (Shunt red, Nitro green ...). Bolt (2 left) / (1 left): only the Bolt held behind the car."));
         _iconsNormal = Theme.Check("Also in normal Blur (Blur.exe): its icons change too - only on this PC, other players still see the game's icons", false, IconsNormal);
         box.Controls.Add(_iconsNormal);
         var grid = new TableLayoutPanel { AutoSize = true, ColumnCount = 4, BackColor = Theme.Bg, Margin = new Padding(0, 6, 0, 0) };
         foreach (var (key, name) in PowerupIcons.Kinds)
         {
-            var pic = new PictureBox { Size = new Size(56, 56), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Theme.Panel2, Margin = new Padding(0, 4, 10, 4) };
+            var pic = new PictureBox { Size = new Size(72, 54), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Theme.Panel2, Margin = new Padding(0, 4, 10, 4) };
             var note = new Label { AutoSize = true, ForeColor = ColorTranslator.FromHtml("#9aa8b8"), Margin = new Padding(0, 22, 12, 0) };
             _pics[key] = pic; _picNote[key] = note;
             grid.Controls.Add(new Label { Text = name, AutoSize = true, ForeColor = Theme.Text, Font = Theme.Bold, Margin = new Padding(0, 22, 14, 0), MinimumSize = new Size(70, 0) });
             grid.Controls.Add(pic);
             var row = new FlowLayoutPanel { AutoSize = true, BackColor = Theme.Bg, Margin = new Padding(0, 14, 10, 0) };
             string k = key;
-            row.Controls.Add(Theme.Btn("⇩ Picture...", () => Import(k)));
+            row.Controls.Add(Theme.Btn("⇩ Symbol...", () => Import(k, false)));
+            row.Controls.Add(Theme.Btn("⇩ Whole icon...", () => Import(k, true)));
             row.Controls.Add(Theme.Btn("Game's icon", () => Remove(k)));
             grid.Controls.Add(row);
             grid.Controls.Add(note);
@@ -96,21 +98,32 @@ public sealed class TweaksPanel : Panel
     void ShowIcon(string key)
     {
         var old = _pics[key].Image; _pics[key].Image = null; old?.Dispose();
-        string? p = PowerupIcons.FileOf(key);
+        string? p = PowerupIcons.FileOf(key) ?? PowerupIcons.WholeOf(key);
+        _picNote[key].ForeColor = ColorTranslator.FromHtml("#9aa8b8");
         if (p != null)
-            try { using var fs = File.OpenRead(p); using var im = Image.FromStream(fs); _pics[key].Image = new Bitmap(im); _picNote[key].Text = "your picture"; return; }
+            try
+            {
+                // what the game shows: the picture's shape in pure white (the game colours it)
+                bool sym = p == PowerupIcons.FileOf(key);
+                _pics[key].Image = sym ? PowerupIcons.WhitePreview(p, 128, 128) : PowerupIcons.WhitePreview(p, 128, 96);
+                string? warn = PowerupIcons.Warning(key);
+                _picNote[key].Text = (sym ? "your symbol" : "your whole icon") + (warn != null ? "   " + warn : "");
+                if (warn != null) _picNote[key].ForeColor = Theme.Orange;
+                return;
+            }
             catch (Exception e) when (e is IOException or ArgumentException or OutOfMemoryException) { }
         _picNote[key].Text = "the game's icon";
     }
 
-    void Import(string key)
+    void Import(string key, bool whole)
     {
         string? path = _f.PickFile("Picture for the " + key + " icon", "Pictures|*.png;*.jpg;*.jpeg;*.bmp;*.gif|All files|*.*");
         if (path == null) return;
         try
         {
             using var fs = File.OpenRead(path); using var im = Image.FromStream(fs);
-            PowerupIcons.Set(key, new Bitmap(im));
+            using var bm = new Bitmap(im);
+            if (whole) PowerupIcons.SetWhole(key, bm); else PowerupIcons.Set(key, bm);
             ShowIcon(key);
             _f.Say($"The {key} icon has your picture. Build + install to see it in Blur REBORN", Theme.Good);
         }

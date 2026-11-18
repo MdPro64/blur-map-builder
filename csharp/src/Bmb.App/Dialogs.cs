@@ -264,6 +264,7 @@ VIEW
                     File.Copy(src, dst + ".new", true);
                     File.Move(dst + ".new", dst, true);
                 }
+                Bmb.Core.Build.InstallBootPak(lines.Enqueue);
                 try { if (opt.Built != null) Installed.Remember(opt.Built, opt); }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException) { lines.Enqueue("could not keep a copy of what was installed: " + e.Message); }
                 // normal Blur's pack: its own + (if turned on) the skins and the power-up icons; else its own back

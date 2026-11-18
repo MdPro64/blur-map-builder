@@ -20,6 +20,8 @@ public static class Setup
         (0xA66660, Z("GAME:\\cache\\gamedata_boot.pak"), Z("GAME:\\rebrn\\gamedata_boot.pak")),
         (0xA668BC, Z("cache/gamedata_boot.pak"), Z("rebrn/gamedata_boot.pak")),
         (0x72D54A, new byte[] { 0x74, 0x12 }, new byte[] { 0xEB, 0x12 }),
+        // and boot.pak: the race's power-up pickups (their road icons) come from it, not from root.pak
+        (0xAB23F4, Z("cache/boot.pak"), Z("rebrn/boot.pak")),
     };
     static byte[] Z(string s) => Encoding.Latin1.GetBytes(s + "\0");
     const string KnownSha = "dba0264b7808a5e38d99c8c162ecd71ab06a48fbc424feb1b9a3bc1bff2fbf3f";
@@ -62,6 +64,22 @@ public static class Setup
             File.Copy(src, dst + ".part", true);
             File.Move(dst + ".part", dst, true);
         }
+        // boot.pak: no map build ever changes it; only "power-up icons also in normal Blur" does, after this copy exists
+        if (!File.Exists(Paths.BootPakOriginal))
+        {
+            string src = Path.Combine(Paths.Cache, "boot.pak");
+            if (!File.Exists(src)) throw new SetupProblem("A game file is missing: " + src);
+            log($"copying the original cache\\boot.pak ({new FileInfo(src).Length >> 20} MB) ...");
+            File.Copy(src, Paths.BootPakOriginal + ".part", true);
+            File.Move(Paths.BootPakOriginal + ".part", Paths.BootPakOriginal, true);
+        }
+    }
+
+    /// dst = the file src (a hard link: nothing copied; a copy when that cannot be made). An older dst goes first
+    public static void LinkOrCopy(string src, string dst)
+    {
+        if (File.Exists(dst)) File.Delete(dst);
+        if (!CreateHardLink(dst, src, IntPtr.Zero)) { File.Copy(src, dst + ".part", true); File.Move(dst + ".part", dst, true); }
     }
 
     static void UnpackGame(Action<string> log)
@@ -242,7 +260,7 @@ public static class Setup
         foreach (var (off, _, nw) in ExePatches) nw.CopyTo(d, off);
         if (!(File.Exists(Reborn) && File.ReadAllBytes(Reborn).AsSpan().SequenceEqual(d))) { File.WriteAllBytes(Reborn, d); log("made Blur REBORN.exe (Blur.exe itself is not changed)"); }
         Directory.CreateDirectory(Paths.PackDir);
-        foreach (var (name, src) in new[] { ("gamedata.pak", Paths.GamedataOriginal), ("root.pak", Paths.RootOriginal), ("gamedata_boot.pak", Paths.BootOriginal) })
+        foreach (var (name, src) in new[] { ("gamedata.pak", Paths.GamedataOriginal), ("root.pak", Paths.RootOriginal), ("gamedata_boot.pak", Paths.BootOriginal), ("boot.pak", Paths.BootPakOriginal) })
         {
             string dst = Path.Combine(Paths.PackDir, name);
             if (File.Exists(dst) || !File.Exists(src)) continue;
@@ -294,7 +312,7 @@ public static class Setup
     }
 
     public static bool Needed() =>
-        !new[] { Paths.GamedataOriginal, Paths.RootOriginal, Path.Combine(Paths.Unpacked, "xt", "amax.bin"), Path.Combine(Paths.LevelTemplate, "level.levelstream"), Paths.Catalog, Reborn }.All(File.Exists) || !RebornCurrent();
+        !new[] { Paths.GamedataOriginal, Paths.RootOriginal, Path.Combine(Paths.Unpacked, "xt", "amax.bin"), Path.Combine(Paths.LevelTemplate, "level.levelstream"), Paths.Catalog, Reborn, Paths.BootPakOriginal, Path.Combine(Paths.PackDir, "boot.pak") }.All(File.Exists) || !RebornCurrent();
 
     public static void RunAll(Action<string> log, Action<int, int, string>? progress = null)
     {

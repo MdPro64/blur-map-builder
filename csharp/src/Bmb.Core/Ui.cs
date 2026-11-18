@@ -1214,6 +1214,10 @@ public static class Updates
                 if (f.Length < 1_000_000 || f.ReadByte() != 'M' || f.ReadByte() != 'Z') { f.Close(); File.Delete(tmp); return $"The downloaded {name} is not a program - update stopped, nothing changed."; }
             got.Add(cur);
         }
+        // a single-file program reads its own parts out of its exe the first time they are used: once the exe is swapped,
+        // a part not read yet cannot be found (2.6.0 -> 2.6.1: starting the new version failed, "System.Diagnostics.Process"
+        // not found). Use what the restart needs now, while the old exe is still in place
+        using (var me = System.Diagnostics.Process.GetCurrentProcess()) { var psi = new System.Diagnostics.ProcessStartInfo(self) { UseShellExecute = false }; psi.ArgumentList.Add(me.Id.ToString()); }
         foreach (var cur in got)
             try
             {

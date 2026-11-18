@@ -777,10 +777,38 @@ public static class Skins
 
     /// normal Blur's cache\root.pak = the player's original + (opt-in) the skins + (opt-in, Game tweaks) the power-up icons.
     /// Nothing wanted any more: the original back. Called by Build skins and after every Build + install
+    /// normal Blur's cacheoot.pak (its road power-up icons): with icons on = the kept original + the own pickup models; off =
+    /// the original back (only when the map builder had changed it)
+    static void InstallNormalBoot(bool icons, Action<string> log)
+    {
+        if (!File.Exists(Paths.BootPakOriginal)) return;
+        string pack = Path.Combine(Paths.Cache, "boot.pak"), tmp = pack + ".icons.tmp";
+        var inst = LoadJson("installed.json");
+        bool changed = inst.Truthy("normal_boot");
+        if (icons)
+        {
+            List<KeyValuePair<string, byte[]>> files;
+            using (var orig = new Pak(Paths.BootPakOriginal)) files = RoadIcons.RootFiles(n => orig.Read(n), _ => { }).ToList();
+            if (files.Count == 0) return;
+            Pak.ReplaceFiles(Paths.BootPakOriginal, tmp, files);
+            log($"normal Blur: your power-up icons on the road in {pack}");
+        }
+        else if (changed)
+        {
+            File.Copy(Paths.BootPakOriginal, tmp, true);
+            log($"normal Blur: the game's own {pack} is back");
+        }
+        else return;
+        File.Move(tmp, pack, true);
+        inst["normal_boot"] = icons;
+        SaveJson("installed.json", inst);
+    }
+
     public static void InstallNormal(Action<string> log, Action<string>? step = null, Dictionary<string, byte[]>? made = null)
     {
         var on = Normal ? OnNow() : new Dictionary<string, List<string>>();
         bool icons = GameTweaks.IconsNormal(GameTweaks.Load()) && PowerupIcons.Any();
+        InstallNormalBoot(icons, log);
         bool want = on.Count > 0 || icons;
         if (!want && !InNormalNow) return;
         string pack = NormalPack, tmp = pack + ".skins.tmp";
@@ -793,7 +821,8 @@ public static class Skins
             {
                 using var orig = new Pak(Paths.RootOriginal);
                 files.AddRange(HudIcons.RootFiles(n => orig.Read(n), log));
-                files.AddRange(RoadIcons.RootFiles(n => orig.Read(n), log));
+                files.AddRange(HeldIcons.RootFiles(n => orig.Read(n), log));
+                files.AddRange(RoadIcons.RootFiles(n => orig.Read(n), _ => { }));   // (also in its boot.pak)
             }
             step?.Invoke("Writing normal Blur's pack...");
             Pak.ReplaceFiles(Paths.RootOriginal, tmp, files);

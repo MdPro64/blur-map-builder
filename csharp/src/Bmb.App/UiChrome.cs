@@ -156,7 +156,7 @@ public sealed partial class MainForm
         DarkMenu.Item(m.Items, "✎  Rename   (F2)", Rename);
         m.Items.Add(new ToolStripSeparator());
         DarkMenu.Item(m.Items, "⇩  Import map (.blurmap)...", ImportMap);
-        DarkMenu.Item(m.Items, "⇧  Export this map...", ExportMap);
+        DarkMenu.Item(m.Items, "⇧  Export this map...", () => ExportMap());
         m.Items.Add(new ToolStripSeparator());
         DarkMenu.Item(m.Items, "✖  Delete map", DeleteMap, true);
         DarkMenu.Item(m.Items, "✖  Delete location", DeleteLocation, true);

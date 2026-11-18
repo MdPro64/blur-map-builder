@@ -20,7 +20,8 @@ public static class Installed
     {
         string t = Path.Combine(data, "tweaks.json");
         var o = new List<string> { File.Exists(t) ? Json.Dumps(Json.Load(t), -1) : "{}" };
-        foreach (var (key, _) in PowerupIcons.Kinds) { var f = new FileInfo(Path.Combine(data, "powerups", key + ".png")); o.Add(f.Exists ? $"{key}:{f.Length}:{f.LastWriteTimeUtc.Ticks}" : key + ":-"); }
+        foreach (var (key, _) in PowerupIcons.Kinds)
+            foreach (var n in PowerupIcons.FileNames(key)) { var f = new FileInfo(Path.Combine(data, "powerups", n)); o.Add(f.Exists ? $"{n}:{f.Length}:{f.LastWriteTimeUtc.Ticks}" : n + ":-"); }
         return string.Join("|", o);
     }
 
@@ -38,10 +39,11 @@ public static class Installed
         string t = Path.Combine(Paths.Data, "tweaks.json");
         if (File.Exists(t)) File.Copy(t, Path.Combine(tmp, "tweaks.json"), true); else File.WriteAllText(Path.Combine(tmp, "tweaks.json"), "{}");
         foreach (var (key, _) in PowerupIcons.Kinds)
-        {
-            string src = Path.Combine(Paths.Data, "powerups", key + ".png");
-            if (File.Exists(src)) { string dst = Path.Combine(tmp, "powerups", key + ".png"); File.Copy(src, dst, true); File.SetLastWriteTimeUtc(dst, File.GetLastWriteTimeUtc(src)); }
-        }
+            foreach (var n in PowerupIcons.FileNames(key))
+            {
+                string src = Path.Combine(Paths.Data, "powerups", n);
+                if (File.Exists(src)) { string dst = Path.Combine(tmp, "powerups", n); File.Copy(src, dst, true); File.SetLastWriteTimeUtc(dst, File.GetLastWriteTimeUtc(src)); }
+            }
         if (Directory.Exists(TweaksDir)) Directory.Delete(TweaksDir, true);
         Directory.Move(tmp, TweaksDir);
     }

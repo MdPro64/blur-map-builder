@@ -103,6 +103,14 @@ switch (cmd)
         }
         break;
     }
+    case "carelements":     // carelements GAME CAR: each mesh of a game car: its element, parent, shader, faces (look only)
+    {
+        Paths.Init(args[1]);
+        var md = CpModel.Read(Skins.ModelBytes(args[2]));
+        for (int i = 0; i < md.AllElements.Count; i++) { var e = md.AllElements[i]; Console.WriteLine($"el {i}: {e.Name} parent {e.Parent} t {e.M[9]:0.##} {e.M[10]:0.##} {e.M[11]:0.##}"); }
+        foreach (var m in md.MeshInfos) Console.WriteLine($"mesh el {m.Object} fx {(m.Material >= 0 && m.Material < md.FxFiles.Count ? md.FxFiles[m.Material] : "?")} faces {string.Join(" ", m.Data1.Select(q => q.FaceCount))}");
+        break;
+    }
     case "logotest":        // logotest GAME WORLD.json OUTDIR: the custom cars made in memory: each one's maker record + its logo picture read back as PNG (look only)
     {
         Paths.Init(args[1]); Directory.CreateDirectory(args[3]);
@@ -383,6 +391,7 @@ switch (cmd)
             if (!File.Exists(src)) continue;
             File.Copy(src, dst + ".new", true); File.Move(dst + ".new", dst, true);
         }
+        Build.InstallBootPak(Console.WriteLine);
         if (opt.Built != null) Installed.Remember(opt.Built, opt);
         Setup.RefreshPlugin();
         Skins.InstallNormal(Console.WriteLine);
@@ -802,7 +811,34 @@ switch (cmd)
         foreach (var l in GameTweaks.Dump(File.ReadAllBytes(Path.Combine(Paths.Unpacked, "xt", "multiplayer.bin")))) Console.WriteLine(l);
         break;
     }
-    case "caruids":         // caruids GAME: every game car: uid, class (0 = A), multiplayer pick, name (look only)
+    case "heldicons":       // heldicons BPR PICTURE.png OUTDIR: ui_common.bpr's held icon sheets, and with PICTURE on every power-up (look only)
+    {
+        var bpr = File.ReadAllBytes(args[1]);
+        Directory.CreateDirectory(Path.Combine(args[3], "game")); Directory.CreateDirectory(Path.Combine(args[3], "mine"));
+        HeldIcons.Dump(bpr, Path.Combine(args[3], "game"));
+        bool wh = args.Length > 4 && args[4] == "whole";
+        var made = HeldIcons.Make(bpr, _ => wh ? null : args[2], _ => wh ? args[2] : null, Console.WriteLine)!;
+        Console.WriteLine($"made {made.Length} bytes (was {bpr.Length})");
+        HeldIcons.Dump(made, Path.Combine(args[3], "mine"));
+        break;
+    }
+    case "iconpacktest":    // iconpacktest FROMGAME TOGAME OUT.blurpowerups: the power-up icons of FROM exported, then imported into TO (test only)
+    {
+        Paths.Init(args[1]);
+        Console.WriteLine($"exported {Packs.ExportIcons(args[3])} power-up(s)");
+        Paths.Init(args[2]);
+        Console.WriteLine("imported: " + string.Join(", ", Packs.ImportIcons(args[3])));
+        foreach (var (k, _) in PowerupIcons.Kinds) Console.WriteLine($"   {k}: {Path.GetFileName(PowerupIcons.AnyOf(k)) ?? "-"} {PowerupIcons.Warning(k)}");
+        break;
+    }
+    case "setup":         // setup GAME: the map builder's first-start setup (only what is missing / out of date)
+    {
+        Paths.Init(args[1]);
+        Console.WriteLine($"needed: {Setup.Needed()}");
+        Setup.RunAll(Console.WriteLine, (k, n, l) => Console.WriteLine($"[{k}/{n}] {l}"));
+        break;
+    }
+    case "caruids":       // caruids GAME: every game car: uid, class (0 = A), multiplayer pick, name (look only)
     {
         Paths.Init(args[1]);
         var kd = File.ReadAllBytes(Path.Combine(Paths.Unpacked, "xt", "amax.bin")); var kk = new Kslf(kd);

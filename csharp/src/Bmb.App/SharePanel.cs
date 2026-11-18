@@ -5,18 +5,20 @@ using Bmb.Core;
 namespace Bmb.App;
 
 /// "Export / Import": one file for another player - a map (.blurmap: the map + its pictures, 3D models and sky), a custom car
-/// (.blurcar: the car + its body, sounds and logo) or a game car's skins (.blurskin). Importing puts every file in its place.
+/// (.blurcar: the car + its body, sounds and logo), a game car's skins (.blurskin) or the power-up icons (.blurpowerups).
+/// Importing puts every file in its place.
 public sealed class SharePanel : Panel
 {
     readonly MainForm _f;
-    readonly Label _mapName = new() { AutoSize = true, ForeColor = Theme.Good, Margin = new Padding(0, 8, 12, 0) };
-    readonly ComboBox _car = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 320, Margin = new Padding(0, 4, 8, 0) };
-    readonly ComboBox _skin = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 320, Margin = new Padding(0, 4, 8, 0) };
+    readonly ComboBox _map = Theme.Combo(320);
+    readonly List<(JObj Map, JObj Loc)> _maps = new();
+    readonly ComboBox _car = Theme.Combo(320), _skin = Theme.Combo(320);
     readonly List<string> _skinCars = new();
 
     public SharePanel(MainForm f)
     {
         _f = f; BackColor = Theme.Bg; AutoScroll = true; Padding = new Padding(24);
+        _car.Margin = _skin.Margin = _map.Margin = new Padding(0, 4, 8, 0);
         var col = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false, BackColor = Theme.Bg, Dock = DockStyle.Top };
         Controls.Add(col);
         col.Controls.Add(new Label { Text = "EXPORT / IMPORT", AutoSize = true, ForeColor = Theme.Head, Font = new Font("Segoe UI", 14f, FontStyle.Bold) });
@@ -24,10 +26,15 @@ public sealed class SharePanel : Panel
 
         // a map
         col.Controls.Add(Head("🗺  A map  (.blurmap)"));
-        col.Controls.Add(Hint("The map you have open, with its menu picture, minimap, your 3D models on it and its location's lighting + sky picture."));
+        col.Controls.Add(Hint("A map with its menu picture, minimap, your 3D models on it and its location's lighting + sky picture."));
         var r1 = Row();
-        r1.Controls.Add(Theme.Lbl("This map:")); r1.Controls.Add(_mapName);
-        r1.Controls.Add(Theme.Btn("⇧ Export map...", () => { _f.ExportMap(); }, Theme.Orange));
+        r1.Controls.Add(_map);
+        r1.Controls.Add(Theme.Btn("⇧ Export map...", () =>
+        {
+            if (_map.SelectedIndex < 0 || _map.SelectedIndex >= _maps.Count) return;
+            var (m, l) = _maps[_map.SelectedIndex];
+            _f.ExportMap(m, l);
+        }, Theme.Orange));
         r1.Controls.Add(Theme.Btn("⇩ Import map...", () => { _f.ImportMap(); Refresh2(); }));
         col.Controls.Add(r1);
 
@@ -49,6 +56,17 @@ public sealed class SharePanel : Panel
         r3.Controls.Add(Theme.Btn("⇩ Import skins...", ImportSkins));
         col.Controls.Add(r3);
 
+        // power-up icons
+        if (!PowerupIcons.OnHold)
+        {
+            col.Controls.Add(Head("⚡  Power-up icons  (.blurpowerups)"));
+            col.Controls.Add(Hint("All your power-up pictures from the Game tweaks tab (symbol or whole icon, Bolt 3 / 2 / 1). Importing replaces only the power-ups the file has."));
+            var r4 = Row();
+            r4.Controls.Add(Theme.Btn("⇧ Export power-up icons...", ExportIcons, Theme.Orange));
+            r4.Controls.Add(Theme.Btn("⇩ Import power-up icons...", ImportIcons));
+            col.Controls.Add(r4);
+        }
+
     }
 
     static Label Head(string t) => new() { Text = t, AutoSize = true, ForeColor = Theme.Text, Font = new Font("Segoe UI", 12f, FontStyle.Bold), Margin = new Padding(0, 22, 0, 2) };
@@ -59,7 +77,11 @@ public sealed class SharePanel : Panel
 
     public void Refresh2()
     {
-        _mapName.Text = $"{_f.D.Map.Str("name")}  ({_f.D.Loc.Str("name")})";
+        // every map, by location; the open one picked
+        _map.Items.Clear(); _maps.Clear();
+        foreach (var l in _f.D.World.Objs("locations"))
+            foreach (var m in l.Objs("maps")) { _maps.Add((m, l)); _map.Items.Add($"{m.Str("name")}   ({l.Str("name")})"); }
+        _map.SelectedIndex = Math.Max(0, _maps.FindIndex(q => ReferenceEquals(q.Map, _f.D.Map)));
         int ci = _car.SelectedIndex;
         _car.Items.Clear();
         foreach (var c in Cars()) _car.Items.Add(c.Str("name") ?? "car");
@@ -136,6 +158,27 @@ public sealed class SharePanel : Panel
             var (car, n) = Packs.ImportSkins(path);
             Refresh2();
             _f.Say($"Imported {n} skin picture(s) of the {Skins.Nice(car)}. See them in the Car skins tab; Build + install (or Build skins) to see them in game.", Theme.Good);
+        }
+        catch (Exception e) when (e is ImportProblem or IOException or UnauthorizedAccessException or InvalidDataException or FormatException or InvalidCastException) { _f.Msg("Import", "Could not import this file:\n" + e.Message); }
+    }
+
+    void ExportIcons()
+    {
+        if (!PowerupIcons.Any()) { _f.Say("Give a power-up your own picture first (Game tweaks tab)", Theme.Warn); return; }
+        string? path = _f.SaveAs("Export the power-up icons for another player", "Blur power-up icons|*" + Packs.IconExt, "my power-ups" + Packs.IconExt);
+        if (path == null) return;
+        try { int n = Packs.ExportIcons(path); _f.Say($"Exported the pictures of {n} power-up(s) to {path}", Theme.Good); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { _f.Say("Could not export: " + e.Message, Theme.Bad); }
+    }
+
+    void ImportIcons()
+    {
+        string? path = _f.PickFile("Import power-up icons from another player", "Blur power-up icons|*" + Packs.IconExt + "|All files|*.*");
+        if (path == null) return;
+        try
+        {
+            var got = Packs.ImportIcons(path);
+            _f.Say($"Imported the power-up icons: {string.Join(", ", got)}. See them in the Game tweaks tab; Build + install to see them in game.", Theme.Good);
         }
         catch (Exception e) when (e is ImportProblem or IOException or UnauthorizedAccessException or InvalidDataException or FormatException or InvalidCastException) { _f.Msg("Import", "Could not import this file:\n" + e.Message); }
     }
