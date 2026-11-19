@@ -1428,3 +1428,217 @@ Your own 3D car model (.glb, from Blender ...). It sits on the wheels of this ca
 Save a game car's own model as a .glb - every part its own object, like the game - to change it in Blender and import it back as a body ||| Сохранить модель машины из игры как .glb - каждая деталь отдельным объектом, как в игре - чтобы изменить её в Blender и импортировать обратно как кузов
 3D MODEL ||| 3D МОДЕЛЬ
 The body fits ({} of {} points of room used). ||| Кузов помещается (занято {} из {} точек).
+# 3D tab: Animation sub-tab (View3DAnim.cs)
+Objects ||| Объекты
+Animation ||| Анимация
+ANIMATION ||| АНИМАЦИЯ
+Add, move, turn and size your objects ||| Добавляйте, двигайте, поворачивайте и меняйте размер объектов
+The start camera, and objects that move: keyframes, a path, spin, a trigger box ||| Стартовая камера и движущиеся объекты: ключи, путь, вращение, зона-триггер
+Pick one of YOUR placed objects: click it in the 3D view or in the object list. ||| Выберите один из СВОИХ объектов: щёлкните по нему в 3D виде или в списке объектов.
+Only your placed objects can move (not the road's own objects, track points or power-ups). ||| Двигаться могут только ваши объекты (не объекты дороги, точки трассы или бонусы).
+This object is not in the library any more. ||| Этого объекта больше нет в библиотеке.
+Jump ramps are part of the ground: they cannot move. ||| Трамплины - часть земли: они не двигаются.
+Breakable objects (lamps, signs ...) cannot move in the game. Scenery, movable, animated and your imported models can. ||| Разрушаемые объекты (фонари, знаки ...) в игре не двигаются. Декорации, подвижные, анимированные и ваши модели - могут.
+Moving objects in this map: {} ||| Движущихся объектов на карте: {}
+Tip: place an object in the Objects sub-tab first (bus, container, your own model ...). ||| Совет: сначала поставьте объект во вкладке Объекты (автобус, контейнер, своя модель ...).
+This object stands still. Make it move: ||| Этот объект стоит на месте. Заставьте его двигаться:
+Keyframes: set it at times ||| Ключи: положение во времени
+Move the time marker, then move / turn the object: each change becomes a key (like After Effects) ||| Передвиньте метку времени, затем двигайте / поворачивайте объект: каждое изменение становится ключом (как в After Effects)
+Follow a path ||| Ехать по пути
+Click points on the ground; the object drives along them ||| Щёлкайте точки на земле; объект едет по ним
+Spin in place ||| Вращаться на месте
+Turns around its up axis ||| Вращается вокруг вертикальной оси
+The game can move and turn objects. It cannot change their size or tilt them while racing. ||| Игра умеет двигать и поворачивать объекты. Менять их размер или наклонять во время гонки она не умеет.
+Keys ||| Ключи
+Path ||| Путь
+Spin ||| Вращение
+Starts: ||| Старт:
+with the race ||| с гонкой
+trigger box ||| зона-триггер
+Starts when your car drives through an invisible box (then it runs once, or loops if Loop is on) ||| Запускается, когда ваша машина проезжает невидимую зону (потом один раз, или по кругу, если включён Повтор)
+Loop (start again at the end) ||| Повтор (сначала в конце)
+{} position key(s), {} rotation key(s), {} s ||| ключей положения: {}, ключей поворота: {}, {} с
+How: move the time marker (top of the timeline), then press G or R and move / turn the object. With a row's stopwatch on, each change is a key at that time. ||| Как: передвиньте метку времени (верх шкалы), затем нажмите G или R и двигайте / поворачивайте объект. Если секундомер строки включён, каждое изменение - ключ в это время.
+At least 2 position keys are needed before it moves in the game. ||| Чтобы объект двигался в игре, нужно минимум 2 ключа положения.
+In the game the object faces the way it drives; the rotation keys add a turn to that, changed at each position key. ||| В игре объект смотрит туда, куда едет; ключи поворота добавляют к этому поворот, он меняется на каждом ключе положения.
+{} point(s), {} m, one pass {} s ||| точек: {}, {} м, один проход {} с
+Speed (m/s) ||| Скорость (м/с)
+Speed {} m/s ({} km/h) ||| Скорость {} м/с ({} км/ч)
+Turn (°) ||| Поворот (°)
+Turned {}° from the way it drives ||| Повёрнут на {}° от направления движения
+The object faces the way it drives; this turns it on top (90 = sideways, 180 = backwards) ||| Объект смотрит туда, куда едет; это поворачивает его дополнительно (90 = боком, 180 = задом)
+Closed path (back to the first point) ||| Замкнутый путь (назад к первой точке)
+Closed path ||| Замкнутый путь
+Open path ||| Открытый путь
+Done editing the path (Enter) ||| Путь готов (Enter)
+Draw / edit the path ||| Нарисовать / изменить путь
+Click the ground to add points, drag points to move them ||| Щёлкайте по земле, чтобы добавить точки, тащите точки, чтобы двигать их
+Remove the last point ||| Убрать последнюю точку
+Click at least 2 points on the ground. ||| Щёлкните минимум 2 точки на земле.
+Turns / minute ||| Оборотов в минуту
+Below 0 = the other way round ||| Меньше 0 = в другую сторону
+Spins {} turns a minute ||| Вращается, {} оборотов в минуту
+Spins around its up axis where you placed it. ||| Вращается вокруг вертикальной оси там, где вы его поставили.
+click on the road (Esc = cancel) ||| щёлкните по дороге (Esc = отмена)
+Place the trigger box ||| Поставить зону-триггер
+Move the trigger box ||| Переставить зону-триггер
+Click on the road where the car should start it ||| Щёлкните по дороге там, где машина должна его запустить
+Box width (m) ||| Ширина зоны (м)
+Box length (m) ||| Длина зоны (м)
+Trigger box {} x {} m ||| Зона-триггер {} x {} м
+No box yet: until you place one, it starts with the race. ||| Зоны пока нет: пока вы её не поставите, объект стартует с гонкой.
+The preview plays it at once; in the game it waits for the car. ||| В просмотре он играет сразу; в игре ждёт машину.
+Remove the animation ||| Убрать анимацию
+Animation removed ||| Анимация убрана
+Animation removed (no keys left) ||| Анимация убрана (ключей не осталось)
+Ctrl+Z undoes, Build + install puts it in the game ||| Ctrl+Z отменяет, Собрать и установить - переносит в игру
+Keyframes: move the time marker, then G / R the object - each change is a key ||| Ключи: передвиньте метку времени, затем G / R по объекту - каждое изменение - ключ
+Path: click points on the ground (the first is where the object stands), Enter = done ||| Путь: щёлкайте точки на земле (первая - где стоит объект), Enter = готово
+Spins 20 turns a minute ||| Вращается, 20 оборотов в минуту
+Path: {} point(s) ||| Путь: точек {}
+Path: {} point(s) - Enter / right click = done ||| Путь: точек {} - Enter / правый щелчок = готово
+Path point moved - Ctrl+Z undoes ||| Точка пути сдвинута - Ctrl+Z отменяет
+Starts with the race ||| Стартует с гонкой
+Starts by a trigger box ||| Стартует от зоны-триггера
+Loops ||| По кругу
+Plays once ||| Один раз
+Now keyframes ||| Теперь ключи
+Now a path ||| Теперь путь
+Now spinning ||| Теперь вращение
+Trigger box placed: the object starts when your car drives through it ||| Зона-триггер поставлена: объект стартует, когда ваша машина проедет через неё
+The whole path moved ||| Весь путь сдвинут
+Turned on the path ||| Повёрнут на пути
+Key at {} s ||| Ключ на {} с
+{} key(s) deleted ||| Удалено ключей: {}
+Last key deleted: the object stands still again ||| Последний ключ удалён: объект снова стоит на месте
+Key(s) moved {} s ||| Ключи сдвинуты на {} с
+Position keys removed ||| Ключи положения убраны
+Rotation keys removed ||| Ключи поворота убраны
+Position: first key at {} s - move the time marker and move (G) the object for more ||| Положение: первый ключ на {} с - передвиньте метку времени и двигайте (G) объект для новых
+Rotation: first key at {} s - move the time marker and turn (R) the object for more ||| Поворот: первый ключ на {} с - передвиньте метку времени и поворачивайте (R) объект для новых
+Turn on the Position stopwatch (⏱ in the timeline) to make position keys ||| Включите секундомер Положения (⏱ на шкале), чтобы делать ключи положения
+Turn on the Rotation stopwatch (⏱ in the timeline) to make turn keys ||| Включите секундомер Поворота (⏱ на шкале), чтобы делать ключи поворота
+Keys: pick an object with keyframes first ||| Ключи: сначала выберите объект с ключами
+Turn on a stopwatch (Position or Rotation) first ||| Сначала включите секундомер (Положение или Поворот)
+Stopwatches are for keyframes: switch this object to ◆ Keys first (right) ||| Секундомеры - для ключей: сначала переключите объект на ◆ Ключи (справа)
+Click a key (diamond) in the timeline first ||| Сначала щёлкните ключ (ромб) на шкале
+Nothing moves yet: pick an object and make it move first ||| Пока ничего не движется: выберите объект и заставьте его двигаться
+To the start (Home) ||| В начало (Home)
+Pause ||| Пауза
+Play / pause the preview (Space) ||| Играть / пауза просмотра (Пробел)
+Stop and go back to the start ||| Остановить и вернуться в начало
+Key here ||| Ключ здесь
+Add a key at the time marker for each row whose stopwatch is on (keyframes only) ||| Добавить ключ на метке времени для каждой строки с включённым секундомером (только ключи)
+Delete key ||| Удалить ключ
+Delete the selected keys (Delete) ||| Удалить выбранные ключи (Delete)
+Show the whole animation in the timeline ||| Показать всю анимацию на шкале
+Go to this key ||| Перейти к этому ключу
+Space = play / pause   drag the ruler = scrub   G / R on the selected object at a time = a key ||| Пробел = играть / пауза   тащите линейку = прокрутка   G / R по выбранному объекту в момент = ключ
+PATH: click the ground to add points, drag a point to move it, Backspace = remove the last, Enter / right click = done ||| ПУТЬ: щёлкайте по земле - новые точки, тащите точку - сдвиг, Backspace = убрать последнюю, Enter / правый щелчок = готово
+TRIGGER BOX: click on the road where the car should start it (Esc = cancel) ||| ЗОНА-ТРИГГЕР: щёлкните по дороге там, где машина должна её запустить (Esc = отмена)
+drag here = scrub ||| тащите = прокрутка
+Nothing moves yet. Pick one of your objects (3D view or object list), then use the buttons on the right. ||| Пока ничего не движется. Выберите свой объект (3D вид или список объектов), затем кнопки справа.
+still ||| стоит
+keyframes ||| ключи
+path ||| путь
+spin ||| вращение
+Position ||| Положение
+Rotation (Y) ||| Поворот (Y)
+Tilt (X / Z) ||| Наклон (X / Z)
+the game cannot change an object's size while racing ||| игра не умеет менять размер объекта во время гонки
+the game cannot tilt a moving object (it turns around its up axis only) ||| игра не умеет наклонять движущийся объект (он поворачивается только вокруг вертикальной оси)
+click the stopwatch to make position keys ||| щёлкните секундомер, чтобы делать ключи положения
+click the stopwatch to make turn keys ||| щёлкните секундомер, чтобы делать ключи поворота
+click the stopwatch to start keyframes ||| щёлкните секундомер, чтобы начать ключи
+follows its path at ||| едет по пути со скоростью
+faces the way it drives ||| смотрит по ходу движения
+stays where it is ||| стоит на месте
+spins ||| вращается
+turns a minute ||| оборотов в минуту
+Animation (top left): the start camera, and objects that move. Pick one of your objects, then Keyframes, Path or Spin. ||| Анимация (слева вверху): стартовая камера и движущиеся объекты. Выберите свой объект, затем Ключи, Путь или Вращение.
+Keyframes: move the red time marker, press G or R and move / turn the object: each change is a key. Space plays it. ||| Ключи: передвиньте красную метку времени, нажмите G или R и двигайте / поворачивайте объект: каждое изменение - ключ. Пробел - воспроизведение.
+Path: click points on the ground, Enter = done. Trigger box: it starts when your car drives through. The game cannot change size or tilt while racing. ||| Путь: щёлкайте точки на земле, Enter = готово. Зона-триггер: старт, когда ваша машина проезжает через неё. Игра не умеет менять размер или наклон во время гонки.
+Show it and its whole movement in the 3D view ||| Показать объект и весь его путь в 3D виде
+Click a key (diamond) in the timeline to type its time and place exactly. ||| Щёлкните ключ (ромб) на шкале, чтобы ввести его время и место точно.
+SELECTED POSITION KEY ||| ВЫБРАННЫЙ КЛЮЧ ПОЛОЖЕНИЯ
+SELECTED ROTATION KEY ||| ВЫБРАННЫЙ КЛЮЧ ПОВОРОТА
+Time (s) ||| Время (с)
+X (m) ||| X (м)
+Height (m) ||| Высота (м)
+Z (m) ||| Z (м)
+Another key is already at {} s ||| На {} с уже есть другой ключ
+Key moved to {} s ||| Ключ перенесён на {} с
+Key changed ||| Ключ изменён
+trigger ||| триггер
+Space = play / pause   drag the ruler = scrub   wheel = zoom   , and . = step   G / R on the selected object = a key at the time marker   double-click a key = go to it ||| Пробел = играть / пауза   тащите линейку = прокрутка   колесо = масштаб   , и . = шаг   G / R по выбранному объекту = ключ на метке времени   двойной щелчок по ключу = перейти к нему
+Stopwatch: on = this row makes keys, off = all its keys go ||| Секундомер: вкл = строка делает ключи, выкл = все её ключи удаляются
+Height ||| Высота
+Turn ||| Поворот
+Show ||| Показать
+SOLID ||| ТВЁРДЫЙ
+cars push it around ||| машины толкают его
+animated object ||| анимированный объект
+Path point removed: {} point(s) left ||| Точка пути убрана: осталось {}
+PATH: click the ground to add points, drag a point to move it, Shift+click a point = remove it, Enter / right click = done ||| ПУТЬ: щёлкайте по земле - новые точки, тащите точку - сдвиг, Shift+щелчок по точке = убрать её, Enter / правый щелчок = готово
+Your objects that can move: {} ({} moving) ||| Ваши объекты, которые могут двигаться: {} (движутся: {})
+... and more in the object list (right). ||| ... и ещё в списке объектов (справа).
+Timeline: click a key to type its exact time and place, drag it to move it in time, Delete removes it. Show puts the whole movement in view. ||| Шкала: щёлкните ключ, чтобы ввести его точное время и место, тащите его, чтобы сдвинуть во времени, Delete удаляет. Показать - весь путь в кадре.
+Enter / right click = done ||| Enter / правый щелчок = готово
+Click an object: G moves, R turns, S scales, X hides it. In the list: eye = hide, target = solo. ||| Щелчок по объекту: G двигает, R поворачивает, S масштаб, X прячет. В списке: глаз = скрыть, мишень = соло.
+Library: pick an object or a jump ramp, then click in the view to place it. Esc stops. ||| Библиотека: выберите объект или трамплин, затем щёлкните в виде, чтобы поставить. Esc - стоп.
+Orange road point: G moves it, R tilts the road there. Sun + shadows shows tilts better. ||| Оранжевая точка дороги: G двигает, R наклоняет дорогу. Солнце и тени лучше показывают наклон.
+Animation (top left): the start camera, and your objects that move: Keyframes, Path or Spin. ||| Анимация (слева вверху): стартовая камера и движущиеся объекты: Ключи, Путь или Вращение.
+Keys: move the red time marker, G / R the object = a key. Space plays. Click a key to type it. ||| Ключи: двигайте красную метку времени, G / R по объекту = ключ. Пробел - играть. Щелчок по ключу - ввод.
+Path: click points on the ground, Enter = done. Trigger box: starts when your car drives through. ||| Путь: щёлкайте точки на земле, Enter = готово. Зона-триггер: старт, когда машина проезжает её.
+Middle mouse turns the view, wheel zooms. ||| Средняя кнопка мыши вращает вид, колесо - масштаб.
+Click an object: G moves, R turns, S scales, X hides it. ||| Щелчок по объекту: G двигает, R поворачивает, S масштаб, X прячет.
+Library: pick an object or ramp, click in the view to place it. Esc stops. ||| Библиотека: выберите объект или трамплин, щёлкните в виде. Esc - стоп.
+Orange road point: G moves it, R tilts the road there. ||| Оранжевая точка дороги: G двигает, R наклоняет дорогу там.
+Animation (top left): start camera, and objects that move. ||| Анимация (слева вверху): стартовая камера и движущиеся объекты.
+Keys: move the red time marker, G / R the object = a key. Space plays. ||| Ключи: двигайте красную метку, G / R по объекту = ключ. Пробел - играть.
+Path: click points on the ground, Enter = done. Click a key to type it. ||| Путь: щёлкайте точки на земле, Enter = готово. Щелчок по ключу - ввод.
+{} KEYS SELECTED ||| ВЫБРАНО КЛЮЧЕЙ: {}
+Drag one of them in the timeline: they all move together. Delete removes them. ||| Тащите любой из них на шкале: они двигаются вместе. Delete удаляет их.
+Delete these keys ||| Удалить эти ключи
+Space = play / pause   drag the ruler = scrub   wheel = zoom   bar below / middle drag = scroll   drag over keys = select many (Ctrl adds)   G / R on the selected object = a key at the time marker ||| Пробел = играть / пауза   тащите линейку = прокрутка времени   колесо = масштаб   полоса внизу / средняя кнопка = листать   обведите ключи = выбрать несколько (Ctrl добавляет)   G / R по выбранному объекту = ключ на метке времени
+ROAD PICTURE ||| КАРТИНКА ДОРОГИ
+🖼 Own picture... ||| 🖼 Своя картинка...
+Use your own asphalt picture for this map's road (a seamless tile works best: its left side joins its right side). The lines are painted on top ||| Своя картинка асфальта для дороги этой карты (лучше всего бесшовная: левый край стыкуется с правым). Разметка рисуется поверх
+The road's picture: the game's asphalt, or yours ||| Картинка дороги: асфальт игры или ваша
+Back to the game's asphalt ||| Вернуть асфальт игры
+How many metres one copy of your picture covers on the road (small = fine grain, big = large patterns) ||| Сколько метров дороги занимает одна копия вашей картинки (мало = мелкое зерно, много = крупный рисунок)
+Lines ||| Разметка
+White lines at the edges and a double yellow line in the middle. Turn off if your picture has its own lines ||| Белые линии по краям и двойная жёлтая посередине. Выключите, если на вашей картинке есть своя разметка
+game asphalt ||| асфальт игры
+missing: {} ||| нет файла: {}
+Your road picture (asphalt) ||| Ваша картинка дороги (асфальт)
+Road picture: the game's asphalt again (Build + install to see it) ||| Картинка дороги: снова асфальт игры (соберите, чтобы увидеть)
+Road picture ||| Картинка дороги
+Road picture size (m) ||| Размер картинки дороги (м)
+Road lines ||| Разметка дороги
+own road picture {} ||| своя картинка дороги {}
+no road lines ||| без разметки
+(its picture file is missing: the game's asphalt is used) ||| (файла картинки нет: используется асфальт игры)
+VARIED ASPHALT ||| РАЗНЫЙ АСФАЛЬТ
+Worn, faded and cracked parts (4 kinds), and repair patches at random places along the road ||| Стёртые, выцветшие и потрескавшиеся участки (4 вида) и заплатки в случайных местах дороги
+amount (%) ||| сколько (%)
+How much of it shows: 0 = none, 50 = normal, 100 = a very old road, up to 300 = broken up a lot (the repair patches stop growing at 150) ||| Насколько заметно: 0 = нет, 50 = обычно, 100 = очень старая дорога, до 300 = сильно разбитая (заплаток больше не становится после 150)
+🖼 Patch picture... ||| 🖼 Картинка заплаток...
+Your own picture for the repair patches (one copy every 8 m). The worn ones use it 10 % lighter ||| Своя картинка для заплаток (одна копия на 8 м). Стёртые участки берут её на 10 % светлее
+The repair patches' picture: the game's asphalt, or yours ||| Картинка заплаток: асфальт игры или ваша
+Patches back to the game's asphalt ||| Вернуть заплаткам асфальт игры
+Your picture for the repair patches ||| Ваша картинка для заплаток
+Varied asphalt amount (%) ||| Разный асфальт: сколько (%)
+Patch picture ||| Картинка заплаток
+Patch picture: the game's asphalt again (Build + install to see it) ||| Картинка заплаток: снова асфальт игры (соберите, чтобы увидеть)
+varied asphalt {} % ||| разный асфальт {} %
+own patch picture {} ||| своя картинка заплаток {}
+🖥  Graphics ||| 🖥  Графика
+BLUR REBORN  +  NORMAL BLUR  (this PC only) ||| BLUR REBORN  +  ОБЫЧНЫЙ BLUR  (только на этом ПК)
+Sharp textures far away (anisotropic filtering 16x): road lines and asphalt stay sharp in the distance ||| Чёткие текстуры вдали (анизотропная фильтрация 16x): разметка и асфальт остаются чёткими вдалеке
+Installs a small add-on into the game (amax\dlls\aniso_fix.dll); off removes it. Blur never turns this on, so roads blur into a smear far ahead. Only changes how your PC draws the game: nothing online. Close Blur before changing it. ||| Ставит в игру небольшое дополнение (amax\dlls\aniso_fix.dll); выкл — удаляет его. Blur сам это не включает, поэтому дорога вдали размывается. Меняет только то, как ваш ПК рисует игру: ничего в сети. Перед изменением закройте Blur.
+Sharp textures far away: on (from the next game start) ||| Чёткие текстуры вдали: вкл (со следующего запуска игры)
+Sharp textures far away: off (from the next game start) ||| Чёткие текстуры вдали: выкл (со следующего запуска игры)
+GAME TWEAKS: more and harder AI racers, your own power-up icons, sharp textures far away. Build + install to use them ||| НАСТРОЙКИ ИГРЫ: больше и сильнее ИИ-гонщиков, свои значки бонусов, чёткие текстуры вдали. Соберите, чтобы использовать
+See-through glass ||| Прозрачные стёкла
+On: the body's glass (see-through or named glass in the .glb) is clear, you see inside the car. Off: the game's own dark windows - for a body without an inside ||| Вкл: стёкла кузова (прозрачные или названные glass в .glb) прозрачные, видно салон. Выкл: тёмные стёкла игры - для кузова без салона

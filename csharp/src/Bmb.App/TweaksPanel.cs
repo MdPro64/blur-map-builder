@@ -12,7 +12,7 @@ public sealed class TweaksPanel : Panel
     readonly MainForm _f;
     readonly Dictionary<string, PictureBox> _pics = new();
     readonly Dictionary<string, Label> _picNote = new();
-    CheckBox _moreAi = null!, _harder = null!, _iconsNormal = null!, _aiMods = null!;
+    CheckBox _moreAi = null!, _harder = null!, _iconsNormal = null!, _aiMods = null!, _sharp = null!;
 
     public TweaksPanel(MainForm f)
     {
@@ -35,6 +35,19 @@ public sealed class TweaksPanel : Panel
         col.Controls.Add(_aiMods);
         col.Controls.Add(Hint("In the game: custom race settings > Mods: On. This changes Blur REBORN.exe a little (turn it off to put it back)."));
         col.Controls.Add(Hint("Playing a private game with friends? They need Blur REBORN with the same tweaks too: every game drives some of the AI."));
+
+        // graphics: the texture filter fix
+        col.Controls.Add(Head("🖥  Graphics"));
+        col.Controls.Add(Where("BLUR REBORN  +  NORMAL BLUR  (this PC only)", Theme.Good));
+        _sharp = Theme.Check("Sharp textures far away (anisotropic filtering 16x): road lines and asphalt stay sharp in the distance", true, v =>
+        {
+            if (_loading) return;
+            var t = GameTweaks.Load(); t["sharp_far"] = v; GameTweaks.Save(t);
+            Setup.RefreshFilter();
+            _f.Say(v ? "Sharp textures far away: on (from the next game start)" : "Sharp textures far away: off (from the next game start)", Theme.Good);
+        });
+        col.Controls.Add(_sharp);
+        col.Controls.Add(Hint("Installs a small add-on into the game (amax\\dlls\\aniso_fix.dll); off removes it. Blur never turns this on, so roads blur into a smear far ahead. Only changes how your PC draws the game: nothing online. Close Blur before changing it."));
 
         // power-up icons (on hold: made but not shown)
         Control box = PowerupIcons.OnHold ? new Panel() : col;
@@ -91,6 +104,7 @@ public sealed class TweaksPanel : Panel
         _loading = true;
         var t = GameTweaks.Load();
         _moreAi.Checked = t.Truthy("more_ai"); _harder.Checked = t.Truthy("harder_ai"); _iconsNormal.Checked = t.Truthy("icons_normal"); _aiMods.Checked = t.Truthy("ai_mods");
+        _sharp.Checked = GameTweaks.SharpFar(t);
         _loading = false;
         foreach (var (key, _) in PowerupIcons.Kinds) ShowIcon(key);
     }

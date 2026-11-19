@@ -163,10 +163,19 @@ public sealed partial class MainForm
             Undo(); await Pump(200);
             Application.Exit(); return;
         }
+        if (Environment.GetEnvironmentVariable("BMB_ONLY") == "anim")
+        {
+            // the 3D tab's Animation sub-tab: pictures + checks (look only: every change is undone, on the scratch copy)
+            Size = new Size(1500, 950);
+            await AnimTests(Ok, ms => Pump(ms), Shot, rep);
+            rep.Add($"RESULT {pass} passed, {fail} failed");
+            File.WriteAllLines(Path.Combine(outDir, "ui_timing.txt"), rep);
+            Application.Exit(); return;
+        }
         if (Environment.GetEnvironmentVariable("BMB_ONLY") == "tour")
         {
             // pictures of every tab only (for looking at the UI); nothing is changed or built
-            foreach (var m in new[] { "2d", "3d", "land", "collision", "ai", "light", "surface", "car", "skins" })
+            foreach (var m in new[] { "2d", "3d", "land", "collision", "ai", "light", "surface", "car", "skins", "tweaks" })
             {
                 SetMode(m); await Pump(250);
                 if (m == "2d") { Map2.Fit(); await Pump(100); }

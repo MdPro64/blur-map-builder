@@ -7,7 +7,11 @@ public sealed class NetChunks { public Road? R; public double Width; public stri
 public static class RoadMesh
 {
     public const string Source = "\\models\\objects\\shared\\us\\rh_telegraphpoles.model", Diff = "telegraphpoles_diff", Mat = "telegraphpoles_ipr0";
-    public const double ChunkLen = 420.0, URepeat = 14.0, EdgeRampLen = 15.0, DividerLift = 0.08, EdgeJoin = 0.15;
+    /// the road pieces' picture size: u = along (one picture = URepeat m), v = across the whole profile
+    public const int DiffW = 1024, DiffH = 2048;
+    // URepeat: one road picture covers this many metres along the road (28: with 14 the same pattern came back so often
+    // that it read as light / dark stripes across the road, user test 2026-11-19)
+    public const double ChunkLen = 420.0, URepeat = 28.0, EdgeRampLen = 15.0, DividerLift = 0.08, EdgeJoin = 0.15;
     public const uint BaseUid = 0xF1A70000;
     const int EdgeChunk = 300;
     static readonly double EdgeRound = 25.0 * Math.PI / 180;
@@ -24,6 +28,11 @@ public static class RoadMesh
     static (double, double, double) Sub((double, double, double) a, (double, double, double) b) => (a.Item1 - b.Item1, a.Item2 - b.Item2, a.Item3 - b.Item3);
     static (double, double, double) Cross((double, double, double) a, (double, double, double) b) =>
         (a.Item2 * b.Item3 - a.Item3 * b.Item2, a.Item3 * b.Item1 - a.Item1 * b.Item3, a.Item1 * b.Item2 - a.Item2 * b.Item1);
+    /// the asphalt (p = mid, mid + 1) is lit as if flat; the raised edges lean 60 % towards straight up, so a bend's
+    /// outer edge (seen face-on) is not a dark wall but still shows its curve
+    static (double, double, double) LitFlat(int p, int mid, (double, double, double) n) =>
+        p == mid || p == mid + 1 ? (0.0, 1.0, 0.0) : Unit((n.Item1 * 0.4, n.Item2 * 0.4 + 0.6, n.Item3 * 0.4));
+
     static (double, double, double) Unit((double, double, double) a)
     {
         double ln = Math.Sqrt(a.Item1 * a.Item1 + a.Item2 * a.Item2 + a.Item3 * a.Item3);
@@ -137,6 +146,7 @@ public static class RoadMesh
                         var nrm = Unit(Cross(lng, a));
                         var up = Cross(lng, Sub(At(mid + 1), At(mid)));
                         if (up.Item2 < 0) nrm = (-nrm.Item1, -nrm.Item2, -nrm.Item3);
+                        nrm = LitFlat(p, mid, nrm);      // see LitFlat
                         verts.Add(new[] { x - anchor[0], y, z - anchor[2], nrm.Item1, nrm.Item2, nrm.Item3, (di - uc) / URepeat, vs[p] });
                         continue;
                     }
@@ -151,6 +161,10 @@ public static class RoadMesh
                         var nrm = Unit(Cross(lng, a));
                         var up = Cross(lng, Sub(rings[mid + 1][ii], rings[mid][ii]));
                         if (up.Item2 < 0) nrm = (-nrm.Item1, -nrm.Item2, -nrm.Item3);
+                        // LitFlat: the asphalt (its two edge lines) is LIT as if flat. A tilted corner facing away from a
+                        // low sun got far less light than the straight road (user test 2026-11-19); the shape and the
+                        // grip stay tilted, only the shading is the straight road's.
+                        nrm = LitFlat(p, mid, nrm);
                         verts.Add(new[] { x - anchor[0], y, z - anchor[2], nrm.Item1, nrm.Item2, nrm.Item3, (di - uc) / URepeat, vs[p] });
                     }
                 }
@@ -492,6 +506,23 @@ public static class RoadMesh
     {
         uint b = (uint)m.Int("route_uid") & 0xFF;
         return ri == 0 ? 0x0F1A7F00 | b : 0x0F2B0000 | (b << 8) | ((uint)ri & 0xFF);
+    }
+
+    /// where the game looks for light for each road model: its placed spot and the middle of its box (world, y with
+    /// the ground). The game takes the nearest level light point WITHIN 10 m and gives none past that: a road piece
+    /// round a bend has its middle off the road, far from the points along the road, and was drawn unlit (black).
+    public static List<double[]> LightSpots(JObj m, Road road, double gy)
+    {
+        var o = new List<double[]>();
+        foreach (var c in NetworkChunks(m, road).SelectMany(nc => nc.Cs).Concat(OverlayChunks(m, road)))
+        {
+            if (c.Verts.Count == 0) continue;
+            double x0 = c.Verts.Min(v => v[0]), x1 = c.Verts.Max(v => v[0]), y0 = c.Verts.Min(v => v[1]), y1 = c.Verts.Max(v => v[1]), z0 = c.Verts.Min(v => v[2]), z1 = c.Verts.Max(v => v[2]);
+            // the model is placed at Anchor (its y is the ground height, see Spots); its points are relative to that
+            o.Add(new[] { c.Anchor[0] + (x0 + x1) / 2, c.Anchor[1] + (y0 + y1) / 2, c.Anchor[2] + (z0 + z1) / 2 });
+            o.Add(new[] { c.Anchor[0], c.Anchor[1], c.Anchor[2] });
+        }
+        return o;
     }
 
     public static List<TileSpot> Spots(JObj m, Road road)

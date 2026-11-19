@@ -262,6 +262,14 @@ public static class GenActorPack
             Edit(o["lamps"], PlaceLamps(m.Lamps.Count > 0 ? m.Lamps : new List<LampSpot> { new() { X = sl[0], Y = sl[1] - ParkBelow, Z = sl[2] } }));
             Edit(o["audio"], PlaceAudio(m.Audio.Count > 0 ? m.Audio : new List<AudioSpot> { new() { X = sl[0], Y = sl[1] - ParkBelow, Z = sl[2] } }));
         }
+        // animated objects (docs\object_animation.md): the game's own movers, added to the tiles list
+        if (maps.Any(m => AnimExport.Any(m.Tiles)))
+        {
+            data = AnimExport.WithTypes(data, AnimExport.CityPack);
+            for (int i = 0; i < maps.Count; i++)
+                if (AnimExport.Any(maps[i].Tiles))
+                    data = AnimExport.Apply(data, objs[i]["tiles"], maps[i].Tiles, (uint)(maps[i].ListUids?.FirstOrDefault() ?? i), AnimExport.Notes.Add);
+        }
         SwapUids(data, TileList, TileListAs);
         SwapUids(data, TileList, LampListAs);
         var res = new List<Dictionary<string, uint>>();

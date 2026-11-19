@@ -114,7 +114,7 @@ public sealed partial class View3D
     {
         _f = f; D = d; G = g;
         g.MouseDown += Down; g.MouseMove += Move; g.MouseUp += Up; g.MouseWheel += Wheel;
-        _anim.Tick += (_, _) => { if (DriveT != null || CamAnim != null) G.Invalidate(); else _anim.Stop(); };
+        _anim.Tick += (_, _) => { if (DriveT != null || CamAnim != null || Playing) { AnimTick(); G.Invalidate(); } else _anim.Stop(); };
         Previews.Arrived += () => { if (RealShapes && Active && _f.IsHandleCreated) _f.BeginInvoke(ShapesArrived); };
         RealShapes = Setting("real_shapes");
     }
@@ -136,7 +136,7 @@ public sealed partial class View3D
         bool on = m is "3d" or "collision" or "land";
         Active = on;
         if (on) { if (SceneMode != m) _dirty = true; SceneMode = m; }
-        else { Oper = null; DriveT = null; CamAnim = null; }
+        else { Oper = null; DriveT = null; CamAnim = null; AnimStop(); }
         ShowPanels(on, m);
         if (on) { Dirty(); Ensure(); if (!_placed) { Reset(); _placed = true; } CamInfo(); }
         else { PanelShow(null); HoverHide(); }
@@ -281,7 +281,7 @@ public sealed partial class View3D
             else M.Box(pos, V(bx[1] - bx[0], Math.Max(bx[3] - bx[2], .05), bx[5] - bx[4]), turn, KindRgb.GetValueOrDefault(e.Str("kind") ?? "", V(.7, .7, .7)), lift: bx[2], origin: new[] { bx[0], bx[1], bx[4], bx[5] }, k: k);
             M.CurRot = new[] { 0.0, 0 };
             bool solid = m.Obj("edits")?.Obj(key)?.Truthy("solid") == true;
-            PickAdd(key, pos, turn, bx, k, scalable, rx, rz, $"{e.Str("name") ?? "?"}  ({UiText.KindText.GetValueOrDefault(e.Str("kind") ?? "", "")}, {e.Str("loc")} / {e.Str("cat")}){(solid ? "  - SOLID" : "")}");
+            PickAdd(key, pos, turn, bx, k, scalable, rx, rz, $"{e.Str("name") ?? "?"}  ({Lang.T(UiText.KindText.GetValueOrDefault(e.Str("kind") ?? "", ""))}, {Lang.T(e.Str("loc") ?? "")} / {Lang.T(e.Str("cat") ?? "")}){(solid ? "  - " + Lang.T("SOLID") : "")}");
             placedN++;
         }
         foreach (var rp in Terrain.Ramps(m)) PlacedBox(rp.Key, V(rp.X, g + rp.Y, rp.Z), rp.Turn, rp.K, rp.Rx, rp.Rz, true);   // ramps: clickable (drawn as ground models)
@@ -506,7 +506,7 @@ public sealed partial class View3D
         GL.glNewList(_list, GL.COMPILE);
         if (Shadows && SceneMode == "3d") { MakeShadows(M); Shown(M, M.Shadow, GL.TRIANGLES, M.V); M.ShadowTex.Draw(GL.TRIANGLES); }
         Shown(M, M.V, GL.TRIANGLES); Shown(M, M.L, GL.LINES);
-        if (_textured.Count > 0) DrawTextured(ViewHidden.Count == 0 ? _textured : _textured.Where(t => !ViewHidden.Contains(t.Owner ?? "")));
+        if (_textured.Count > 0) DrawTextured(ViewHidden.Count == 0 && _moving.Count == 0 ? _textured : _textured.Where(t => !Hid(t.Owner)));
         GL.glEndList();
     }
 
@@ -531,7 +531,7 @@ public sealed partial class View3D
         for (int t = 0; t + 2 < M.V.N; t += 3) Tri(M.Shadow, vv, 7 * t, 7 * (t + 1), 7 * (t + 2));
         foreach (var td in _textured)
         {
-            if (ViewHidden.Contains(td.Owner ?? "")) continue;
+            if (Hid(td.Owner)) continue;
             int nv = td.V.Length / 9;
             for (int t = 0; t + 2 < nv; t += 3) Tri(M.ShadowTex, td.V, 9 * t, 9 * (t + 1), 9 * (t + 2));
         }
@@ -542,8 +542,8 @@ public sealed partial class View3D
     /// a batch without what the eye icons hide
     void Shown(Mesh M, Batch b, uint mode, Batch? rangesOf = null)
     {
-        if (ViewHidden.Count == 0) { b.Draw(mode); return; }
-        var cut = ViewHidden.SelectMany(k => M.Ranges.GetValueOrDefault(k) ?? new()).Where(r => r.B == (rangesOf ?? b)).OrderBy(r => r.First).ToList();
+        if (ViewHidden.Count == 0 && _moving.Count == 0) { b.Draw(mode); return; }
+        var cut = ViewHidden.Concat(_moving).Distinct().SelectMany(k => M.Ranges.GetValueOrDefault(k) ?? new()).Where(r => r.B == (rangesOf ?? b)).OrderBy(r => r.First).ToList();
         int at = 0;
         foreach (var r in cut) { if (r.First > at) b.DrawRange(mode, at, r.First - at); at = Math.Max(at, r.First + r.N); }
         if (b.N > at) b.DrawRange(mode, at, b.N - at);
@@ -602,6 +602,7 @@ public sealed partial class View3D
         if (!_placed && Active) { Reset(); _placed = true; _camMap = CamKey; }
         else if (Active) CamForMap();
         Info(_sceneError != null ? Stats : RealShapes && Previews.Waiting ? "Reading the game's models... (once - then they are fast)" : $"{Stats}   ({Tris:N0} triangles)", _sceneError != null ? Theme.Bad : RealShapes && Previews.Waiting ? YellowInfo : null);
+        AnimAfterScene();
         if (PickOf(Sel) == null) Select(null, true); else Select(Sel, true);
     }
 
@@ -695,6 +696,7 @@ public sealed partial class View3D
         }
         OutlinerShow(p);
         PanelShow(p);
+        if (AnimTab) { AnimSettings(); _tl?.Invalidate(); }
         G.Invalidate();
     }
 
@@ -1095,6 +1097,7 @@ public sealed partial class View3D
             {
                 if (_hasList) GL.glCallList(_list);
                 GL.glDepthMask(0); Shown(M, M.T, GL.TRIANGLES); GL.glDepthMask(1);
+                AnimDraw(M);
             }
         }
         if (LandMode) LandDraw();
@@ -1116,6 +1119,7 @@ public sealed partial class View3D
         }
         ScatterDraw();
         WallsDraw();
+        AnimOverlays();
         var movable = sel is { Multi: true } ? Members().Select(q => q.Key).ToHashSet() : new HashSet<string>();
         foreach (var k in MultiSel)
         {
@@ -1188,6 +1192,7 @@ public sealed partial class View3D
         if (LandMode) { if (e.Button is MouseButtons.Left or MouseButtons.Right) LandDown(e, e.Button == MouseButtons.Right); return; }
         if (e.Button == MouseButtons.Right)
         {
+            if (AnimTab && (PathEditing != null || TrigPlacing != null)) { AnimKey(PathEditing != null ? Keys.Enter : Keys.Escape); return; }
             if (WallDrawing) WallDone();
             else if (ScatterDrawing) ScatterDrawToggle(false);
             else if (Placing != null) StopPlacing();
@@ -1212,6 +1217,7 @@ public sealed partial class View3D
 
     public void LeftPress(int x, int y, bool shift = false)
     {
+        if (AnimTab && Oper == null && AnimClick(x, y)) return;
         if (WallDrawing && SceneMode == "3d") { WallClick(x, y); return; }
         if (ScatterDrawing && SceneMode == "3d") { ScatterClick(x, y); return; }
         if (Placing != null && SceneMode == "3d" && Oper == null) { PlaceAt(x, y); return; }
@@ -1497,6 +1503,7 @@ public sealed partial class View3D
             if (vals.Count > 0) SetPoint(p.Point, vals); else Select(key);
             return;
         }
+        if (p != null && AnimRecord(p, op)) { Select(key, true); return; }
         var ed = EditOf(EditsCopy(), key);
         ed["dx"] = ed.Num("dx") + op.Delta[0]; ed["dy"] = ed.Num("dy") + op.Delta[1]; ed["dz"] = ed.Num("dz") + op.Delta[2];
         ed["turn"] = ed.Num("turn") + op.DTurn; ed["rx"] = ed.Num("rx") + op.DRot[0]; ed["rz"] = ed.Num("rz") + op.DRot[1];
@@ -1673,6 +1680,7 @@ public sealed partial class View3D
     void Move(object? _, MouseEventArgs e)
     {
         if (!Active) return;
+        if (AnimMove(e.X, e.Y)) return;
         if (_drag != null)
         {
             var (mode, px, py) = _drag.Value;
@@ -1732,6 +1740,7 @@ public sealed partial class View3D
     {
         if (!Active) return;
         _drag = null;
+        if (AnimUp()) return;
         if (LandMode) { LandUp(); return; }
         if (e.Button == MouseButtons.Left && Oper is { Drag: true }) ConfirmOp();
     }
@@ -1760,6 +1769,7 @@ public sealed partial class View3D
 
     public bool Key(Keys key, bool ctrl, bool shift, bool alt)
     {
+        if (!ctrl && !alt && AnimKey(key)) return true;
         if (alt)
         {
             switch (key)

@@ -19,7 +19,7 @@ public sealed partial class View3D
 
     void Info(string t, Color? c = null) { if (_info != null) { _info.Text = t; _info.ForeColor = c ?? ColorTranslator.FromHtml("#9aa8b8"); } }
     void SelText(string t) => _selBar.Text = t;
-    void SelBar(bool on, string t) { if (_selFrame == null) return; _selFrame.Visible = on && Active; _selBar.Text = t; }
+    void SelBar(bool on, string t) { if (_selFrame == null) return; _selFrame.Visible = on && Active && Sub != "anim"; _selBar.Text = t; }
     void SoloButton(bool on) { _soloBtn.Text = on ? "◎ Show all (/)" : "◎ Solo (/)"; _soloBtn.BackColor = ColorTranslator.FromHtml(on ? "#c08a1a" : "#3a3428"); }
     void GizmoButtons() { foreach (var (k, b) in _gizmoBtns) b.Checked = k == Gizmo; }
 
@@ -33,6 +33,7 @@ public sealed partial class View3D
         _info = new Label { AutoSize = true, ForeColor = ColorTranslator.FromHtml("#9aa8b8"), Margin = new Padding(8, 6, 4, 0), UseMnemonic = false };
         top.Controls.Add(_info);
         _topBar = top;
+        MakeAnimPanels(centre, top);
         var cb = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Pn, Padding = new Padding(2) };
         cb.Controls.Add(new Label { Text = "START CAMERA", AutoSize = true, ForeColor = ColorTranslator.FromHtml("#7fd0ff"), Font = Theme.Bold, Margin = new Padding(6, 6, 4, 0) });
         foreach (var (val, txt) in new[] { ("vista", "Fly-in"), ("pack", "Grid shot") })
@@ -73,16 +74,21 @@ public sealed partial class View3D
 
     bool _narrow, _three;
     /// a narrow window has no room for the object list
-    public void Narrow(bool on) { _narrow = on; if (_outl != null) { _outl.Visible = _three && !on; _outlSash.Visible = _three && !on; } }
+    public void Narrow(bool on) { _narrow = on; if (_outl != null) { bool anim = Sub == "anim"; _outl.Visible = _three && (anim || !on); _outlSash.Visible = _three && !on && !anim; } }
 
     void ShowPanels(bool on, string mode)
     {
         bool three = on && mode == "3d";
         _three = three;
-        _topBar.Visible = on; _camBar.Visible = three;
-        _lib.Visible = three; _libSash.Visible = three; _outl.Visible = three && !_narrow; _outlSash.Visible = three && !_narrow;
+        bool anim = three && Sub == "anim";
+        _topBar.Visible = on; _camBar.Visible = anim;
+        _subRow.Visible = on && mode == "3d";
+        AnimColumn(anim);
+        _lib.Visible = three && !anim; _libSash.Visible = three && !anim; _outl.Visible = three && (anim || !_narrow); _outlSash.Visible = three && !_narrow && !anim;
+        _animDock.Visible = anim; _animSash.Visible = anim;
         if (!on) { _selFrame.Visible = false; _panel.Visible = false; if (Sc != null) ScatterClose(); StopPlacing(); }
         if (!three) StopPlacing();
+        _animSash.SendToBack(); _animDock.SendToBack(); _animColSash.SendToBack(); _animCol.SendToBack();
         _selFrame.SendToBack(); _camBar.SendToBack(); _topBar.SendToBack();
     }
 
@@ -105,7 +111,7 @@ public sealed partial class View3D
         if (_panel == null) return;
         foreach (Control c in _panel.Controls.Cast<Control>().ToList()) c.Dispose();
         _panel.Controls.Clear(); _entries.Clear();
-        if (p == null || SceneMode != "3d") { _panel.Visible = false; return; }
+        if (p == null || SceneMode != "3d" || AnimTab) { _panel.Visible = false; return; }
         var t = new TableLayoutPanel { AutoSize = true, ColumnCount = 4, BackColor = Pn, Padding = new Padding(4) };
         t.Controls.Add(new Label { Text = p.Label, AutoSize = true, MaximumSize = new Size(320, 0), ForeColor = ColorTranslator.FromHtml("#f0e080"), Font = Theme.Bold, UseMnemonic = false }, 0, 0); t.SetColumnSpan(t.GetControlFromPosition(0, 0)!, 4);
         foreach (var (i, (s, c)) in new[] { (1, ("X", "#ff5a5a")), (2, ("Y", "#6ad04a")), (3, ("Z", "#5a8cff")) }) t.Controls.Add(new Label { Text = s, AutoSize = true, ForeColor = ColorTranslator.FromHtml(c), Font = Theme.Bold }, i, 1);
@@ -656,7 +662,7 @@ public sealed partial class View3D
             string iid = SoloOf(p), g = Group(p);
             if (!rows.TryGetValue(g, out var r)) rows[g] = r = new();
             if (r.ContainsKey(iid)) continue;
-            string shortL = p.Label.Split("  (")[0].Split(" - ")[0], text = $"{shortL}   [{iid}]";
+            string shortL = p.Label.Split("  (")[0].Split(" - ")[0], text = $"{(iid.StartsWith("obj:") && AnimOf(iid) != null ? "▶ " : "")}{shortL}   [{iid}]";
             if (find != "" && !text.ToLowerInvariant().Contains(find)) continue;
             r[iid] = text;
         }

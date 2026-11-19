@@ -633,6 +633,22 @@ switch (cmd)
         File.WriteAllBytes(args[4], o);
         break;
     }
+    case "kslf-uids":       // kslf-uids FILE [TYPE]: each object's uid and type (look only)
+    {
+        var A = new Kslf(File.ReadAllBytes(args[1]));
+        foreach (var (u, _, oi) in A.Refs)
+            if (oi != 0xFFFF && (args.Length < 3 || A.Types[A.Objects[oi].Blocks[0].Type].Name == args[2]))
+                Console.WriteLine($"{oi}\t{u:X8}\t{A.Types[A.Objects[oi].Blocks[0].Type].Name}");
+        break;
+    }
+    case "amaxrec":         // amaxrec AMAX.bin UID...: the records with these uids as JSON (look only)
+    {
+        var A = new Kslf(File.ReadAllBytes(args[1]));
+        foreach (var (u, _, oi) in A.Refs)
+            if (oi != 0xFFFF && args.Skip(2).Any(a => a.Equals(u.ToString("X8"), StringComparison.OrdinalIgnoreCase)))
+                Console.WriteLine($"{u:X8} {A.Types[A.Objects[oi].Blocks[0].Type].Name}: {Json.Dumps(ToJ(A.Top(A.Objects[oi])), 0)}");
+        break;
+    }
     case "pakput":          // pakput SRC DST NAME FILE: a copy of the pack SRC (as DST) with NAME replaced by FILE
     {
         var f = File.ReadAllBytes(args[4]);
@@ -887,10 +903,12 @@ switch (cmd)
         var md = CpModel.Read(pk.Read(args[2]) ?? throw new FileNotFoundException(args[2]));
         Console.WriteLine($"fx: {string.Join(", ", md.FxFiles)}");
         Console.WriteLine($"textures: {string.Join(", ", md.TexList.Select(t => $"{t.Name} {t.W}x{t.H} dxt{t.Dxt:X}"))}");
-        Console.WriteLine($"elements: {string.Join(", ", md.AllElements.Select(e => e.Name))}");
+        Console.WriteLine($"elements: {string.Join(", ", md.AllElements.Select(e => $"{e.Name} (parent {e.Parent}, m {string.Join(" ", e.M.Select(x => x.ToString("0.###")))})"))}");
         foreach (var v in md.VStreams) Console.WriteLine($"vstream: {v.Count} x {v.Bytes} bytes, def {string.Join(" ", v.Def.Select(q => $"{q.Type}/{q.Channel}/{q.Sub}"))}");
         foreach (var m in md.MeshInfos) Console.WriteLine($"mesh: material {m.Material}, def {m.Definition}, faces {string.Join(" ", m.Data1.Select(q => $"{q.FaceCount}@{q.FaceOff} v{q.VCount}@{q.VOff}"))}, vstreams {string.Join(",", m.VStream)}");
         Console.WriteLine($"bbox {string.Join(" ", md.BBox.Select(x => x.ToString("0.###")))}");
+        var raw = pk.Read(args[2])!;
+        Console.WriteLine($"length {raw.Length}; sections: {string.Join("  ", md.SecAt.Select(s => $"@{s}[{B.U32(raw, s)} {B.U32(raw, s + 4)} {B.U32(raw, s + 8)} {B.U32(raw, s + 12)}]"))}");
         break;
     }
     case "roadicons":       // roadicons PAK OUTDIR KIND...: each road pickup's icon pictures as PNG + their sizes (look only)
@@ -1041,6 +1059,380 @@ switch (cmd)
                 var slopes = sm.Keys.Keys.Select(q => { double h00 = sm.H(q.Item1, q.Item2), h10 = sm.H(q.Item1 + 1, q.Item2), h01 = sm.H(q.Item1, q.Item2 + 1); double gx = (h10 - h00) / 8, gz = (h01 - h00) / 8; return Math.Atan(Math.Sqrt(gx * gx + gz * gz)) * 180 / Math.PI; }).OrderBy(v => v).ToList();
                 if (slopes.Count > 0) Console.WriteLine($"  slope deg: median {slopes[slopes.Count / 2]:0}, 90% {slopes[(int)(slopes.Count * 0.9)]:0}, max {slopes[^1]:0}");
             }
+        break;
+    }
+    case "kslf-types":      // kslf-types FILE [REGEX]: every type of the file's schema: size, bases, fields (look only)
+    {
+        var k = new Kslf(File.ReadAllBytes(args[1]));
+        var rx = args.Length > 2 ? new System.Text.RegularExpressions.Regex(args[2], System.Text.RegularExpressions.RegexOptions.IgnoreCase) : null;
+        for (int t = 0; t < k.Types.Count; t++)
+        {
+            var ty = k.Types[t];
+            if (rx != null && !rx.IsMatch(ty.Name)) continue;
+            Console.WriteLine($"{ty.Name}  size={ty.Size} kind={ty.Kind}" + (ty.Bases.Count > 0 ? "  : " + string.Join(", ", ty.Bases.Select(b => b.Base >= 0 && b.Base < k.Types.Count ? k.Types[b.Base].Name : "#" + b.Base)) : ""));
+            foreach (var f in ty.Fields) Console.WriteLine($"    +{f.Offset} {f.Name}: {(f.Type >= 0 && f.Type < k.Types.Count ? k.Types[f.Type].Name : "#" + f.Type)} flags={f.Flags:X}");
+        }
+        break;
+    }
+    case "kslf-copytest":   // kslf-copytest DONOR OBJ TARGET OUT: object OBJ of DONOR copied into TARGET (types merged), read back + compared (test only)
+    {
+        var donor = File.ReadAllBytes(args[1]); var target = File.ReadAllBytes(args[3]);
+        var D = new Kslf(donor); int oi = int.Parse(args[2]);
+        var tree = KslfBuild.ReadTree(D, oi);
+        var typeNames = new HashSet<string>();
+        var seenT = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        void Types(object? v) { if (v is Dictionary<string, object?> d) { if (!seenT.Add(d)) return; if (d.GetValueOrDefault("_type") is string t) typeNames.Add(t); foreach (var x in d.Values) Types(x); } else if (v is System.Collections.IList l) foreach (var x in l) Types(x); }
+        Types(tree);
+        // the block types of the donor object too (array element types)
+        foreach (var b in D.Objects[oi].Blocks) typeNames.Add(b.Name);
+        var T0 = new Kslf(target);
+        var merged = KslfBuild.AddTypes(target, donor, typeNames);
+        var T1 = new Kslf(merged);
+        Console.WriteLine($"types {T0.Types.Count} -> {T1.Types.Count}");
+        // the target's own objects must read the same after the merge
+        int same = 0;
+        for (int i = 0; i < T0.Objects.Count; i++) if (Json.Dumps(ToJ(T0.Top(T0.Objects[i])), 0) == Json.Dumps(ToJ(T1.Top(T1.Objects[i])), 0)) same++;
+        Console.WriteLine($"target objects unchanged: {same} / {T0.Objects.Count}");
+        uint newUid = 0xF0A00001;
+        var outB = KslfBuild.AddObject(merged, tree, newUid);
+        var O = new Kslf(outB);
+        int ni = O.ObjOf(newUid);
+        string Flat(Dictionary<string, object?> t)
+        {
+            var ids = new Dictionary<object, int>(ReferenceEqualityComparer.Instance);
+            object? F(object? v) => v switch
+            {
+                Dictionary<string, object?> d when ids.TryGetValue(d, out int id) => $"<shared {id}>",
+                Dictionary<string, object?> d => ((Func<object?>)(() => { ids[d] = ids.Count; var o = new JObj(); foreach (var kv in d) o[kv.Key] = F(kv.Value); return o; }))(),
+                System.Collections.IList l => l.Cast<object?>().Select(F).ToList(),
+                _ => v,
+            };
+            return Json.Dumps(F(t), 0);
+        }
+        string a = Flat(tree), b2 = Flat(KslfBuild.ReadTree(O, ni));
+        Console.WriteLine($"copied object reads back the same: {a == b2} ({a.Length} chars)");
+        var src = D.Objects[oi]; var dst = O.Objects[ni];
+        Console.WriteLine($"data bytes: donor {src.DSize}, copy {dst.DSize}, identical: {D.Data.AsSpan(src.Data, src.DSize).SequenceEqual(O.Data.AsSpan(dst.Data, dst.DSize))}");
+        for (int i = 0; i < T0.Objects.Count; i++) if (Json.Dumps(ToJ(T0.Top(T0.Objects[i])), 0) != Json.Dumps(ToJ(O.Top(O.Objects[i < ni ? i : i + 1])), 0)) { Console.WriteLine($"  target object {i} changed after the copy"); }
+        File.WriteAllBytes(args[4], outB);
+        if (a != b2) { File.WriteAllText(args[4] + ".a.json", a); File.WriteAllText(args[4] + ".b.json", b2); }
+        break;
+    }
+    case "kslf-tree":       // kslf-tree FILE OBJ OUT.json: one object, full depth; an object met again is written as "<shared N>" (look only)
+    {
+        var k = new Kslf(File.ReadAllBytes(args[1]));
+        var tree = KslfBuild.ReadTree(k, int.Parse(args[2]));
+        var ids = new Dictionary<object, int>(ReferenceEqualityComparer.Instance);
+        object? F(object? v)
+        {
+            if (v is Dictionary<string, object?> d)
+            {
+                if (ids.TryGetValue(d, out int id)) return $"<shared {id}: {d.GetValueOrDefault("_type")} {d.GetValueOrDefault("Name")}>";
+                ids[d] = ids.Count; var o = new JObj { ["#"] = (long)ids[d] }; foreach (var kv in d) o[kv.Key] = F(kv.Value); return o;
+            }
+            if (v is System.Collections.IList l) return l.Cast<object?>().Select(F).ToList();
+            return v;
+        }
+        File.WriteAllText(args[3], Json.Dumps(F(tree), 1));
+        break;
+    }
+    case "bigtex":          // bigtex PAK MINSIZE: models whose every picture is at least MINSIZE, with their shader (look only)
+    {
+        using var P = new Pak(args[1]); int min = int.Parse(args[2]);
+        foreach (var e in P.Files.Where(f => f.Offset != Pak.NoData && f.Name.EndsWith(".model", StringComparison.OrdinalIgnoreCase)))
+        {
+            byte[]? d; ModelInfo mi;
+            try { d = P.Read(e); if (d == null) continue; mi = CpModel.Read(d); } catch (Exception) { continue; }
+            if (mi.TexList.Count == 0 || mi.MeshInfos.Count != 1 || mi.FxFiles.Count != 1) continue;
+            var diff = mi.TexList.FirstOrDefault(t => t.Name.EndsWith("_diff", StringComparison.OrdinalIgnoreCase));
+            if (diff == null || diff.W < min || diff.H < min) continue;
+            Console.WriteLine($"{e.Name}\t{mi.FxFiles[0]}\t{string.Join(", ", mi.TexList.Select(t => $"{t.Name} {t.W}x{t.H} m{t.Mips} {(t.Dxt == 0x31545844 ? "DXT1" : t.Dxt == 0x35545844 ? "DXT5" : t.Dxt.ToString("X"))}"))}\t{d.Length}");
+        }
+        break;
+    }
+    case "lightcheck":      // lightcheck GAME LOCNAME [POINTS]: per road model, how far its light spots are from the nearest level light point (game: none past 10 m), old vs new (look only)
+    {
+        Paths.Init(args[1]);
+        var w = World.AssignIds(World.Load());
+        var loc = w.Objs("locations").First(l => l.Str("name") == args[2]);
+        int n = args.Length > 3 ? int.Parse(args[3]) : 1132;
+        var roads = loc.Objs("maps").Select(Road.ForMap).ToList();
+        var must = loc.Objs("maps").SelectMany(mm => RoadMesh.LightSpots(mm, Road.ForMap(mm), Fe.GroundY)).ToList();
+        double H(double v) => (double)(Half)v;
+        foreach (var (name, pts) in new[] { ("old", LevelLight.RoadPoints(roads, n, Fe.GroundY)), ("new", LevelLight.RoadPoints(roads, n, Fe.GroundY, must)) })
+        {
+            var hp = pts.Select(p => new[] { H(p[0]), H(p[1]), H(p[2]) }).ToList();
+            var far = must.Select(q => hp.Min(p => Math.Sqrt((p[0] - q[0]) * (p[0] - q[0]) + (p[1] - q[1]) * (p[1] - q[1]) + (p[2] - q[2]) * (p[2] - q[2])))).ToList();
+            Console.WriteLine($"{name}: {pts.Count} points; road-model spots {must.Count}: past 10 m = {far.Count(d => d > 10)}, worst {far.Max():0.0} m");
+        }
+        break;
+    }
+    case "roadmesh":        // roadmesh GAME MAPNAME OUT.json: every road chunk's vertices (world x y z, nx ny nz, u v) and strip (look only)
+    {
+        Paths.Init(args[1]);
+        var w = World.AssignIds(World.Load());
+        var m = w.Objs("locations").SelectMany(l => l.Objs("maps")).First(x => x.Str("name") == args[2]);
+        var main = Road.ForMap(m); var o = new List<object?>();
+        foreach (var nc in RoadMesh.NetworkChunks(m, main))
+            foreach (var c in nc.Cs)
+                o.Add(new JObj { ["kind"] = nc.Kind, ["v"] = c.Verts.Select(v => (object?)new List<object?> { v[0] + c.Anchor[0], v[1], v[2] + c.Anchor[2], v[3], v[4], v[5], v[6], v[7] }).ToList(), ["s"] = c.Strip.Select(i => (object?)(long)i).ToList() });
+        File.WriteAllText(args[3], Json.Dumps(o, -1));
+        var pv = Fe.RoadProfile(main.Width); int nb0 = Fe.Bank.Length;
+        Console.WriteLine($"{o.Count} chunks, road width {main.Width}; asphalt v {pv[nb0 - 1].V.ToString(System.Globalization.CultureInfo.InvariantCulture)} {pv[nb0].V.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+        break;
+    }
+    case "carpic":          // carpic GAME MAPS CARNAME OUT.png: a custom car as the Custom car tab's preview draws it (look only)
+    {
+        Paths.Init(args[1], args[2]);
+        var w = World.Load();
+        var car = w.Objs("cars").First(c => c.Str("name") == args[3]);
+        var parts = CarUi.CarParts(car);
+        Console.WriteLine($"kinds: {string.Join(", ", parts.Kinds.Select(kv => $"{kv.Key} {kv.Value.Length / 9}"))}");
+        foreach (var (nm, yaw) in new[] { ("side", 1.3), ("front", 0.6) })
+        {
+            using var bm = CarUi.Picture(parts, new byte[] { 30, 155, 255 }, 640, yaw, true, -0.25);
+            bm.Save(args[4].Replace(".png", "_" + nm + ".png"));
+        }
+        break;
+    }
+    case "carmeshes":       // carmeshes GAME CAR: each mesh of a car model: element, kind, shader, vertex layout, room (look only)
+    {
+        Paths.Init(args[1]);
+        using var root = new Pak(Paths.RootOriginal);
+        var data = args[2].EndsWith(".model", StringComparison.OrdinalIgnoreCase) ? File.ReadAllBytes(args[2]) : CarModel.ModelBytes(root, CarModel.ModelPath(args[2]));
+        var M = CpModel.Read(data);
+        var (meshes, rooms) = CarGlb.RoomsOf(M);
+        foreach (var r in meshes)
+        {
+            string lay = r.S >= 0 ? string.Join(" ", M.VStreams[r.S].Def.Select(q => $"{q.Type}/{q.Channel}/{q.Sub}")) : "?";
+            Console.WriteLine($"{r.El,-34} {CarModel.Kind(r.El),-6} fx {M.FxFiles[r.M.Material],-28} v {r.M.Data1[0].VCount,5} f {r.M.Data1[0].FaceCount,5} lods {r.M.Data1.Count} stream {r.S} [{lay}]{(rooms.Any(q => q.M == r.M) ? "  ROOM" : "")}");
+        }
+        // the windscreen vs the stream-3 trim parts: vertex declaration, and the first points' uv + last 4 bytes
+        foreach (var r in meshes.Where(r => r.S == 3 && (r.El.StartsWith("e_window") || r.El is "e_exterior" or "e_interior")).OrderBy(r => r.El.StartsWith("e_window") ? 0 : 1).Take(4))
+        {
+            var vs = M.VStreams[r.S]; int stride = vs.Bytes, vb = r.M.VOffset[0] / stride + r.M.Data1[0].VOff;
+            var def = string.Join(" ", M.VertDefs[r.M.Definition].Select(d => $"{d.Item1}:{d.Item2}"));
+            var sb = new System.Text.StringBuilder();
+            for (int k = 0; k < Math.Min(3, r.M.Data1[0].VCount); k++)
+            {
+                int a = vs.Start + stride * (vb + k);
+                sb.Append($" [uv {(float)BitConverter.ToHalf(data, a + 12):0.###} {(float)BitConverter.ToHalf(data, a + 14):0.###} {(float)BitConverter.ToHalf(data, a + 16):0.###} {(float)BitConverter.ToHalf(data, a + 18):0.###} | {B.U32(data, a + stride - 4):X8}]");
+            }
+            Console.WriteLine($"{r.El,-16} mat {r.M.Material} def {r.M.Definition} ({def}) stride {stride}:{sb}");
+        }
+        foreach (var (mi, sh, pn, at) in M.ShaderParams.Where(q => args.Length > 3 || q.Shader.Contains("lass", StringComparison.OrdinalIgnoreCase)))
+            Console.WriteLine($"material {mi} {sh}: {pn} [{B.U32(data, at):X8} {B.U32(data, at + 4):X8}] = {B.F32(data, at)} {B.F32(data, at + 4)}");
+        foreach (var e in M.AllElements.Where(e => CarModel.Kind(e.Name) is "glass" || e.Name.ToLowerInvariant().Contains("cover") || e.Name.ToLowerInvariant() is "e_exterior" or "e_interior"))
+            Console.WriteLine($"element {e.Name,-30} model {e.ModelIndex} parent {e.Parent,3} move {e.M[9]:0.###} {e.M[10]:0.###} {e.M[11]:0.###}  box {string.Join(" ", e.Box.Select(x => x.ToString("0.##")))}");
+        break;
+    }
+    case "filtertest":      // filtertest FAKEGAME: the texture filter fix on / off in a fake game folder (test only)
+    {
+        Paths.Init(args[1]);
+        Directory.CreateDirectory(Path.Combine(args[1], "amax", "dlls"));
+        string dll = Path.Combine(args[1], "amax", "dlls", "aniso_fix.dll"), ini = Path.Combine(args[1], "amax", "dlls", "aniso_fix", "aniso_fix.ini");
+        string Ini() => File.Exists(ini) ? System.Text.RegularExpressions.Regex.Match(File.ReadAllText(ini), @"Anisotropy=\d+").Value : "no ini";
+        foreach (bool? on in new bool?[] { null, false, true, true })
+        {
+            var t = GameTweaks.Load(); if (on == null) t.Remove("sharp_far"); else t["sharp_far"] = on.Value; GameTweaks.Save(t);
+            var r = Setup.RefreshFilter();
+            Console.WriteLine($"setting {(on == null ? "default" : on.Value ? "on" : "off")}: {r ?? "-"}; dll {(File.Exists(dll) ? new FileInfo(dll).Length + " bytes" : "none")}; {Ini()}");
+        }
+        break;
+    }
+    case "roadnormals":     // roadnormals GAME MAPNAME: per road chunk, the asphalt's vertex normals vs its real slope (look only)
+    {
+        Paths.Init(args[1]);
+        var w = World.AssignIds(World.Load());
+        var m = w.Objs("locations").SelectMany(l => l.Objs("maps")).First(x => x.Str("name") == args[2]);
+        var main = Road.ForMap(m);
+        foreach (var nc in RoadMesh.NetworkChunks(m, main))
+        {
+            if (nc.Kind == "divider") continue;
+            int P = 2 * Fe.Bank.Length, mid = P / 2 - 1;
+            foreach (var c in nc.Cs)
+            {
+                int N = c.Verts.Count / P; double worst = 1, minY = 1, tiltMax = 0;
+                for (int j = 0; j + 1 < N; j++)
+                    foreach (int p in new[] { mid, mid + 1 })
+                    {
+                        var a = c.Verts[p * N + j]; var b = c.Verts[p * N + j + 1]; var o = c.Verts[(p == mid ? mid + 1 : mid) * N + j];
+                        double[] lng = { b[0] - a[0], b[1] - a[1], b[2] - a[2] }, acr = { o[0] - a[0], o[1] - a[1], o[2] - a[2] };
+                        double nx = lng[1] * acr[2] - lng[2] * acr[1], ny = lng[2] * acr[0] - lng[0] * acr[2], nz = lng[0] * acr[1] - lng[1] * acr[0];
+                        double ln = Math.Sqrt(nx * nx + ny * ny + nz * nz); if (ln < 1e-9) continue;
+                        nx /= ln; ny /= ln; nz /= ln; if (ny < 0) { nx = -nx; ny = -ny; nz = -nz; }
+                        double dot = nx * a[3] + ny * a[4] + nz * a[5];
+                        worst = Math.Min(worst, dot); minY = Math.Min(minY, a[4]); tiltMax = Math.Max(tiltMax, Math.Acos(Math.Min(1, ny)) * 180 / Math.PI);
+                    }
+                Console.WriteLine($"{nc.Kind,-6} w{nc.Width,4:0} chunk {c.First,4}-{c.Last,-4} slope across up to {tiltMax,5:0.0} deg  vertex normal Y min {minY:0.000}  agree with slope (dot) min {worst:0.000}");
+            }
+        }
+        break;
+    }
+    case "roadpic":         // roadpic GAME OUTDIR [WIDTH]: the road picture (plain + varied asphalt) and its material as PNGs (look only)
+    {
+        // roadpic GAME OUTDIR WIDTH PICTURE: also "own" = that picture as the road (copied into OUTDIR\maps\road_pictures)
+        Paths.Init(args[1], Path.Combine(args[2], "maps"));
+        double wd = args.Length > 3 ? double.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture) : 30;
+        var plain = new JObj(); var varied = new JObj { ["surface"] = new JObj { ["variety"] = true } };
+        var cases = new List<(string, JObj, int)> { ("plain", plain, 0), ("varied0", varied, 0), ("varied1", varied, 1),
+            ("varied100", new JObj { ["surface"] = new JObj { ["variety"] = true, ["variety_amt"] = 100.0 } }, 0), ("varied20", new JObj { ["surface"] = new JObj { ["variety"] = true, ["variety_amt"] = 20.0 } }, 0), ("varied300", new JObj { ["surface"] = new JObj { ["variety"] = true, ["variety_amt"] = 300.0 } }, 0) };
+        if (args.Length > 4)
+        {
+            string nm0 = Packs.Place(Surface.RoadPicFolder, Path.GetFileName(args[4]), File.ReadAllBytes(args[4]));
+            cases.Add(("own", new JObj { ["surface"] = new JObj { ["road_pic"] = nm0 } }, 0));
+            cases.Add(("own_nolines", new JObj { ["surface"] = new JObj { ["road_pic"] = nm0, ["lines"] = false, ["road_pic_m"] = 7.0 } }, 0));
+        }
+        foreach (var (nm, mm, v) in cases)
+        {
+            int W = RoadMesh.DiffW, H = RoadMesh.DiffH;
+            var t0 = System.Diagnostics.Stopwatch.StartNew();
+            var (d, mt) = Surface.RoadTexture(W, H, wd, mm, v);
+            Console.WriteLine($"{nm}: {W}x{H} in {t0.ElapsedMilliseconds} ms");
+            Previews.SavePng(new Pic(W, H, d).ResizeLanczos(256, 512), Path.Combine(args[2], $"road_{nm}.png"));
+            // a 512 x 512 piece at full size around the middle line (about 7 m x 9-15 m)
+            var crop = new byte[512 * 512 * 3];
+            for (int y = 0; y < 512; y++) Buffer.BlockCopy(d, 3 * ((H / 2 - 256 + y) * W), crop, 3 * y * 512, 512 * 3);
+            Previews.SavePng(new Pic(512, 512, crop), Path.Combine(args[2], $"road_{nm}_full.png"));
+            if (nm == "plain") Previews.SavePng(new Pic(W / 2, H / 2, Surface.RoadTexture(W / 2, H / 2, wd, mm, v).Mat).ResizeLanczos(256, 512), Path.Combine(args[2], "road_mat.png"));
+        }
+        {
+            // far down the road: the 5th small copy (1/32), normal vs keeping the lines, stretched back to 256 x 512
+            var (pd, _, pp) = Surface.RoadTextureP(RoadMesh.DiffW, RoadMesh.DiffH, wd, plain, 0);
+            foreach (var (nm, k) in new[] { ("mip5_normal", (bool[]?)null), ("mip5_keep", pp) })
+            {
+                var (mp, mw2, mh2) = CpModel.MipPreview(pd, k, RoadMesh.DiffW, RoadMesh.DiffH, 5);
+                Previews.SavePng(new Pic(mw2, mh2, mp).ResizeLanczos(256, 512), Path.Combine(args[2], $"road_{nm}.png"));
+            }
+        }
+        var tg = GameTex.Get("tarmacplain02_diff", 512);
+        if (tg != null) { double s = 0; for (int i = 0; i < tg.Px.Length; i++) s += tg.Px[i]; Console.WriteLine($"tarmacplain02 mean {s / tg.Px.Length:0.0}"); }
+        break;
+    }
+    case "roadline":        // roadline GAME MAPS OUT.json: every map's road centre every 10 m (s, x, z, heading, width) (look only)
+    {
+        Paths.Init(args[1], args[2]);
+        var w = World.Load(); var o = new JObj();
+        foreach (var loc in w.Objs("locations"))
+            foreach (var m in loc.Objs("maps"))
+            {
+                var r = Road.ForMap(m); var pts = new List<object?>();
+                for (double s = 0; s < r.Length; s += 10) { var (x, z, a) = r.At(s); pts.Add(new List<object?> { Math.Round(s, 1), Math.Round(x, 2), Math.Round(z, 2), Math.Round(a, 4), Math.Round(r.WAt(s), 1) }); }
+                o[m.Str("name")!] = new JObj { ["closed"] = r.Closed, ["length"] = Math.Round(r.Length, 1), ["points"] = pts };
+            }
+        File.WriteAllText(args[3], Json.Dumps(o, 0));
+        break;
+    }
+    case "kslf-blocks":     // kslf-blocks FILE NAME|INDEX: one object's blocks (type, count, kind, size) and the names of its actors (look only)
+    {
+        var k = new Kslf(File.ReadAllBytes(args[1]));
+        int oi = int.TryParse(args[2], out int n) ? n : k.Objects.FindIndex(o => k.Name(o) == args[2]);
+        var o = k.Objects[oi];
+        Console.WriteLine($"object {oi} id={o.Id} data={o.DSize} pool={o.PoolSize} name={k.Name(o)}");
+        for (int i = 0; i < o.Blocks.Count; i++) { var b = o.Blocks[i]; Console.WriteLine($"  [{i}] {b.Name} x{b.Count} kind={b.Kind} size={b.Size} at=+{b.Offset - o.Data}"); }
+        break;
+    }
+    case "orig-maps":       // orig-maps GAME: the game's own cities + routes, their actor lists, .aid and level folder (look only)
+    {
+        Paths.Init(args[1]);
+        var cities = OrigMap.Cities(File.ReadAllBytes(Path.Combine(Paths.Unpacked, "xt", "amax.bin")));
+        using var P = new Pak(File.Exists(Paths.GamedataOriginal) ? Paths.GamedataOriginal : Path.Combine(Paths.Cache, "gamedata.pak"));
+        foreach (var c in cities)
+        {
+            var ap = P.Find(OrigMap.ActorPackName(c.Folder));
+            string lv = Path.Combine(Path.Combine(args[1], "levels"), c.Folder);
+            long lvSize = Directory.Exists(lv) ? Directory.GetFiles(lv).Sum(f => new FileInfo(f).Length) : -1;
+            Console.WriteLine($"{c.Name}  folder={c.Folder}  uid={c.Uid:X8}{(c.DevOnly ? "  DEV" : "")}  actorpack={(ap == null ? "-" : ap.Size.ToString())}  level={(lvSize < 0 ? "-" : (lvSize >> 20) + " MB")}  lists={c.Lists.Count}/{c.MpLists.Count}");
+            foreach (var r in c.Routes)
+            {
+                var ai = P.Find(OrigMap.AidName(c.Folder, r.Name));
+                Console.WriteLine($"    {r.Name}  #{r.Number}  uid={r.Uid:X8}  aid={(ai == null ? "-" : ai.Size.ToString())}  lists={r.Lists.Count}/{r.MpLists.Count}");
+            }
+        }
+        break;
+    }
+    case "orig-map":        // orig-map GAME FOLDER OUTDIR: one game city: every placed object (by list + type), each route's lines, OUTDIR\FOLDER.json + FOLDER.png (look only)
+    {
+        Paths.Init(args[1]);
+        string folder = args[2].ToLowerInvariant(), outDir = args[3];
+        Directory.CreateDirectory(outDir);
+        var amax = File.ReadAllBytes(Path.Combine(Paths.Unpacked, "xt", "amax.bin"));
+        var city = OrigMap.Cities(amax).First(c => c.Folder == folder);
+        var defs = OrigMap.Defs(amax);
+        using var P = new Pak(File.Exists(Paths.GamedataOriginal) ? Paths.GamedataOriginal : Path.Combine(Paths.Cache, "gamedata.pak"));
+        var lists = OrigMap.Actors(P.Read(OrigMap.ActorPackName(folder))!, defs);
+        string Who(uint u)
+        {
+            var w = new List<string>();
+            if (city.Lists.Contains(u)) w.Add("city"); if (city.MpLists.Contains(u)) w.Add("city-mp");
+            foreach (var r in city.Routes) { if (r.Lists.Contains(u)) w.Add($"r{r.Number}"); if (r.MpLists.Contains(u)) w.Add($"r{r.Number}-mp"); }
+            return w.Count == 0 ? "(unused)" : string.Join(",", w);
+        }
+        int total = 0;
+        foreach (var L in lists)
+        {
+            total += L.Actors.Count;
+            Console.WriteLine($"list {L.Uid:X8} {L.Name ?? ""}  [{Who(L.Uid)}]  {L.Actors.Count} actors: " + string.Join(", ", L.Actors.GroupBy(a => a.Type).OrderByDescending(g => g.Count()).Select(g => $"{g.Key} {g.Count()}")));
+        }
+        var withModel = lists.SelectMany(l => l.Actors).Where(a => a.Model != null).ToList();
+        Console.WriteLine($"{total} placed actors, {withModel.Count} with a model ({withModel.Select(a => a.Model!.ToLowerInvariant()).Distinct().Count()} different models)");
+        var lines = new JObj();
+        foreach (var r in city.Routes)
+        {
+            var aid = P.Read(OrigMap.AidName(folder, r.Name));
+            if (aid == null) continue;
+            var ls = OrigMap.Lines(aid);
+            Console.WriteLine($"{r.Name}: " + string.Join(", ", ls.Select(l => $"{l.Name} {l.Points.Count}")));
+            lines[r.Name] = ls.Select(l => (object?)new JObj { ["name"] = l.Name, ["flags"] = (long)l.Flags, ["points"] = l.Points.Select(p => (object?)p.Select(v => (object?)Math.Round((double)v, 2)).ToList()).ToList() }).ToList();
+        }
+        var j = new JObj
+        {
+            ["city"] = city.Name, ["folder"] = folder, ["routes"] = city.Routes.Select(r => (object?)new JObj { ["name"] = r.Name, ["number"] = (long)r.Number, ["lists"] = r.Lists.Select(u => (object?)u.ToString("X8")).ToList(), ["mp_lists"] = r.MpLists.Select(u => (object?)u.ToString("X8")).ToList() }).ToList(),
+            ["lists"] = lists.Select(L => (object?)new JObj
+            {
+                ["uid"] = L.Uid.ToString("X8"), ["used_by"] = Who(L.Uid),
+                ["actors"] = L.Actors.Select(a => (object?)new JObj { ["type"] = a.Type, ["name"] = a.Name, ["def"] = a.DefUid?.ToString("X8"), ["model"] = a.Model, ["pickup"] = a.Pickup, ["at"] = (long)a.MatrixAt, ["m"] = a.Matrix.Select(v => (object?)Math.Round((double)v, 4)).ToList() }).ToList(),
+            }).ToList(),
+            ["lines"] = lines,
+        };
+        File.WriteAllText(Path.Combine(outDir, folder + ".json"), Json.Dumps(j, 0));
+        // top view: route lines (one colour per route) + objects (dots: grey = with a model, orange = pick-ups, green = start grid)
+        var allPts = lines.Values.Cast<List<object?>>().SelectMany(l => l.Cast<JObj>()).SelectMany(l => ((List<object?>)l["points"]!).Cast<List<object?>>()).Select(p => ((double)p[0]!, (double)p[2]!))
+            .Concat(lists.SelectMany(l => l.Actors).Where(a => Math.Abs(a.X) < 2e4 && Math.Abs(a.Z) < 2e4).Select(a => (a.X, a.Z))).ToList();
+        double x0 = allPts.Min(p => p.Item1), x1 = allPts.Max(p => p.Item1), z0 = allPts.Min(p => p.Item2), z1 = allPts.Max(p => p.Item2);
+        int W = 1400; double sc = (W - 40) / Math.Max(x1 - x0, z1 - z0); int H = (int)((z1 - z0) * sc) + 40;
+        using var bm = new System.Drawing.Bitmap(W, H);
+        using (var g = System.Drawing.Graphics.FromImage(bm))
+        {
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias; g.Clear(System.Drawing.Color.FromArgb(24, 26, 30));
+            System.Drawing.PointF Pt(double x, double z) => new((float)(20 + (x - x0) * sc), (float)(20 + (z1 - z) * sc));
+            foreach (var a in lists.SelectMany(l => l.Actors))
+            {
+                var c = a.Type is "PickupPosition" or "FanDemandPosition" ? System.Drawing.Color.Orange : a.Type == "StartPosition" ? System.Drawing.Color.Lime : a.Model != null ? System.Drawing.Color.FromArgb(150, 150, 160) : System.Drawing.Color.FromArgb(70, 90, 120);
+                var p = Pt(a.X, a.Z); using var br = new System.Drawing.SolidBrush(c); g.FillRectangle(br, p.X - 1.5f, p.Y - 1.5f, 3, 3);
+            }
+            var cols = new[] { System.Drawing.Color.Red, System.Drawing.Color.Cyan, System.Drawing.Color.Yellow, System.Drawing.Color.Magenta, System.Drawing.Color.White, System.Drawing.Color.DeepSkyBlue, System.Drawing.Color.Pink };
+            int ci = 0;
+            foreach (var kv in lines)
+            {
+                var col = cols[ci++ % cols.Length];
+                using var pen = new System.Drawing.Pen(col, 2.5f); using var thin = new System.Drawing.Pen(System.Drawing.Color.FromArgb(110, col), 1);
+                foreach (JObj l in (List<object?>)kv.Value!)
+                {
+                    string ln = (string)l["name"]!;
+                    if (ln.Equals("Logic", StringComparison.OrdinalIgnoreCase)) continue;
+                    var pts = ((List<object?>)l["points"]!).Cast<List<object?>>().Select(p => Pt((double)p[0]!, (double)p[2]!)).ToArray();
+                    if (pts.Length > 1) g.DrawLines(ln.StartsWith("Main", StringComparison.OrdinalIgnoreCase) ? pen : thin, pts);
+                }
+                foreach (JObj l in (List<object?>)kv.Value!)
+                {
+                    if (!((string)l["name"]!).StartsWith("Main", StringComparison.OrdinalIgnoreCase)) continue;
+                    var pts = ((List<object?>)l["points"]!).Cast<List<object?>>().Select(p => Pt((double)p[0]!, (double)p[2]!)).ToArray();
+                    if (pts.Length > 1) g.DrawLines(pen, pts);
+                }
+            }
+        }
+        bm.Save(Path.Combine(outDir, folder + ".png"), System.Drawing.Imaging.ImageFormat.Png);
         break;
     }
     default:

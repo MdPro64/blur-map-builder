@@ -134,6 +134,9 @@ public sealed class CarPanel : Panel
         bRow.Controls.Add(exp);
         bRow.Controls.Add(Look.Tip(_bodyBtn, "Back to the game car's own body (your imported .glb is not used)"));
         _glbNote.Margin = new Padding(4, 8, 0, 0); bRow.Controls.Add(_glbNote);
+        _clearGlass = Theme.Check("See-through glass", true, v => Set("clear_glass", v));
+        _clearGlass.Margin = new Padding(14, 7, 0, 0);
+        bRow.Controls.Add(Look.Tip(_clearGlass, "On: the body's glass (see-through or named glass in the .glb) is clear, you see inside the car. Off: the game's own dark windows - for a body without an inside"));
         // the fit of an imported body: steppers that show their numbers
         _fitBox.Controls.Add(_roomLabel);
         _roomLabel.Margin = new Padding(0, 6, 0, 6);
@@ -347,6 +350,7 @@ public sealed class CarPanel : Panel
     readonly Dictionary<string, Label> _fitVals = new();
     readonly Label _line = new() { AutoSize = false, Height = 1, Width = 600, BackColor = Theme.Glass, Margin = new Padding(0, 6, 0, 8) };
     readonly Label _glbNote = new() { AutoSize = true, ForeColor = Theme.Good, UseMnemonic = false };
+    CheckBox _clearGlass = null!;
     readonly Label _paintNote = new() { AutoSize = true, ForeColor = ColorTranslator.FromHtml("#9aa8b8") };
     Button _turnBtn = null!;
     static readonly Color Muted = ColorTranslator.FromHtml("#9aa8b8");
@@ -671,7 +675,7 @@ public sealed class CarPanel : Panel
         var c = Car();
         if (c == null || _loading || Equals(c[key], value)) return;
         Edit(q => q[key] = value);
-        if (key is "wheels" or "body_glb" or "glb_fit" or "mini_icon" or "logo" or "exhaust" or "replace") Load2();
+        if (key is "wheels" or "body_glb" or "glb_fit" or "mini_icon" or "logo" or "exhaust" or "replace" or "clear_glass") Load2();
         if (key == "name") { _loading = true; _list.Items[Sel] = Label(Car()!); _loading = false; }
     }
 
@@ -806,6 +810,7 @@ public sealed class CarPanel : Panel
         _paintNote.Text = rep ? "a replaced car keeps the game car's paints (pick them in game)" : glb ? "an imported body keeps its own colours (from its .glb)" : "";
         _fitBox.Visible = glb;
         _glbNote.Text = glb ? "✔ your body: " + c.Str("body_glb") : "";
+        _clearGlass.Visible = glb; _clearGlass.Checked = CarModel.ClearGlass(c);
         _base.Enabled = !glb;
         if (glb)
         {
@@ -1126,7 +1131,7 @@ public sealed class CarPanel : Panel
         if (c == null || !Visible) { _view.Image = null; return; }
         int w = _view.Width, h = _view.Height;
         if (w < 50 || h < 50) return;
-        string key = Json.Dumps(new List<object?> { c["base"], c["wheels"], c["body_glb"], c["glb_fit"] }, -1);
+        string key = Json.Dumps(new List<object?> { c["base"], c["wheels"], c["body_glb"], c["glb_fit"], c["clear_glass"] }, -1);
         var col = ColorTranslator.FromHtml((string)c.Arr("paint")![0]!);
         byte[] paint = { col.R, col.G, col.B };
         int job = ++_job, size = Math.Max(60, Math.Min(w, h)); double yaw = _yaw, pitch = _pitch, zoom = _zoom, panX = _panX, panY = _panY;

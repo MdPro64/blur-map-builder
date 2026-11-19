@@ -27,6 +27,9 @@ public static class GameTweaks
     /// the power-up icons also in normal Blur (its cache root.pak; only on this PC - other players see the game's icons)
     public static bool IconsNormal(JObj t) => t.Truthy("icons_normal");
 
+    /// sharp textures far away (anisotropic filter DLL in amax\dlls, Setup.RefreshFilter): on unless turned off
+    public static bool SharpFar(JObj t) => !t.ContainsKey("sharp_far") || t.Truthy("sharp_far");
+
     /// AI racers per player (19 = every free place can be AI); 0 = the game's own (6)
     public static int AiPerPlayer(JObj t) => t.Truthy("more_ai") ? Math.Clamp((int)t.Int("ai_per_player", MaxRacers - 1), 1, MaxRacers - 1) : 0;
 

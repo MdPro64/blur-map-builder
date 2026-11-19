@@ -382,8 +382,18 @@ public static class LevelLight
         return (o, o + 16, (int)B.U32(d, o + 8));
     }
 
-    static List<double[]> RoadPoints(List<Road> roads, int n, double gy)
+    public static List<double[]> RoadPoints(List<Road> roads, int n, double gy, List<double[]>? must = null)
     {
+        // the spots the road models light from come first (see RoadMesh.LightSpots); the rest go along the roads
+        var first = new List<double[]>();
+        foreach (var q in must ?? new())
+            if (first.Count < n / 2 && !first.Any(f => Math.Abs(f[0] - q[0]) + Math.Abs(f[1] - q[1]) + Math.Abs(f[2] - q[2]) < 1.0)) first.Add(q);
+        if (first.Count > 0)
+        {
+            var rest = RoadPoints(roads, n - first.Count, gy);
+            first.AddRange(rest);
+            return first;
+        }
         double total = roads.Sum(r => r.Length), perSpot = 3 + 2 / 3.0, step = Math.Max(total * perSpot / n, 2.0);
         var pts = new List<double[]>();
         foreach (var r in roads)
@@ -412,7 +422,7 @@ public static class LevelLight
         return pts;
     }
 
-    public static byte[]? Write(byte[] d, JObj values, List<Road> roads, double gy)
+    public static byte[]? Write(byte[] d, JObj values, List<Road> roads, double gy, List<double[]>? must = null)
     {
         var col = values.Arr("object_light")?.Select(Json.D).ToArray() ?? new[] { 1.0, 0.97, 0.92, 0.0 };
         double up = values.Arr("object_light_up")?.Select(Json.D).First() ?? 0.6;
@@ -421,7 +431,7 @@ public static class LevelLight
         for (int c = 0; c < 3; c++) { double s = col[3] * col[c]; sh.AddRange(new[] { 0.075 * up * s, 0.8 * up * s, -0.075 * up * s, s }); }
         var (_, b, size) = FindChunk(d, "LSTree");
         int end = b + size, nPlanes = (int)B.U32(d, b), p = b + 4 + 16 * nPlanes, nPts = (int)B.U32(d, p), q = p + 4 + 10 * nPts, nNodes = (int)B.U32(d, q);
-        var pts = RoadPoints(roads, nPts, gy);
+        var pts = RoadPoints(roads, nPts, gy, must);
         var o = (byte[])d.Clone();
         var (_, sb, _) = FindChunk(d, "LSData");
         int nSamples = (int)B.U32(d, sb);

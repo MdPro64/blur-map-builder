@@ -566,8 +566,13 @@ public static class Build
 
     static List<KeyValuePair<string, byte[]>> RoadChunkFiles(byte[] bas, JObj wld, Action<string> log)
     {
-        var tex = CpModel.Parse(bas).Textures;
+        // the road pieces get big pictures (1024 along x 2048 across, material 512 x 1024): the base model's 256 x 256
+        // gave about 7 pixels a metre across the road. Painted surfaces keep the base model's small ones.
+        var road = CpModel.ResizeTexture(CpModel.ResizeTexture(bas, RoadMesh.Diff, RoadMesh.DiffW, RoadMesh.DiffH), RoadMesh.Mat, RoadMesh.DiffW / 2, RoadMesh.DiffH / 2);
+        var tex = CpModel.Parse(road).Textures;
         var (_, dw, dh, dm) = tex[RoadMesh.Diff]; var (_, mw, mh, mm) = tex[RoadMesh.Mat];
+        var stex = CpModel.Parse(bas).Textures;
+        var (_, sdw, sdh, sdm) = stex[RoadMesh.Diff]; var (_, smw, smh, smm) = stex[RoadMesh.Mat];
         var files = new List<KeyValuePair<string, byte[]>>();
         foreach (var loc in wld.Objs("locations"))
             foreach (var m in loc.Objs("maps"))
@@ -584,14 +589,15 @@ public static class Build
                     var encs = new List<Dictionary<string, byte[]>>();
                     for (int v = 0; v < variants; v++)
                     {
-                        var pd = nc.Kind == "divider" ? Surface.RoadTextureProfile(dw, dh, nc.Width) : Surface.RoadTexture(dw, dh, nc.Width, m, v);
-                        var pm = dw == mw && dh == mh ? pd : nc.Kind == "divider" ? Surface.RoadTextureProfile(mw, mh, nc.Width) : Surface.RoadTexture(mw, mh, nc.Width, m, v);
-                        encs.Add(new() { [RoadMesh.Diff] = CpModel.EncodeMips(pd.Diff, dw, dh, dm), [RoadMesh.Mat] = CpModel.EncodeMips(pm.Mat, mw, mh, mm) });
+                        // the picture's small copies keep the lines (far down the road they averaged away)
+                        var pd = nc.Kind == "divider" ? Surface.RoadTextureP(dw, dh, nc.Width, new JObj(), 0) : Surface.RoadTextureP(dw, dh, nc.Width, m, v);
+                        var pm = nc.Kind == "divider" ? Surface.RoadTextureProfile(mw, mh, nc.Width) : Surface.RoadTexture(mw, mh, nc.Width, m, v);
+                        encs.Add(new() { [RoadMesh.Diff] = CpModel.EncodeMipsKeep(pd.Diff, pd.Paint, dw, dh, dm), [RoadMesh.Mat] = CpModel.EncodeMips(pm.Mat, mw, mh, mm) });
                     }
                     for (int ci = 0; ci < nc.Cs.Count; ci++)
                     {
                         var c = nc.Cs[ci]; int var = ci % encs.Count, rr = ri;
-                        jobs.Add((RoadMesh.ModelFile(m, k), () => CpModel.NewTextureIds(CpModel.MakeMesh(bas, c.Verts, c.Strip, encs[var]), RoadMesh.TextureSalt(m, rr) ^ ((uint)var << 20))));
+                        jobs.Add((RoadMesh.ModelFile(m, k), () => CpModel.NewTextureIds(CpModel.MakeMesh(road, c.Verts, c.Strip, encs[var]), RoadMesh.TextureSalt(m, rr) ^ ((uint)var << 20))));
                         k++;
                     }
                 }
@@ -601,8 +607,10 @@ public static class Build
                 {
                     if (!encOf.ContainsKey(c.Key))
                     {
-                        var pd = Surface.MaterialTexture(c.Key, dw, dh); var pm = dw == mw && dh == mh ? pd : Surface.MaterialTexture(c.Key, mw, mh);
-                        encOf[c.Key] = new() { [RoadMesh.Diff] = CpModel.EncodeMips(pd.Diff, dw, dh, dm), [RoadMesh.Mat] = CpModel.EncodeMips(pm.Mat, mw, mh, mm) };
+                        // the repair patches use the user's own picture when Varied asphalt has one
+                        var pd = Surface.PatchTexture(m, c.Key, sdw, sdh) ?? Surface.MaterialTexture(c.Key, sdw, sdh);
+                        var pm = sdw == smw && sdh == smh ? pd : Surface.PatchTexture(m, c.Key, smw, smh) ?? Surface.MaterialTexture(c.Key, smw, smh);
+                        encOf[c.Key] = new() { [RoadMesh.Diff] = CpModel.EncodeMips(pd.Diff, sdw, sdh, sdm), [RoadMesh.Mat] = CpModel.EncodeMips(pm.Mat, smw, smh, smm) };
                     }
                     var cc = c;
                     jobs.Add((RoadMesh.ModelFile(m, k), () => CpModel.NewTextureIds(CpModel.MakeMesh(bas, cc.Verts, cc.Strip, encOf[cc.Key]), Surface.TextureSalt(m, cc.Key))));
@@ -865,7 +873,9 @@ public static class Build
                 bounds = bounds == null ? b : (Math.Min(bounds.Value.X0, b.X0), Math.Max(bounds.Value.X1, b.X1), Math.Min(bounds.Value.Z0, b.Z0), Math.Max(bounds.Value.Z1, b.Z1));
                 log($"{loc.Str("name")} / {m.Str("name")}: road {road.Length:0} m ({info.Points} points, tightest turn {road.MinRadius():0} m, {road.Crossings.Count} bridge(s), steepest {100 * road.MaxGrade():0} %), {pickups.Count} power-ups");
             }
+            AnimExport.Notes.Clear();
             var (pack, mapsLists) = GenActorPack.BuildLocation(specs);
+            foreach (var note in AnimExport.Notes) log($"{loc.Str("name")}: {note}");
             for (int i = 0; i < mapsLists.Count; i++) if (mapsLists[i].Count > 0) lists[(li, i)] = mapsLists[i];
             packs[li] = pack;
             File.WriteAllBytes(Path.Combine(work, "actorpack.xt"), pack);
@@ -884,7 +894,8 @@ public static class Build
                     var roads = RoadsOf(loc);
                     string f = Path.Combine(gameDir, "level.levelrender");
                     var d = File.ReadAllBytes(f);
-                    var nw = LevelLight.Write(d, lv, roads, Fe.GroundY);
+                    var must = loc.Objs("maps").SelectMany(mm => RoadMesh.LightSpots(mm, Road.ForMap(mm), Fe.GroundY)).ToList();
+                    var nw = LevelLight.Write(d, lv, roads, Fe.GroundY, must);
                     if (nw != null) { File.WriteAllBytes(f, nw); log($"{loc.Str("name")}: object light -> level light points along the roads"); }
                 }
             }
@@ -906,6 +917,7 @@ public static class Build
     {
         var log = opt.Log;
         Directory.CreateDirectory(Paths.FeWork);
+        if (!opt.Dry && Setup.RefreshFilter() is string fl) log(fl + " (sharp textures far away, Game tweaks)");
         var raw = Installed.ForBuild(World.Load(), opt);
         opt.Built = Share.Copy(raw);
         var wld = World.AssignIds(raw);

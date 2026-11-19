@@ -14,6 +14,7 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="..\..\assets\quickstart.lua" LogicalName="quickstart.lua" />
+    <EmbeddedResource Include="..\..\assets\aniso_fix.dll" LogicalName="aniso_fix.dll" />
     <Compile Include="..\..\local\*.cs" />
     <EmbeddedResource Include="..\..\local\*.lua" LogicalName="%(Filename)%(Extension)" />
   </ItemGroup>

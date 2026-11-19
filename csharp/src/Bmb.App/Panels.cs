@@ -96,9 +96,13 @@ public sealed partial class MainForm
             var s = Surface.Settings(D.Map); var parts = new List<string>();
             if (s.Road != "tarmac") parts.Add("road " + Surface.Surfaces[s.Road].Label);
             if (s.Sides > 0) parts.Add($"{s.Sides:0} m {Surface.Surfaces[s.SideType].Label.ToLowerInvariant()} sides");
-            if (s.Variety) parts.Add("varied asphalt");
+            if (s.Variety) parts.Add(s.VarietyAmt == Surface.DefaultVarietyAmt ? "varied asphalt" : $"varied asphalt {s.VarietyAmt:0} %");
+            if (s.Variety && s.VarietyPic != null) parts.Add("own patch picture " + s.VarietyPic);
             if (s.Paint.Count > 0) parts.Add($"{s.Paint.Count * Surface.CellM * Surface.CellM:0} m2 painted");
-            Check(true, "surface: " + string.Join(", ", parts));
+            if (s.RoadPic != null) parts.Add("own road picture " + s.RoadPic);
+            if (!s.Lines) parts.Add("no road lines");
+            bool picOk = (s.RoadPic == null || File.Exists(Surface.RoadPicPath(s.RoadPic))) && (!s.Variety || s.VarietyPic == null || File.Exists(Surface.RoadPicPath(s.VarietyPic)));
+            Check(picOk, "surface: " + string.Join(", ", parts) + (picOk ? "" : " (its picture file is missing: the game's asphalt is used)"));
         }
         int asked = D.Points.OfType<JObj>().Count(p => p.Truthy("tilt"));
         if (asked > 0)
@@ -382,6 +386,18 @@ public sealed partial class MainForm
         _surfSide.SelectedIndex = Math.Max(0, Array.IndexOf(SideKeys, s.SideType));
         SurfBrushShow();
         _surfVariety.Checked = s.Variety;
+        _surfLines.Checked = s.Lines;
+        bool hasPic = s.RoadPic != null;
+        bool picThere = hasPic && File.Exists(Surface.RoadPicPath(s.RoadPic!));
+        _surfPicName.Text = !hasPic ? "game asphalt" : picThere ? s.RoadPic : "missing: " + s.RoadPic;
+        _surfPicName.ForeColor = !hasPic ? Theme.Text : picThere ? Theme.Good : Theme.Bad;
+        _surfPicName.Visible = hasPic; _surfPicReset.Visible = hasPic; _surfPicM.Visible = hasPic;      // hidden until there is an own picture: room on small windows
+        _surfPicM.Value = s.RoadPicM;
+        _surfVarAmt.Value = s.VarietyAmt; _surfVarAmt.Enabled = s.Variety;
+        bool hasVp = s.VarietyPic != null, vpThere = hasVp && File.Exists(Surface.RoadPicPath(s.VarietyPic!));
+        _surfVarPicName.Text = !hasVp ? "game asphalt" : vpThere ? s.VarietyPic : "missing: " + s.VarietyPic;
+        _surfVarPicName.ForeColor = !hasVp ? Theme.Text : vpThere ? Theme.Good : Theme.Bad;
+        _surfVarPicBtn.Enabled = s.Variety; _surfVarPicReset.Visible = hasVp; _surfVarPicName.Visible = hasVp;
         string feel = Surface.LocFeel(D.World, D.Loc);
         _surfFeel.SelectedItem = UiText.FeelNames.FirstOrDefault(q => q.Key == feel).Name ?? "Strong";
         _surfSides.Text = s.Sides > 0 ? $"{s.Sides:0} m" : "off";
@@ -395,9 +411,31 @@ public sealed partial class MainForm
     {
         Edit(() => { if (D.Map.Obj("surface") == null) D.Map["surface"] = new JObj(); D.Map.Obj("surface")![key] = v; });
         SurfRefresh();
-        string name = key switch { "road" => "Road type", "side_type" => "Sides", "variety" => "Varied asphalt", "bump_h" => "Bump height (m)", "bump_size" => "Bump spacing (m)", _ => key };
+        string name = key switch { "road" => "Road type", "side_type" => "Sides", "variety" => "Varied asphalt", "bump_h" => "Bump height (m)", "bump_size" => "Bump spacing (m)", "road_pic" => "Road picture", "road_pic_m" => "Road picture size (m)", "lines" => "Road lines", "variety_amt" => "Varied asphalt amount (%)", "variety_pic" => "Patch picture", _ => key };
+        if (key == "road_pic" && v == null) { Say("Road picture: the game's asphalt again (Build + install to see it)", Theme.Good); return; }
+        if (key == "variety_pic" && v == null) { Say("Patch picture: the game's asphalt again (Build + install to see it)", Theme.Good); return; }
         string shown = v is string s && Surface.Surfaces.TryGetValue(s, out var q) ? q.Label : v is true ? "ON" : v is false ? "OFF" : $"{v}";
         Say($"{name}: {shown} (Build + install to drive on it)", Theme.Good);
+    }
+
+    /// the user's own asphalt picture: checked, copied into maps\road_pictures (the map keeps only its name)
+    void SurfPickPic() => SurfPickPicFor("road_pic", "Your road picture (asphalt)");
+    void SurfPickVarPic() => SurfPickPicFor("variety_pic", "Your picture for the repair patches");
+
+    void SurfPickPicFor(string key, string title)
+    {
+        string? path = PickFile(title, "Pictures|*.png;*.jpg;*.jpeg;*.bmp|All files|*.*");
+        if (path == null) return;
+        byte[] data;
+        try
+        {
+            data = File.ReadAllBytes(path);
+            using var ms = new MemoryStream(data); using var b = new Bitmap(ms);
+            if (b.Width < 8 || b.Height < 8) throw new ArgumentException("the picture is too small");
+        }
+        catch (Exception e) when (e is ArgumentException or IOException or OutOfMemoryException or UnauthorizedAccessException) { Say("This picture can't be used: " + e.Message, Theme.Bad); return; }
+        string name = Packs.Place(Surface.RoadPicFolder, Path.GetFileName(path), data);
+        SurfSet(key, name);
     }
 
     void SurfSides(int d) => SurfSet("sides", Math.Max(0.0, Math.Min(15.0, Surface.Settings(D.Map).Sides + d)));

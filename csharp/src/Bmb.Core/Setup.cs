@@ -280,9 +280,52 @@ public static class Setup
         using var ms = new MemoryStream(); s.CopyTo(ms);
         var d = ms.ToArray();
         try { LocalHooks.PluginFiles(Plugins); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        RefreshFilter();
         if (File.Exists(dst) && File.ReadAllBytes(dst).AsSpan().SequenceEqual(d)) return;
         Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
         File.WriteAllBytes(dst, d);
+    }
+
+    /// the texture filter fix (our aniso_fix.dll, source in assets\aniso_fix.c): Blur never turns on anisotropic filtering,
+    /// so road lines and grain far away blur into a smear. The Amax loader starts every DLL in amax\dlls, in Blur and
+    /// Blur REBORN. On = this version's DLL there (written only when it differs; a running game locks it: kept as it
+    /// is) and Anisotropy 16 in its settings; off = the DLL removed (or Anisotropy 0 while a running game locks it). Only how this PC draws:
+    /// nothing goes online. The DLL checks the game's code at start and does nothing on an exe it doesn't know.
+    public static string? RefreshFilter()
+    {
+        string dlls = Path.Combine(Paths.Game, "amax", "dlls");
+        if (!Directory.Exists(dlls)) return null;
+        bool on = GameTweaks.SharpFar(GameTweaks.Load());
+        string dll = Path.Combine(dlls, "aniso_fix.dll"), dir = Path.Combine(dlls, "aniso_fix"), ini = Path.Combine(dir, "aniso_fix.ini");
+        try
+        {
+            if (on)
+            {
+                using var s = Assembly.GetExecutingAssembly().GetManifestResourceStream("aniso_fix.dll")!;
+                using var ms = new MemoryStream(); s.CopyTo(ms);
+                var d = ms.ToArray();
+                if (!(File.Exists(dll) && File.ReadAllBytes(dll).AsSpan().SequenceEqual(d)))
+                {
+                    try { File.WriteAllBytes(dll + ".part", d); File.Move(dll + ".part", dll, true); }
+                    catch (Exception e) when (e is IOException or UnauthorizedAccessException) { try { File.Delete(dll + ".part"); } catch (Exception) { } }
+                }
+            }
+            if (!on)
+            {
+                // off = not installed: the DLL and its folder go (a running game locks the DLL: then Anisotropy 0 below)
+                if (!File.Exists(dll)) { try { if (Directory.Exists(dir)) Directory.Delete(dir, true); } catch (Exception) { } return null; }
+                try { File.Delete(dll); if (Directory.Exists(dir)) Directory.Delete(dir, true); return "texture filter fix: removed"; }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+            }
+            Directory.CreateDirectory(dir);
+            string level = on ? "16" : "0";
+            string text = File.Exists(ini) ? File.ReadAllText(ini)
+                : "; Blur texture filter fix - settings (written by Blur Map Builder: Game tweaks > Sharp textures far away).\n[fix]\n; Anisotropic filtering: sharper roads and walls in the distance. 16 = sharpest, 8, 4, 2; 0 = off.\nAnisotropy=16\n; 1 = write aniso_fix_log.txt in this folder.\nLog=1\n";
+            string nw = System.Text.RegularExpressions.Regex.Replace(text, @"(?m)^Anisotropy=\d+", "Anisotropy=" + (on && System.Text.RegularExpressions.Regex.Match(text, @"(?m)^Anisotropy=([1-9]\d*)") is { Success: true } m0 ? m0.Groups[1].Value : level));
+            if (nw != text || !File.Exists(ini)) File.WriteAllText(ini, nw);
+            return on ? "texture filter fix: on" : "texture filter fix: off";
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
     }
 
     static void InstallPlugin(Action<string> log)

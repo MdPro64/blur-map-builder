@@ -14,6 +14,10 @@ public sealed class ModelInfo
     public List<ElementInfo> AllElements = new();
     /// per model entry: the 12 floats before its box, their offset, the 6 after its name (look only)
     public List<float[]> ModelRaw = new(), ModelRaw2 = new(); public List<int> ModelRawAt = new();
+    /// where each 16-byte section header starts (ResizeTexture moves the absolute positions they hold)
+    public List<int> SecAt = new();
+    /// each material (shader entry)'s named settings: (material index, shader, setting name, offset of its 8 bytes)
+    public List<(int Mat, string Shader, string Name, int At)> ShaderParams = new();
     public List<VStreamInfo> VStreams = new();
     public List<FStreamInfo> FStreams = new();
     public List<MeshInfo> MeshInfos = new();
@@ -26,7 +30,7 @@ public sealed class ElementInfo { public string Name = ""; public double[] Box =
 public sealed class TexInfo { public string Name = ""; public int W, H, Mips, Off, Len; public uint Dxt; }
 public sealed class VStreamInfo { public int Bytes, Count, Start, Length; public List<(int Type, int Channel, int Sub)> Def = new(); public List<int> Offs = new(); }
 public sealed class FStreamInfo { public int Start, Count, Length; }
-public sealed class MeshInfo { public int Material, Definition, FaceType, FaceStream, Object; public List<(int FaceOff, int FaceCount, int VOff, int VCount)> Data1 = new(); public List<int> VOffset = new(), VStream = new(); }
+public sealed class MeshInfo { public int Material, Definition, FaceType, FaceStream, Object, MaterialAt; public List<(int FaceOff, int FaceCount, int VOff, int VCount)> Data1 = new(); public List<int> VOffset = new(), VStream = new(); }
 
 public static class CpModel
 {
@@ -42,7 +46,8 @@ public static class CpModel
         public float Float() { float v = B.F32(D, P); P += 4; return v; }
         public void Str() { int n = Int(); if (n < 0) throw new InvalidDataException("string"); P += n; }
         public void Ad(int n = 4) { P += n; if (P > D.Length || P < 0) throw new InvalidDataException("past the end"); }
-        public void Sec(int len, int clip) { P += len; P += 8; }
+        public List<int> SecAt = new();
+        public void Sec(int len, int clip) { SecAt.Add(P); P += len; P += 8; }
         public double[] Box() { var o = new double[6]; for (int i = 0; i < 6; i++) o[i] = Float(); return o; }   // file order x, z(=up?), y as stored
         public void AdvanceTo(int val)
         {
@@ -205,9 +210,14 @@ public static class CpModel
             r.Ad();
             int nl = r.Int();
             if (nl == 0) { r.Ad(); r.Ad(12); r.Ad(); r.Ad(12); continue; }
+            string shName = B.Latin1.GetString(data, r.P, nl);
             r.Ad(nl); r.Ad();
             int np = r.Int();
-            for (int j = 0; j < np; j++) { r.Ad(); r.Str(); r.Ad(8); }
+            for (int j = 0; j < np; j++)
+            {
+                r.Ad(); int pl = B.I32(data, r.P); string pn = pl > 0 && pl < 256 ? B.Latin1.GetString(data, r.P + 4, pl) : "";
+                r.Str(); m.ShaderParams.Add((i, shName, pn.TrimEnd('\0'), r.P)); r.Ad(8);
+            }
             r.Ad(8); r.Ad();
             int no = r.Int();
             r.Ad(2 * (no + 1));
@@ -218,7 +228,8 @@ public static class CpModel
         for (int i = 0; i < nMesh; i++)
         {
             r.Ad();
-            var mi = new MeshInfo { Material = r.Int(), Definition = r.Int(), FaceType = r.Int(), FaceStream = r.Int() };
+            int matAt = r.P;
+            var mi = new MeshInfo { Material = r.Int(), Definition = r.Int(), FaceType = r.Int(), FaceStream = r.Int(), MaterialAt = matAt };
             mi.Object = r.Short(); r.Short();
             r.Ad(); r.Ad(8); r.Ad(); r.Ad(8);
             r.Ad(4 * 8);
@@ -229,6 +240,7 @@ public static class CpModel
             for (int j = 0; j < n2; j++) { r.Ad(); mi.VStream.Add(r.Int()); r.Ad(4); mi.VOffset.Add(r.Int()); r.Ad(4); r.Ad(); r.Ad(8); }   // VStream: which vertex block
             m.MeshInfos.Add(mi);
         }
+        m.SecAt = r.SecAt;
         return m;
     }
 
@@ -282,6 +294,32 @@ public static class CpModel
         return d;
     }
 
+    /// the model with one picture made a new size (DXT1, every mip down to 1x1; the data is zeros, fill it with
+    /// MakeMesh's textures). A picture is stored as: length (= 0x1C + data), height, width, 1, mip count, "DXT1",
+    /// 8 bytes (0, 3), data. The 16-byte section headers at the top of the file (name 8 bytes, value, flags) hold
+    /// either a size or the ABSOLUTE position of a block near the end of the file ("Mode" at byte 4 and three more):
+    /// those that point past the picture move with it (forgetting them crashed the game at the race start).
+    public static byte[] ResizeTexture(byte[] data, string name, int w, int h)
+    {
+        var info = Read(data);
+        var t = info.TexList.First(x => x.Name == name);
+        if (t.Dxt != 0x31545844) throw new InvalidOperationException($"{name}: only DXT1 pictures can be resized");
+        int mips = (int)Math.Log2(Math.Max(w, h)) + 1, bytes = TextureBytes(w, h, mips), hdr = t.Off - 0x20;
+        if (B.I32(data, hdr) != t.Len + 0x1C || B.I32(data, hdr + 4) != t.H || B.I32(data, hdr + 8) != t.W) throw new InvalidDataException($"{name}: picture header");
+        var o = new byte[data.Length - t.Len + bytes];
+        Buffer.BlockCopy(data, 0, o, 0, t.Off);
+        Buffer.BlockCopy(data, t.Off + t.Len, o, t.Off + bytes, data.Length - t.Off - t.Len);
+        B.Put(o, hdr, (uint)(bytes + 0x1C)); B.Put(o, hdr + 4, (uint)h); B.Put(o, hdr + 8, (uint)w); B.Put(o, hdr + 16, (uint)mips);
+        int delta = bytes - t.Len, oldEnd = t.Off + t.Len;
+        foreach (int s in info.SecAt)
+        {
+            if (s + 12 > t.Off) throw new InvalidDataException($"{name}: a section header after the picture");
+            uint v = B.U32(data, s + 8);
+            if (v >= oldEnd && v <= data.Length) B.Put(o, s + 8, (uint)(v + delta));
+        }
+        return o;
+    }
+
     public static List<(int W, int H)> MipSizes(int w, int h, int mips)
     {
         var o = new List<(int, int)>();
@@ -309,6 +347,66 @@ public static class CpModel
             o.Add(Dxt.Dxt1Encode(pad, bw, bh));
         }
         return o.ToArray();
+    }
+
+    /// mips that keep thin paint (the road's lines): in every smaller copy a pixel that has any paint under it is at
+    /// least `hold` paint colour, so the lines don't average away into the asphalt far down the road (they did:
+    /// user test 2026-11-19). keep = which pixels are paint at full size.
+    public static byte[] EncodeMipsKeep(byte[] px, bool[] keep, int w, int h, int mips, double hold = 0.75)
+    {
+        var o = new ByteBuf(TextureBytes(w, h, mips));
+        var sizes = MipSizes(w, h, mips);
+        for (int i = 0; i < sizes.Count; i++)
+        {
+            if (i > 0) (px, keep, w, h) = Half2Keep(px, keep, w, h, hold);
+            int bw = Math.Max(w, 4), bh = Math.Max(h, 4);
+            var pad = new byte[bw * bh * 3];
+            for (int y = 0; y < bh; y++)
+                for (int x = 0; x < bw; x++)
+                {
+                    int s = (Math.Min(y, h - 1) * w + Math.Min(x, w - 1)) * 3, t = (y * bw + x) * 3;
+                    pad[t] = px[s]; pad[t + 1] = px[s + 1]; pad[t + 2] = px[s + 2];
+                }
+            o.Add(Dxt.Dxt1Encode(pad, bw, bh));
+        }
+        return o.ToArray();
+    }
+
+    /// look only: the picture's small copy `level` steps down, as the normal mips (keep = null) or the paint-keeping ones
+    public static (byte[] Px, int W, int H) MipPreview(byte[] px, bool[]? keep, int w, int h, int level)
+    {
+        for (int i = 0; i < level; i++)
+            if (keep != null) (px, keep, w, h) = Half2Keep(px, keep, w, h, 0.75);
+            else (px, w, h) = Half2(px, w, h);
+        return (px, w, h);
+    }
+
+    static (byte[], bool[], int, int) Half2Keep(byte[] px, bool[] keep, int w, int h, double hold)
+    {
+        int nw = Math.Max(w / 2, 1), nh = Math.Max(h / 2, 1);
+        var o = new byte[nw * nh * 3]; var ok = new bool[nw * nh];
+        Parallel.For(0, nh, y =>
+        {
+            for (int x = 0; x < nw; x++)
+            {
+                double[] all = new double[3], pnt = new double[3]; int np = 0;
+                for (int dy = 0; dy < 2; dy++) for (int dx = 0; dx < 2; dx++)
+                {
+                    int s = Math.Min(2 * y + dy, h - 1) * w + Math.Min(2 * x + dx, w - 1);
+                    for (int c = 0; c < 3; c++) { all[c] += px[3 * s + c]; if (keep[s]) pnt[c] += px[3 * s + c]; }
+                    if (keep[s]) np++;
+                }
+                int t = y * nw + x;
+                double f = np == 0 ? 0 : Math.Max(np / 4.0, hold);
+                for (int c = 0; c < 3; c++)
+                {
+                    double mean = all[c] / 4, pm = np > 0 ? pnt[c] / np : 0;
+                    o[3 * t + c] = (byte)Math.Clamp(Math.Round(mean * (1 - f) + pm * f), 0, 255);
+                }
+                ok[t] = np > 0;
+            }
+        });
+        return (o, ok, nw, nh);
     }
 
     static (byte[], int, int) Half2(byte[] px, int w, int h)

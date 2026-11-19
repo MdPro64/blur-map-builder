@@ -251,6 +251,12 @@ public sealed partial class MainForm : Form
     readonly Spin _bumpH = new("height (m)", 0.3, 0.05, 0.05, 2, "0.00"), _bumpSize = new("spacing (m)", 3, 0.5, 1, 20, "0.0");
     readonly Label _surfSides = new() { AutoSize = false, Width = 48, Height = 24, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.White };
     readonly CheckBox _surfVariety = new() { Text = "Varied asphalt", AutoSize = true, ForeColor = Theme.Text, Font = Theme.Ui, Margin = new Padding(8, 4, 2, 1), TabStop = false };
+    readonly CheckBox _surfLines = new() { Text = "Lines", AutoSize = true, ForeColor = Theme.Text, Font = Theme.Ui, Margin = new Padding(8, 4, 2, 1), TabStop = false, Checked = true };
+    readonly Label _surfPicName = new() { AutoSize = false, Width = 130, Height = 24, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Theme.Text, AutoEllipsis = true, Margin = new Padding(4, 3, 2, 0) };
+    readonly Spin _surfPicM = new("size (m)", Surface.DefaultPicM, 0.5, Surface.MinPicM, Surface.MaxPicM, "0.0");
+    Button _surfPicReset = null!, _surfVarPicReset = null!, _surfVarPicBtn = null!;
+    readonly Spin _surfVarAmt = new("amount (%)", Surface.DefaultVarietyAmt, 10, 0, Surface.MaxVarietyAmt, "0");
+    readonly Label _surfVarPicName = new() { AutoSize = false, Width = 110, Height = 24, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Theme.Text, AutoEllipsis = true, Margin = new Padding(4, 3, 2, 0) };
     Spin _aiLaneBox = null!;
     bool _filling2;
 
@@ -328,8 +334,25 @@ public sealed partial class MainForm : Form
         foreach (var k in Surface.Surfaces.Keys.Where(k => k != "deepwater" && !Surface.Mixes.ContainsKey(k))) _surfRoad.Items.Add(Surface.Surfaces[k].Label);
         _surfRoad.SelectionChangeCommitted += (_, _) => SurfSet("road", Surface.Surfaces.First(kv => kv.Value.Label == (string)_surfRoad.SelectedItem!).Key);
         wr.Controls.Add(Look.Tip(_surfRoad, "What the whole road is made of"));
+        // the road picture sits in WHOLE ROAD (its own group made the bar a row taller on small windows)
+        wr.Controls.Add(Look.Tip(Theme.Btn("🖼 Own picture...", SurfPickPic), "Use your own asphalt picture for this map's road (a seamless tile works best: its left side joins its right side). The lines are painted on top"));
+        wr.Controls.Add(Look.Tip(_surfPicName, "The road's picture: the game's asphalt, or yours"));
+        _surfPicReset = Theme.Btn("↺", () => { if (!_filling2) SurfSet("road_pic", null); });
+        wr.Controls.Add(Look.Tip(_surfPicReset, "Back to the game's asphalt"));
+        _surfPicM.Tight(); _surfPicM.Set += v => { if (!_filling2) SurfSet("road_pic_m", Math.Round(v, 1)); };
+        wr.Controls.Add(Look.Tip(_surfPicM, "How many metres one copy of your picture covers on the road (small = fine grain, big = large patterns)"));
+        _surfLines.CheckedChanged += (_, _) => { if (!_filling2) SurfSet("lines", _surfLines.Checked); };
+        wr.Controls.Add(Look.Tip(_surfLines, "White lines at the edges and a double yellow line in the middle. Turn off if your picture has its own lines"));
+        wr = Group(low, "VARIED ASPHALT");
         _surfVariety.CheckedChanged += (_, _) => { if (!_filling2) SurfSet("variety", _surfVariety.Checked); };
-        wr.Controls.Add(Look.Tip(_surfVariety, "The game's own asphalt with worn, cracked parts (4 kinds), and repair patches at random places along the road"));
+        wr.Controls.Add(Look.Tip(_surfVariety, "Worn, faded and cracked parts (4 kinds), and repair patches at random places along the road"));
+        _surfVarAmt.Tight(); _surfVarAmt.Set += v => { if (!_filling2) SurfSet("variety_amt", Math.Round(v)); };
+        wr.Controls.Add(Look.Tip(_surfVarAmt, "How much of it shows: 0 = none, 50 = normal, 100 = a very old road, up to 300 = broken up a lot (the repair patches stop growing at 150)"));
+        _surfVarPicBtn = Theme.Btn("🖼 Patch picture...", SurfPickVarPic);
+        wr.Controls.Add(Look.Tip(_surfVarPicBtn, "Your own picture for the repair patches (one copy every 8 m). The worn ones use it 10 % lighter"));
+        wr.Controls.Add(Look.Tip(_surfVarPicName, "The repair patches' picture: the game's asphalt, or yours"));
+        _surfVarPicReset = Theme.Btn("↺", () => { if (!_filling2) SurfSet("variety_pic", null); });
+        wr.Controls.Add(Look.Tip(_surfVarPicReset, "Patches back to the game's asphalt"));
         wr = Group(low, "SIDES OF THE ROAD");
         wr.Controls.Add(Theme.Btn("-", () => SurfSides(-1))); wr.Controls.Add(_surfSides); wr.Controls.Add(Theme.Btn("+", () => SurfSides(1)));
         foreach (var k in SideKeys) _surfSide.Items.Add(Surface.Surfaces[k].Label);
@@ -478,7 +501,7 @@ public sealed partial class MainForm : Form
             case "light": Say($"LIGHTING of the location '{D.Loc.Str("name")}': pick a game city as the start, change what you like, Build + install, look in game"); break;
             case "car": Say("CUSTOM CAR: + New, pick a class and a body car, then spend the class's stat points"); break;
             case "skins": break;
-            case "tweaks": Say("GAME TWEAKS: more and harder AI racers, your own power-up icons - for Blur REBORN only. Build + install to use them"); break;
+            case "tweaks": Say("GAME TWEAKS: more and harder AI racers, your own power-up icons, sharp textures far away. Build + install to use them"); break;
             case "share": Say("EXPORT / IMPORT: one file for another player - a map (with its pictures, 3D models and sky), a custom car (with its body, sounds and logo) or skins"); break;
             case "land": Say("LANDSCAPE (3D): left drag = use the tool, right drag = back to flat (Paint: remove the paint), middle drag = turn, Shift+middle = move, wheel = zoom.  Auto hills = hills all around the road"); break;
             case "surface": Say($"SURFACE: left drag = paint {(Map2.BrushKey == "bumps" ? "bumps" : Surface.Surfaces[Map2.BrushKey].Label)}, right drag = remove, middle drag = move the map, wheel = zoom.  Whole road: type / sides / varied asphalt on the bar"); break;
@@ -962,6 +985,9 @@ public sealed partial class MainForm : Form
     }
 
     /// the sizes as far as this window holds them (ui_layout.Layouts.fit)
+    /// the panels' widths again (the 3D tab's Animation sub-tab shows / hides the map panel)
+    public void Refit() { FitPanels(); G.Invalidate(); }
+
     void FitPanels()
     {
         int W = ClientSize.Width, H = ClientSize.Height;
@@ -969,7 +995,8 @@ public sealed partial class MainForm : Form
         // the 3D tab on a narrow window: the object list goes first, the middle stays usable
         V3.Narrow(W < 1240);
         bool canvas = Mode is not ("light" or "car" or "skins" or "share" or "tweaks");
-        _rightP.Visible = _rightSash.Visible = canvas && !(Mode == "3d" && W < 1700);     // 3D has its own two panels: the view needs the room
+        // 3D has its own two panels: the view needs the room; its Animation sub-tab has its own right column
+        _rightP.Visible = _rightSash.Visible = canvas && !(Mode == "3d" && (W < 1700 || V3.AnimTab));
         var shown = _panels.Where(p => !p.Height && p.C.Visible && (p.C.Parent?.Visible ?? false)).ToList();
         int total = shown.Where(p => !Folded(p.Name)).Sum(p => Sz(p.Name, p.Default));
         double k = total > 0 ? Math.Min(1.0, Math.Max(0, W - 420.0) / total) : 1.0;

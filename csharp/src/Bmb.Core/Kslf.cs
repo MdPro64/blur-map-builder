@@ -455,6 +455,8 @@ public static class KslfWrite
         return d;
     }
 
+    public static byte[] MoveLastRowPublic(byte[] data) => MoveLastRow(data, out _);
+
     /// add a section-4 row at its sorted place (any uid not used yet); an existing uid returns its row unchanged
     public static byte[] InsertUid(byte[] data, uint uid, string typeName, out int row, int obj = 0xFFFF)
     {

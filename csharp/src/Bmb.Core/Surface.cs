@@ -53,17 +53,17 @@ public static class Surface
     public sealed record Kind(string Label, int Mat, string Colour, byte[] Rgb, int Shine, int Glow);
     public static readonly Dictionary<string, Kind> Surfaces = new()
     {
-        ["tarmac"] = new("Asphalt", 1, "#565c66", new byte[] { 88, 92, 98 }, 30, 60), ["dirt"] = new("Dirt", 4, "#8a6a42", new byte[] { 122, 92, 60 }, 8, 80),
-        ["roughdirt"] = new("Rough dirt", 33, "#6c5234", new byte[] { 98, 74, 50 }, 6, 75), ["gravel"] = new("Gravel", 32, "#9a9286", new byte[] { 140, 134, 122 }, 10, 85),
-        ["grass"] = new("Grass", 6, "#4f7d3a", new byte[] { 70, 108, 52 }, 6, 80), ["sand"] = new("Wet sand", 9, "#c2a878", new byte[] { 176, 152, 110 }, 40, 85),
-        ["water"] = new("Water (shallow)", 34, "#3a78a8", new byte[] { 52, 92, 120 }, 200, 70), ["deepwater"] = new("Deep water", 22, "#1e4a7a", new byte[] { 28, 58, 92 }, 220, 60),
+        // glow (self-light) is 0 for every ground kind: the level's sun, sky and lamps light it, like the road
+        ["tarmac"] = new("Asphalt", 1, "#565c66", new byte[] { 88, 92, 98 }, 0, 0), ["dirt"] = new("Dirt", 4, "#8a6a42", new byte[] { 122, 92, 60 }, 8, 0),
+        ["roughdirt"] = new("Rough dirt", 33, "#6c5234", new byte[] { 98, 74, 50 }, 6, 0), ["gravel"] = new("Gravel", 32, "#9a9286", new byte[] { 140, 134, 122 }, 10, 0),
+        ["grass"] = new("Grass", 6, "#4f7d3a", new byte[] { 70, 108, 52 }, 6, 0), ["sand"] = new("Wet sand", 9, "#c2a878", new byte[] { 176, 152, 110 }, 40, 0),
+        ["water"] = new("Water (shallow)", 34, "#3a78a8", new byte[] { 52, 92, 120 }, 200, 0), ["deepwater"] = new("Deep water", 22, "#1e4a7a", new byte[] { 28, 58, 92 }, 220, 0),
         // pictures from the game's own files (GameTex); without them the colour noise below is used
-        // (glow ~80-90 like the road's 95: with 35 the hills were near black at night and every texture looked the same)
-        ["rock"] = new("Rock", 1, "#7d766c", new byte[] { 118, 112, 102 }, 14, 85), ["drygrass"] = new("Dry grass", 6, "#a88a52", new byte[] { 160, 132, 82 }, 6, 85),
-        ["concrete"] = new("Concrete", 1, "#8c8c88", new byte[] { 132, 132, 128 }, 20, 90),
-        ["patch"] = new("Patched asphalt", 1, "#3e4248", new byte[] { 62, 66, 72 }, 30, 55), ["worn"] = new("Worn asphalt", 1, "#6a6660", new byte[] { 104, 100, 94 }, 24, 50),
+        ["rock"] = new("Rock", 1, "#7d766c", new byte[] { 118, 112, 102 }, 14, 0), ["drygrass"] = new("Dry grass", 6, "#a88a52", new byte[] { 160, 132, 82 }, 6, 0),
+        ["concrete"] = new("Concrete", 1, "#8c8c88", new byte[] { 132, 132, 128 }, 20, 0),
+        ["patch"] = new("Patched asphalt", 1, "#3e4248", new byte[] { 62, 66, 72 }, 0, 0), ["worn"] = new("Worn asphalt", 1, "#6a6660", new byte[] { 104, 100, 94 }, 0, 0),
         // the hills' borders between two textures (a picture of both, mixed in spots): no hard stairs between grass and dirt
-        ["grassdirt"] = new("Grass + dirt", 6, "#667048", new byte[] { 96, 100, 58 }, 6, 80), ["dirtrock"] = new("Dirt + rock", 4, "#80705a", new byte[] { 120, 102, 80 }, 8, 80),
+        ["grassdirt"] = new("Grass + dirt", 6, "#667048", new byte[] { 96, 100, 58 }, 6, 0), ["dirtrock"] = new("Dirt + rock", 4, "#80705a", new byte[] { 120, 102, 80 }, 8, 0),
     };
     /// mixed keys: (first, second)
     public static readonly Dictionary<string, (string A, string B)> Mixes = new() { ["grassdirt"] = ("grass", "dirt"), ["dirtrock"] = ("dirt", "rock") };
@@ -74,14 +74,23 @@ public static class Surface
     static readonly Dictionary<string, (string Name, double R, double G, double B, bool Grey)> GameSource = new()
     {
         ["rock"] = ("ambient_rock02_diff", 1.0, 1.0, 1.0, false), ["grass"] = ("hay01_diff", 0.52, 0.80, 0.36, true), ["drygrass"] = ("hay01_diff", 0.92, 0.86, 0.72, false),
-        ["concrete"] = ("concreteblock1_diff", 1.0, 1.0, 1.0, false), ["patch"] = ("tarmacplain02_diff", 0.62, 0.64, 0.68, false), ["worn"] = ("drilltowertexture01_diff", 1.05, 1.02, 0.98, false),
+        ["concrete"] = ("concreteblock1_diff", 1.0, 1.0, 1.0, false), ["patch"] = ("tarmacplain02_diff", 0.64, 0.66, 0.70, false), ["worn"] = ("tarmacplain02_diff", 0.93, 0.92, 0.89, false),
         ["tarmac"] = ("tarmacplain02_diff", 1.0, 1.0, 1.0, false),
     };
     public const double CellM = 2.0, StepM = 4.0, PatchLift = 0.02, OverlayLift = 0.07, TexM = 8.0, SideTaper = 25.0, LevelM = 3.0;
     const int MaxTris = 760;
     public const uint FeelSourceUid = 0xA5F91096;
 
-    public sealed class Set { public string Road = "tarmac", SideType = "dirt"; public double Sides; public bool Variety; public JObj Paint = new(); }
+    /// RoadPic: the user's own asphalt picture (a file in maps\road_pictures, see RoadPicFolder), RoadPicM: metres one copy
+    /// of it covers; Lines: the white edge lines + double yellow middle line on top
+    public sealed class Set { public string Road = "tarmac", SideType = "dirt"; public double Sides; public bool Variety; public JObj Paint = new(); public string? RoadPic; public double RoadPicM = DefaultPicM; public bool Lines = true;
+        /// varied asphalt: how much of it (0-300 %, 50 = the look it always had) and the user's own picture for its repair patches
+        public double VarietyAmt = DefaultVarietyAmt; public string? VarietyPic;
+        public double VarietyK => VarietyAmt / DefaultVarietyAmt; }
+    public const double DefaultVarietyAmt = 50, MaxVarietyAmt = 300;
+    public const double DefaultPicM = 3.5, MinPicM = 0.5, MaxPicM = 20;
+    public static string RoadPicFolder => Path.Combine(Paths.Tracks, "road_pictures");
+    public static string RoadPicPath(string name) => Path.Combine(RoadPicFolder, Path.GetFileName(name));
 
     public static Set Settings(JObj? m)
     {
@@ -92,10 +101,46 @@ public static class Surface
         if (s.Str("side_type") is string t && Surfaces.ContainsKey(t)) o.SideType = t;
         o.Sides = s.Num("sides"); o.Variety = s.Truthy("variety");
         o.Paint = s.Obj("paint") ?? new JObj();
+        if (s.Truthy("road_pic")) o.RoadPic = Path.GetFileName(s.Str("road_pic")!);
+        if (s.ContainsKey("road_pic_m")) o.RoadPicM = Math.Clamp(s.Num("road_pic_m"), MinPicM, MaxPicM);
+        if (s.ContainsKey("lines")) o.Lines = s.Truthy("lines");
+        if (s.ContainsKey("variety_amt")) o.VarietyAmt = Math.Clamp(s.Num("variety_amt"), 0, MaxVarietyAmt);
+        if (s.Truthy("variety_pic")) o.VarietyPic = Path.GetFileName(s.Str("variety_pic")!);
         return o;
     }
 
-    public static bool IsDefault(JObj m) { var s = Settings(m); return s.Road == "tarmac" && s.Sides == 0 && !s.Variety && s.Paint.Count == 0; }
+    public static bool IsDefault(JObj m) { var s = Settings(m); return s.Road == "tarmac" && s.Sides == 0 && !s.Variety && s.Paint.Count == 0 && s.RoadPic == null && s.Lines; }
+
+    /// the repair patches' picture when the user gave their own (Varied asphalt): "patch" = it as it is, "worn" = 10 %
+    /// lighter; one copy every TexM metres like the other painted surfaces. Null = use the game's (MaterialTexture).
+    public static (byte[] Diff, byte[] Mat)? PatchTexture(JObj m, string key, int w, int h)
+    {
+        var s = Settings(m);
+        if (s.VarietyPic == null || key is not ("patch" or "worn")) return null;
+        var pic = UserRoadPic(s.VarietyPic, w / TexM, h / TexM, TexM);
+        if (pic == null || pic.W != w || pic.H != h) return null;
+        var d = (byte[])pic.Px.Clone();
+        if (key == "worn") for (int i = 0; i < d.Length; i++) d[i] = (byte)Math.Min(255, d[i] * 1.1);
+        var mt = new byte[w * h * 3];
+        return (d, mt);
+    }
+
+    /// the user's road picture, made the size that one copy covers `mPerCopy` metres in a road picture of pw x ph
+    /// pixels a metre (null = no such file or not a picture). The file is read with GDI+ and only its pixels are kept.
+    static Pic? UserRoadPic(string name, double pxPerMAlong, double pxPerMAcross, double mPerCopy)
+    {
+        string p = RoadPicPath(name);
+        if (!File.Exists(p)) return null;
+        try
+        {
+            if (!OperatingSystem.IsWindows()) return null;
+            using var b = new System.Drawing.Bitmap(p);
+            if (b.Width < 4 || b.Height < 4) return null;
+            int pw = Math.Clamp((int)Math.Round(pxPerMAlong * mPerCopy), 4, 4096), ph = Math.Clamp((int)Math.Round(pxPerMAcross * mPerCopy), 4, 4096);
+            return Pic.FromBitmap(b).ResizeLanczos(pw, ph);
+        }
+        catch (Exception e) when (e is ArgumentException or IOException or OutOfMemoryException or InvalidOperationException) { return null; }
+    }
     public static (int, int) CellOf(double x, double z) => ((int)Math.Floor(x / CellM), (int)Math.Floor(z / CellM));
     static double Feather(double r) => Math.Max(1.5, 0.3 * r);
 
@@ -440,6 +485,28 @@ public static class Surface
     // ---- textures ------------------------------------------------------------------------------------------------
     static double[] TileNoise(int w, int h, int seed, double scale)
     {
+        // big pictures (the road's 1024 x 2048): the same noise made at a smaller size and stretched (it is smooth anyway;
+        // the box blur below costs w x h x scale)
+        int f = 1;
+        while (w / f * (h / f) > 65536 && w % (2 * f) == 0 && h % (2 * f) == 0 && scale / (2 * f) >= 2) f *= 2;
+        if (f > 1)
+        {
+            int sw = w / f, sh = h / f;
+            var sm = TileNoise(sw, sh, seed, scale / f);
+            var big = new double[w * h];
+            Parallel.For(0, h, y =>
+            {
+                double fy = (y + 0.5) / f - 0.5; int y0 = (int)Math.Floor(fy); double ty = fy - y0;
+                int ya = (int)Py.Mod(y0, sh), yb = (int)Py.Mod(y0 + 1, sh);
+                for (int x = 0; x < w; x++)
+                {
+                    double fx = (x + 0.5) / f - 0.5; int x0 = (int)Math.Floor(fx); double tx = fx - x0;
+                    int xa = (int)Py.Mod(x0, sw), xb = (int)Py.Mod(x0 + 1, sw);
+                    big[y * w + x] = (sm[ya * sw + xa] * (1 - tx) + sm[ya * sw + xb] * tx) * (1 - ty) + (sm[yb * sw + xa] * (1 - tx) + sm[yb * sw + xb] * tx) * ty;
+                }
+            });
+            return big;
+        }
         var a = new NumpyRng(seed).Fill(w * h);
         int k = Math.Max(1, (int)scale), span = 2 * k + 1;
         for (int t = 0; t < 3; t++)
@@ -529,43 +596,126 @@ public static class Surface
         return (rgb, mat);
     }
 
-    public static (byte[] Diff, byte[] Mat) RoadTextureProfile(int w, int h, double width)
+    public static (byte[] Diff, byte[] Mat) RoadTextureProfile(int w, int h, double width) { var (d, m, _) = RoadProfilePicture(w, h, width, new Set()); return (d, m); }
+
+    // the material picture as the game's shader reads it: R = shine (specular), G = SELF-LIGHT (emissive x colour),
+    // B = smoothness. The asphalt, its paint and its banks have no self-light: the level's sun, sky and lamps light them,
+    // like every other lit object. Only the cyan edge strips and the blue top keep their glow (they are lights).
+    // matte like the game's own asphalt (tarmacplain02 is drawn with the no-material shader: shine, smoothness 0);
+    // with 34 / 50 the far road turned a dark teal mirror of the sky at low view angles (user test 2026-11-19)
+    const byte AsphaltShine = 0, AsphaltSmooth = 0, PaintShine = 12, PaintSmooth = 10;
+    const double AsphaltGrey = 86, GrainM = 3.5;
+
+    /// the road's own picture: the game's asphalt grain in metres (one picture = RoadMesh.URepeat along), soft wide
+    /// tone changes, solid white edge lines and a double yellow middle line. Paint = where the lines are.
+    /// With the user's own picture (s.RoadPic) that picture is the asphalt instead, as it is (its own colours), one copy
+    /// every s.RoadPicM metres; s.Lines = false leaves the lines off (for a picture that has its own).
+    static (byte[] Diff, byte[] Mat, bool[] Paint) RoadProfilePicture(int w, int h, double width, Set s)
     {
         var prof = Fe.RoadProfile(width);
         int nb = Fe.Bank.Length;
         double vl = prof[nb - 1].V, vr = prof[nb].V, vMid = (vl + vr) / 2;
-        var diff = CpModel.Noise(w, h, Fe.RoadGrey, 12);
-        var mat = CpModel.Solid(w, h, Fe.RoadShine, Fe.RoadGlow, 0);
-        double rowV = 1.0 / h;
-        void Set(int i, byte a, byte b, byte c, byte g) { diff[i] = a; diff[i + 1] = b; diff[i + 2] = c; mat[i] = Fe.RoadShine; mat[i + 1] = g; mat[i + 2] = 0; }
+        var diff = new byte[w * h * 3]; var mat = new byte[w * h * 3]; var paint = new bool[w * h];
+        // rowV: the edge strip and the top keep the width they had in the old 256-row picture, whatever the size
+        double rowV = 1.0 / 256, along = RoadMesh.URepeat, half = width / 2;
+        // a small copy of the game's asphalt, one copy every GrainM metres (its pixels about ours: the 512 picture sampled
+        // point by point only gave salt-and-pepper noise). Only its FINE grain is kept (each pixel / the blur around it):
+        // the picture is lighter on one side, and every copy repeated that as light / dark stripes across the road.
+        // Two copies of different sizes are mixed, so no repeat shows (mirrored copies made a kaleidoscope pattern).
+        var grainPic = GameTex.Get("tarmacplain02_diff", Math.Max(16, (int)(w / along * GrainM)));
+        double[]? grain = null; int gw = 0, gh = 0;
+        if (grainPic != null)
+        {
+            gw = grainPic.W; gh = grainPic.H;
+            var lum = new double[gw * gh];
+            for (int i = 0; i < lum.Length; i++) lum[i] = (grainPic.Px[3 * i] + grainPic.Px[3 * i + 1] + grainPic.Px[3 * i + 2]) / 3.0 + 1;
+            int r = Math.Max(2, gw / 8);
+            var bx = new double[lum.Length]; var bl = new double[lum.Length];
+            for (int y = 0; y < gh; y++) for (int x = 0; x < gw; x++) { double sum = 0; for (int k = -r; k <= r; k++) sum += lum[y * gw + (int)Py.Mod(x + k, gw)]; bx[y * gw + x] = sum / (2 * r + 1); }
+            for (int y = 0; y < gh; y++) for (int x = 0; x < gw; x++) { double sum = 0; for (int k = -r; k <= r; k++) sum += bx[(int)Py.Mod(y + k, gh) * gw + x]; bl[y * gw + x] = sum / (2 * r + 1); }
+            grain = new double[lum.Length];
+            for (int i = 0; i < lum.Length; i++) grain[i] = lum[i] / bl[i];
+        }
+        static int Wrap(double t, int n) => (int)Py.Mod(Math.Floor(t * n), n);
+        var tone = TileNoise(w, h, 5, w / 7.0);
+        var fine = new NumpyRng(9).Fill(w * h);
+        double pxAlong = w / along, pxAcross = h * (vr - vl) / width;     // road picture pixels a metre
+        var own = s.RoadPic != null ? UserRoadPic(s.RoadPic, pxAlong, pxAcross, s.RoadPicM) : null;
+        void Set(int i, double a, double b, double c, byte shine, byte glow, byte smooth)
+        {
+            diff[i] = (byte)Math.Clamp(a, 0, 255); diff[i + 1] = (byte)Math.Clamp(b, 0, 255); diff[i + 2] = (byte)Math.Clamp(c, 0, 255);
+            mat[i] = shine; mat[i + 1] = glow; mat[i + 2] = smooth;
+        }
+        // lines in metres from the middle (both sides): white edge line 0.3 m wide, 0.5 m in from the edge;
+        // double yellow in the middle, 0.15 m lines with a 0.15 m gap, only on roads wide enough for two lanes
+        // (the road picture has 30-60 rows a metre across)
+        bool twoLanes = width >= 8 && s.Lines;
         for (int y = 0; y < h; y++)
         {
             double v = (y + 0.5) / h;
             bool onBank = v < vl || v > vr;
             double toEdge = Math.Min(Math.Abs(v - vl), Math.Abs(v - vr));
             bool top = Math.Min(v, 1 - v) < 1.6 * rowV;
+            double across = (v - vMid) / Math.Max(vr - vl, 1e-9) * width, d = Math.Abs(across);
+            bool white = s.Lines && d > half - 0.8 && d < half - 0.5;
+            bool yellow = twoLanes && d > 0.075 && d < 0.225;
             for (int x = 0; x < w; x++)
             {
-                int i = 3 * (y * w + x);
-                if (top) Set(i, 40, 120, 255, 255);
-                else if (toEdge < 0.8 * rowV) Set(i, Fe.WallColour[0], Fe.WallColour[1], Fe.WallColour[2], 255);
-                else if (onBank) Set(i, Fe.BankColour[0], Fe.BankColour[1], Fe.BankColour[2], Fe.BankGlow);
-                else if (Math.Abs(v - vMid) < 0.5 * rowV && x < w / 2) Set(i, 235, 235, 235, 160);
+                int p = y * w + x, i = 3 * p;
+                if (top) { Set(i, 40, 120, 255, Fe.RoadShine, 255, 0); continue; }
+                if (toEdge < 0.8 * rowV) { Set(i, Fe.WallColour[0], Fe.WallColour[1], Fe.WallColour[2], Fe.RoadShine, 255, 0); continue; }
+                // the raised edge (bank): its own dark blue with a little glow, as before (user's wish 2026-11-19; the
+                // dark bends were the missing level light, see RoadMesh.LightSpots, not this colour)
+                if (onBank) { Set(i, Fe.BankColour[0], Fe.BankColour[1], Fe.BankColour[2], Fe.RoadShine, Fe.BankGlow, 0); continue; }
+                double g;
+                if (grain != null)
+                {
+                    double um = (x + 0.5) / w * along;
+                    // copies of along / 8 (3.5 m) and along / 11 (2.55 m): both fit the picture exactly (its ends join),
+                    // and together they repeat only once a picture
+                    double m1 = along / 8, m2 = along / 11;
+                    double g1 = grain[Wrap(across / m1, gh) * gw + Wrap(um / m1, gw)];
+                    double g2 = grain[Wrap(across / m2 + 0.61, gh) * gw + Wrap(um / m2 + 0.37, gw)];
+                    g = 1 + ((g1 + g2) / 2 - 1) * 1.4;           // the mix is softer by about 1.4
+                }
+                else g = 0.88 + 0.24 * fine[p];
+                g = 1 + (g - 1) * 1.3 + 0.06 * (fine[p] - 0.5);  // the game's grain (the small copy is softer) + a little speckle
+                // a faint tone only (it repeats with the picture, every URepeat m: stronger read as bands)
+                double val = AsphaltGrey * g * (0.985 + 0.03 * tone[p]);
+                double cr = val * 0.97, cg = val * 0.99, cb = val * 1.04;
+                if (own != null)
+                {
+                    // the user's picture as it is: x along the road, y across it (from the middle)
+                    int ox = (int)Py.Mod(Math.Floor((x + 0.5) / pxAlong / s.RoadPicM * own.W), own.W);
+                    int oy = (int)Py.Mod(Math.Floor(across / s.RoadPicM * own.H), own.H);
+                    int q = 3 * (oy * own.W + ox);
+                    cr = own.Px[q]; cg = own.Px[q + 1]; cb = own.Px[q + 2];
+                    g = (cr + cg + cb) / 3 / 128.0;
+                }
+                if (white || yellow)
+                {
+                    paint[p] = true;
+                    double wear = 0.88 + 0.12 * Math.Clamp(g, 0, 1.2);  // paint shows the grain under it a little
+                    if (white) Set(i, 226 * wear, 226 * wear, 220 * wear, PaintShine, 0, PaintSmooth);
+                    else Set(i, 230 * wear, 176 * wear, 38 * wear, PaintShine, 0, PaintSmooth);
+                }
+                else Set(i, cr, cg, cb, AsphaltShine, 0, AsphaltSmooth);
             }
         }
-        return (diff, mat);
+        return (diff, mat, paint);
     }
 
-    public static (byte[] Diff, byte[] Mat) RoadTexture(int w, int h, double width, JObj m, int variant = 0)
+    public static (byte[] Diff, byte[] Mat) RoadTexture(int w, int h, double width, JObj m, int variant = 0) { var (d, mt, _) = RoadTextureP(w, h, width, m, variant); return (d, mt); }
+
+    /// the road picture and where its paint (lines) is: CpModel.EncodeMipsKeep keeps the lines in the small copies
+    public static (byte[] Diff, byte[] Mat, bool[] Paint) RoadTextureP(int w, int h, double width, JObj m, int variant = 0)
     {
-        var (diff, mat) = RoadTextureProfile(w, h, width);
         var s = Settings(m);
-        if (s.Road == "tarmac" && s.Sides == 0 && !s.Variety) return (diff, mat);
+        var (diff, mat, keep) = RoadProfilePicture(w, h, width, s);
+        if (s.Road == "tarmac" && s.Sides == 0 && !s.Variety) return (diff, mat, keep);
         var img = new double[w * h * 3];
         for (int i = 0; i < img.Length; i++) img[i] = diff[i];
         var mt = (byte[])mat.Clone();
-        var keep = new bool[w * h];
-        for (int i = 0; i < w * h; i++) keep[i] = Math.Min(diff[3 * i], Math.Min(diff[3 * i + 1], diff[3 * i + 2])) > 200;
         var prof = Fe.RoadProfile(width);
         int nb = Fe.Bank.Length;
         double vl = prof[nb - 1].V, vr = prof[nb].V;
@@ -584,79 +734,69 @@ public static class Surface
                     for (int i = 3 * y * w; i < 3 * (y + 1) * w; i++) { img[i] = t[i]; mt[i] = tm[i]; }
         }
         if (s.Road != "tarmac") Rows(s.Road, y => onRoad[y]);
-        else if (s.Variety)
+        else if (s.Variety && s.VarietyAmt > 0)
         {
-            // the game's own asphalt grain + its worn, cracked surface in cloudy patches (a different part of the cloud
-            // per variant). Sampled in metres: along the road one picture is RoadMesh.URepeat (14 m) long, so the tile
-            // sizes divide 14 m and the picture still joins up with itself.
-            var grain = GameTex.Get("tarmacplain02_diff", 512); var worn = GameTex.Get("drilltowertexture01_diff", 512); var cloud = GameTex.Get("uv_distort_04", 512);
-            if (grain != null && worn != null && cloud != null)
-            {
-                double mean = 0; int cnt = 0;
-                for (int y = 0; y < h; y++) if (onRoad[y]) for (int x = 0; x < w; x++) { int p = 3 * (y * w + x); if (!keep[p / 3]) { mean += (img[p] + img[p + 1] + img[p + 2]) / 3; cnt++; } }
-                mean = cnt > 0 ? mean / cnt : 90;
-                double gm = 0; for (int i = 0; i < grain.Px.Length; i += 3) gm += (grain.Px[i] + grain.Px[i + 1] + grain.Px[i + 2]) / 3.0;
-                gm /= grain.Px.Length / 3.0;
-                double wm = 0; for (int i = 0; i < worn.Px.Length; i += 3) wm += (worn.Px[i] + worn.Px[i + 1] + worn.Px[i + 2]) / 3.0;
-                wm /= worn.Px.Length / 3.0;
-                double along = RoadMesh.URepeat;
-                int Px(Pic p, double u, double v, double tile) => 3 * ((int)Py.Mod(Math.Floor(v / tile * p.H), p.H) * p.W + (int)Py.Mod(Math.Floor(u / tile * p.W), p.W));
-                double ox = variant * 0.37, oy = variant * 0.61;
-                for (int y = 0; y < h; y++)
-                {
-                    if (!onRoad[y]) continue;
-                    double vm = across[y];
-                    for (int x = 0; x < w; x++)
-                    {
-                        int p = y * w + x;
-                        if (keep[p]) continue;
-                        double um = (x + 0.5) / w * along;
-                        int gq = Px(grain, um, vm, along / 4), wq = Px(worn, um, vm, along / 2);
-                        int cq = 3 * ((int)Py.Mod(Math.Floor((vm / (2 * along) + oy) * cloud.H), cloud.H) * cloud.W + (int)Py.Mod(Math.Floor(((x + 0.5) / w + ox) * cloud.W), cloud.W));
-                        double t = Math.Clamp((cloud.Px[cq] / 255.0 - 0.55) / 0.15, 0, 1);
-                        for (int c = 0; c < 3; c++)
-                        {
-                            double gv = grain.Px[gq + c] / gm * mean, wv = worn.Px[wq + c] / wm * mean * 1.08;
-                            img[3 * p + c] = gv * (1 - t) + wv * t;
-                        }
-                    }
-                }
-            }
-            var blot = TileNoise(w, h, 21 + variant, w / 20.0);
-            var patch = TileNoise(w, h, 31 + variant, w / 10.0);
+            // an older, used road (a different look per variant): wide soft lighter (sun-faded) and darker (fresh oil)
+            // areas, darker polished wheel paths in each lane, and a few thin sealed cracks (tar lines). The base grain
+            // stays the game's asphalt; nothing here is black or high-contrast. k = the amount (1 = 50 %, 2 = 100 %).
+            double kv = s.VarietyK;
+            var faded = TileNoise(w, h, 21 + variant, w / 6.0);
+            var oil = TileNoise(w, h, 31 + variant, w / 14.0);
+            double lane = width >= 8 ? Math.Min(3.6, width / 4) : width / 2;      // two lanes each way at most
             for (int y = 0; y < h; y++)
             {
                 if (!onRoad[y]) continue;
+                // wheel paths: 0.9 m bands at 1/4 and 3/4 of each lane, from the middle outwards
+                double a = Math.Abs(across[y]), inLane = Py.Mod(a, lane) / lane;
+                double path = Math.Max(0, 1 - Math.Min(Math.Abs(inLane - 0.27), Math.Abs(inLane - 0.73)) / (0.45 / lane * 2));
                 for (int x = 0; x < w; x++)
                 {
                     int p = y * w + x;
-                    double f = 0.80 + 0.40 * blot[p];
-                    if (patch[p] > 0.78) f *= 0.72;
+                    if (keep[p]) continue;
+                    // up to 100 % (kv 2) the wear gets stronger; past that it COVERS more of the road (lower thresholds)
+                    // at the same strength, so 300 % is a broken-up road, not a black one
+                    double kI = Math.Min(kv, 2.0), more = Math.Max(0, kv - 2.0);
+                    double tFade = Math.Max(0.10, 0.35 - 0.06 * more), tOil = Math.Max(0.40, 0.62 - 0.06 * more);
+                    double f = 1 + (0.94 + 0.14 * Math.Clamp((faded[p] - tFade) / 0.3, 0, 1) - 1) * kI;
+                    f *= 1 - 0.10 * kI * Math.Clamp((oil[p] - tOil) / 0.12, 0, 1);
+                    f *= 1 - 0.05 * Math.Min(kI, 1.5) * path * path;
+                    f = Math.Clamp(f, 0.6, 1.3);
                     for (int c = 0; c < 3; c++) img[3 * p + c] *= f;
                 }
             }
-            // crack lines: same idea as _cracks, not the same random numbers (numpy's normal() is not ported)
+            // sealed cracks: thin, darker tar lines, mostly along or across the road, never over the paint
             var r = new PyRandom(11 + variant);
-            for (int c = 0; c < 18; c++)
+            for (int c = 0; c < (int)Math.Round(9 * kv); c++)
             {
-                int x = r.RandInt(0, w - 1), y = r.RandInt(0, h - 1), len = r.RandInt(20, 69);
-                double ang = r.Random() * 2 * Math.PI;
+                int x = r.RandInt(0, w - 1), y = r.RandInt(0, h - 1), len = r.RandInt(25, 80) * Math.Max(1, w / 256);
+                double ang = r.Random() < 0.5 ? 0 : Math.PI / 2;
+                ang += (r.Random() - 0.5) * 0.6;
                 for (int t = 0; t < len; t++)
                 {
-                    ang += (r.Random() + r.Random() + r.Random() - 1.5) * 0.7;
-                    x = (int)Py.Mod(x + (int)Py.Round(Math.Cos(ang) * 2), w);
-                    y += (int)Py.Round(Math.Sin(ang) * 2);
+                    ang += (r.Random() + r.Random() - 1.0) * 0.35;
+                    x = (int)Py.Mod(x + (int)Py.Round(Math.Cos(ang)), w);
+                    y += (int)Py.Round(Math.Sin(ang));
                     if (y < 0 || y >= h) break;
-                    if (onRoad[y]) for (int q = 0; q < 3; q++) img[3 * (y * w + x) + q] *= 0.45;
+                    for (int k = 0; k < Math.Max(1, w / 512); k++)                // about 2-3 cm wide whatever the picture size
+                    {
+                        int p = y * w + (int)Py.Mod(x + k, w);
+                        if (onRoad[y] && !keep[p]) for (int q = 0; q < 3; q++) img[3 * p + q] *= 0.72;
+                    }
                 }
             }
         }
         if (s.Road == "tarmac")
             for (int i = 0; i < w * h; i++) if (keep[i]) for (int c = 0; c < 3; c++) img[3 * i + c] = diff[3 * i + c];
         if (s.Sides > 0) Rows(s.SideType, y => onRoad[y] && Math.Abs(across[y]) > width / 2 - s.Sides);
+        // the paint left in the picture (a dirt road or the side strips cover it)
+        var paint = new bool[w * h];
+        if (s.Road == "tarmac")
+            for (int y = 0; y < h; y++)
+                if (!(s.Sides > 0 && onRoad[y] && Math.Abs(across[y]) > width / 2 - s.Sides))
+                    for (int x = 0; x < w; x++) paint[y * w + x] = keep[y * w + x];
         var o = new byte[img.Length];
         for (int i = 0; i < o.Length; i++) o[i] = (byte)Math.Max(0, Math.Min(255, img[i]));
-        return (o, mt);
+        return (o, mt, paint);
     }
 
     // ---- varied asphalt: repair patches ---------------------------------------------------------------------------
@@ -667,8 +807,10 @@ public static class Surface
     public static Dictionary<(int, int), (string Key, double St)> AutoPatches(JObj m, Network net)
     {
         var st = Settings(m);
-        if (!st.Variety || st.Road != "tarmac") return new();
-        string sig = m.Int("route_uid").ToString(CultureInfo.InvariantCulture) + "|" + st.Sides.ToString(CultureInfo.InvariantCulture);
+        if (!st.Variety || st.Road != "tarmac" || st.VarietyAmt <= 0) return new();
+        // the amount: the space between patches is divided by k (50 % = as it always was, 100 % = twice as many, 150 %+ = 3x)
+        double kAmt = Math.Min(st.VarietyK, 3.0);      // no more than 3x the patches (the map's 64 ground models)
+        string sig = m.Int("route_uid").ToString(CultureInfo.InvariantCulture) + "|" + st.Sides.ToString(CultureInfo.InvariantCulture) + "|" + st.VarietyAmt.ToString(CultureInfo.InvariantCulture);
         var cache = PatchCache.GetOrCreateValue(net);
         lock (cache) if (cache.TryGetValue(sig, out var hit)) return hit;
         var o = new Dictionary<(int, int), (string, double)>();
@@ -700,7 +842,7 @@ public static class Surface
                             if (!o.TryGetValue((i, j), out var old) || old.Item2 < k) o[(i, j)] = (key, Math.Round(k, 2));
                         }
                 }
-                pos += len + rng.Uniform(25, 110);
+                pos += len + rng.Uniform(25, 110) / kAmt;
             }
         }
         lock (cache) { if (cache.Count > 4) cache.Clear(); cache[sig] = o; }

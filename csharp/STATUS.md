@@ -28,6 +28,11 @@ The C# window keeps its own auto-save the same way as Python, and asks before cl
 
 ## What was added in this round, tab by tab
 
+- **Animated objects (2026-11-19, dev, not released):** 3D tab -> **Animation** sub-tab: your placed objects can follow a
+  path, move by keyframes (position + turn, like After Effects), spin, start with the race or by a trigger box; the start
+  camera moved there too. Built from movers the game uses in its own cities (docs\object_animation.md); tested in Blur
+  REBORN on user 1 (path loop, keyframes, trigger, spin all move). Size and tilt cannot change in the game (greyed).
+
 - **Top bar:** Play (F5), Check for updates, the update source button.
 - **Left panel:** Delete location, Import / Export `.blurmap`. New map, Duplicate and Rename now work as in Python.
 - **2D map:** 90-degree turns (T / Y), lap track by dropping the end on the start, drag branch and split ends, insert
@@ -509,3 +514,55 @@ its collision is the same, and I still don't know the cause.
 
 ### 2.6.2 released (2026-11-18)
 - Power-up icons (on, `PowerupIcons.OnHold = false`), Custom car tab cards, game-car export by parts, themed drop-downs, map pick on Export / Import, updater restart fix. Drifter AI still held (Front Runner for all AI). Full robot 251/252 (Auto bumps = scratch data). Exe from `publish_v262`; the Map Tester asset is the unchanged small one.
+
+## Road asphalt look + no self-light (2026-11-19, bin\Release only, NOT tried in game, nothing committed)
+
+- The material picture's GREEN channel is the shader's self-light (emissive x colour); the road had 95 (37 % always lit),
+  lines 160, banks 35. Now 0 for the asphalt, its paint, its banks and the asphalt kinds (tarmac / patch / worn): the
+  level's sun, sky and lamps light the road. Cyan edge strips + blue top keep 255 (they are lights). R = shine 34
+  (paint 60), B = smoothness 50 (paint 80). Other ground kinds (dirt, grass ...) still glow 75-90, unchanged.
+- Road picture (Surface.RoadProfilePicture): the game's asphalt (tarmacplain02) as a small copy matched to the road
+  picture's pixels (the 512 copy point-sampled gave salt-and-pepper noise), soft tone change, solid white edge lines
+  (0.3 m, 0.5 m in) and a double yellow middle line (0.25 m lines, 0.3 m gap, roads 8 m+). Paint mask kept separately.
+- Varied asphalt: no more drill-tower texture patches / dark blotches / black cracks; now sun-faded and oily areas, darker
+  wheel paths per lane, 9 thin sealed cracks (x0.72). Repair patches: patch x0.64, worn x0.93 of the game asphalt.
+- Look-only CLI: `roadpic GAME OUTDIR [WIDTH]` (road_plain / road_varied0..1 / road_mat PNGs).
+- Risk: if the level gives placed objects little light, the road will look darker than before: raise Sun / Sky light.
+- Same day: every ground kind (dirt, grass, gravel, sand, rock, concrete, water, mixes) glow 0 too. Hills may look darker at night now.
+- Same day, sharper road: road pieces now carry a 1024 x 2048 picture (material 512 x 1024) instead of 256 x 256.
+  CpModel.ResizeTexture grows a DXT1 picture inside a model: header = length (0x1C + data), height, width, 1, mips,
+  "DXT1", (0, 3); nothing else in the file holds its size (checked on 256 / 1024 / 1024x2048 game models). Only the road
+  pieces use it (RoadChunkFiles); painted surfaces, towers, chevrons, imports keep 256. ~1.8 MB per road piece; dry build
+  of the user's maps 9 s, read back OK. TileNoise works at a smaller size for big pictures. Double yellow now 0.15 m lines.
+  NOT tried in game: the first test is that the road shows at all (a model with a grown picture is new to the game).
+- Tilted part darker (user test, mdpro map v1 1, 12 deg): normals checked (`roadnormals`): they match the slope (dot
+  0.998). Likely the low sun's own shadow: a slope steeper than the sun's height, facing away, shadows itself; the old
+  self-light hid it. Not fixed: answer = lighting (Light on placed objects / Sky), to be confirmed in game.
+- CRASH at race start with the 1K road (2026-11-19, 0xc0000005 at exe+0x54b602): the 16-byte section headers at the top of a model hold ABSOLUTE positions of blocks near the end ("Mode" @4 and 3 more); ResizeTexture now moves those past the picture. Built model now has the same end distances as the game's (338/1126/1142/1178). Needs a game test.
+- Dark corners (user test, arrow boards off = still dark): the far road turned dark teal = reflection. The game's asphalt (tarmacplain02) uses the no-material shader (shine/smooth 0); ours now 0/0 (paint 12/10, tarmac/patch/worn shine 0). Asphalt normals point straight up (RoadMesh LitFlat). If still dark: test Low fog (height_fog) = 0.
+- Real cause of the dark bends: the raised edge (bank) faces you on every bend and was near-black blue (34,38,48) with glow 35 -> a black wall once glow went to 0. Bank is now the road asphalt x0.9, and its normals lean 60 % to straight up (RoadMesh.LitFlat).
+- REAL cause of dark road pieces (user screenshot: black piece with a straight cut across the road): the game lights an object from the nearest level light point WITHIN 10 m, else none. A road piece round a bend has its middle off the road, far from our points along the road -> unlit (the old 37 % glow only made it dimmer). LevelLight.Write now puts a point at every road model's box middle and placed spot first (RoadMesh.LightSpots), then the road points. `lightcheck GAME LOC`: mdpro map v1 4/16 spots past 10 m -> 0; Flat Earth 5 -> 0.
+- Side walls (banks) back to their old dark blue + glow 35 (user's wish; the dark bends were the level light, fixed above).
+- Surface tab, new group ROAD PICTURE: "Own picture..." (copied into maps\road_pictures, map surface "road_pic" = its name),
+  ↺ back to the game's asphalt, size (m) one copy covers ("road_pic_m", 0.5-20, default 3.5), Lines on/off ("lines").
+  The picture is used as it is (its own colours), x along the road, y across from the middle; lines on top. Varied
+  asphalt still works on it. .blurmap export/import carries it ("roadpic/NAME"). Checks line says when the file is missing.
+  `roadpic GAME OUT WIDTH PICTURE` renders own / own_nolines. Russian lines added. NOT tried in game.
+- Surface tab, VARIED ASPHALT group: switch + amount (%) ("variety_amt" 0-100, 50 = the old look; scales the wear in the road picture, cracks 9*k, and divides the space between repair patches by k) + "Patch picture..." ("variety_pic", file in maps\road_pictures, one copy every 8 m; worn = 10 % lighter; Surface.PatchTexture in RoadChunkFiles) + ↺. .blurmap carries it. Russian added. NOT tried in game.
+- Stripes across the road (user test): one road picture now covers 28 m (RoadMesh.URepeat, was 14); the game asphalt keeps only its fine grain (pixel / its blur: the picture is lighter on one side) and two copies are mixed (28/8 and 28/11 m, both fit the picture); tone only +-1.5 %. Column brightness spread 1.5 -> 0.65. Varied asphalt amount up to 300 %: past 100 % the wear covers more road at the same strength (f 0.6-1.3), patches stop growing at 150 % (3x, the 64 ground models).
+- Lines vanished far down the road (user test): mipmaps averaged the thin paint into the asphalt. Road pieces now use CpModel.EncodeMipsKeep: in every smaller copy a pixel with paint under it is at least 75 % paint colour (Surface.RoadTextureP gives the paint mask; side strips / dirt road clear it). Checked at mip 5: yellow line kept, white brighter.
+- Texture filter fix ships with the map builder (user's wish 2026-11-19, after the in-game test: log "hooked SetSamplerState",
+  16x, 80k stages anisotropic; NVIDIA override gave the same look). assets\aniso_fix.dll (embedded in Bmb.Core) + its
+  source assets\aniso_fix.c (our own; from E:\blur - bak\aniso_fix). Game tweaks > Graphics > "Sharp textures far away",
+  ON by default (tweaks.json "sharp_far"). Setup.RefreshFilter: on = DLL into amax\dlls (only when different; locked by a
+  running game = kept) + ini Anisotropy 16 (a user's own non-zero level is kept); off = DLL + folder removed (locked =
+  Anisotropy 0). Runs on Build + install, on Play (RefreshPlugin) and when the box changes. Works in normal Blur too (same
+  amax\dlls). `filtertest FAKEGAME` passed (default on / off removes / on / on again). When releasing: copy both assets.
+- Imported car glass was solid black (user report): the whole .glb went into trim parts with a picture, and the game's glass shader adds the picture's alpha (none in ours = solid). Now: glass materials (KHR transmission, alpha BLEND < 0.95, or a name with "glass" but not "mask") go into ONE trim part that gets the windscreen's material (veh_Glass_c_h: no picture, see-through by view angle; CarGlb.GlassRoom sets MeshInfo.MaterialAt). Smallest stream-3 part that holds them (266 / 398 / 432 / 2202 points). Checked with a made-up glb (bmbcli glbmodel + carmeshes): 2 glass triangles in the glass part, the black window mask stays solid. NOT tried in game.
+- Glass test 1 (Audi_S5.glb): still black + a crash at the first lobby load (exe+0x27A3ED). Cause: the game gives glass its settings (g_vRenderSettings alpha / reflection, g_vDamageSettings) only on elements named e_window* / e_headlightcover*; our glass part was in e_interior. Now the glass part's mesh record also points at the windscreen's element (u16 at MaterialAt+16) and that element's box grows with the body. Read back OK. NOT tried in game.
+- Glass test 2: no crash, but still dark = the game's own glass: 4 VEH_MaterialGlass in vehicles.bin shared by all cars (near-black tint, windscreen #161 10-75 % solid, side windows #42 30-100 %). Option B (user's choice): each imported-body car gets its own material set (CarGlb ClearGlassSet): copies of the game's default set C2D82C72 with parts 35/36/37 -> a clear copy of the windscreen glass (3-35 % solid, reflect 5-35 %); the car's baseVehicle.materialOverrides points at it (also on replacers). Uids 0xCA500000 + 8 * car. Dry build read back: OK, game default set unchanged. NOT tried in game.
+- Glass test 3: still dark - the first set changed part codes 35/36/37 = the LIGHT COVERS. vehicles.bin VEH_PartCode: 23 Window, 24 WindowInterior. Now 23 + 24 -> clear glass; read back OK. Custom car preview: glass triangles are their own kind (glbglass), drawn in a 2nd pass blended over what is behind (CarUi.Picture); bmbcli carpic GAME MAPS CAR OUT.png. NOT tried in game.
+- Glass test 4: windows (23/24) override still dark in game. Custom car tab: "See-through glass" checkbox (car "clear_glass", default on; off = no own set, preview draws the glass solid). TEMP: CarBuild.GlassTestRed = true makes the clear glass RED 70-90 % solid for ONE test build (red = the record is used, problem is behind the glass; dark = record ignored). SET BACK TO false before any push.
+- Glass test 5 (red own set): installed pack + model checked OK (set CA50002C, red glass, glass part in e_window_front) but NOT red in lobby or race. Test 6: the game's own Window glass (33EF0DD5, every car) red too. TEMP code in ClearGlassSet (GlassTestRed) - remove both.
+- Glass test 6: game cars' windows turned red (the records work), ours did not. Cause: the glass shader mixes the car's scratch / damage texture into colour AND alpha at the vertex uv (xy + zw): our glass points had body-picture uvs + zw 0 -> dark, solid. Now every glass point copies uv (8 bytes) + last 4 bytes from the nearest real windscreen point (CarGlb.WindowPoints / Place copyFrom). GlassTestRed back to false (both reds gone, checked). NOT tried in game.
+- Glass (ON HOLD, 2026-11-19): the game's glass shader adds the body picture's alpha to the glass alpha and takes its colour from the picture where that alpha is 1. Our picture is DXT1 (solid), so the glass was solid black / showed the body picture. Now glass triangles use their own corner of the picture (bottom right, ClearSpot 64 px of the 1024 atlas, filled with the .glb glass colour); with See-through glass on, the build makes that corner DXT1 clear blocks (ClearCorner), and glass points copy only the damage coordinates (zw) from the real windscreen. In game: no longer black but light grey, still not see-through. Next test (not run yet): GlassTestInvisible = true (alpha + reflection 0) to tell whether the grey is our values or something else.

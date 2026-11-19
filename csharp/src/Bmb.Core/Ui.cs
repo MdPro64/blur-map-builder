@@ -242,7 +242,7 @@ public static class CarUi
     }
 
     // ---- the car's picture ------------------------------------------------------------------------------------------
-    public sealed class Parts { public Dictionary<string, float[]> Kinds = new(); public byte[]? GlbRgb; public float[]? Smooth; }
+    public sealed class Parts { public Dictionary<string, float[]> Kinds = new(); public byte[]? GlbRgb, GlassRgb; public float[]? Smooth; }
     static readonly Dictionary<string, byte[]> Colours = new() { ["dark"] = new byte[] { 38, 40, 46 }, ["glass"] = new byte[] { 70, 95, 120 }, ["light"] = new byte[] { 225, 225, 210 }, ["tyre"] = new byte[] { 24, 24, 26 }, ["rim"] = new byte[] { 175, 180, 190 } };
     static readonly Dictionary<string, double> Gloss = new() { ["paint"] = 0.4, ["glb"] = 0.35, ["glass"] = 0.6, ["rim"] = 0.4, ["light"] = 0.3, ["tyre"] = 0.03 };
     static readonly Dictionary<string, GameParts> _game = new();
@@ -262,8 +262,17 @@ public static class CarUi
         if (car.Truthy("body_glb"))
         {
             string glb = Path.Combine(Paths.Tracks, "cars", car.Str("body_glb")!);
-            Add("glb", CarModel.FitGlb(CarModel.ReadGlbBody(glb), refCar, fit));
-            p.GlbRgb = GlbColours(glb);
+            var rawB = CarModel.ReadGlbBody(glb);
+            var all = CarModel.FitGlb(rawB, refCar, fit); var rgb = GlbColours(glb);
+            // the glass triangles on their own ("glbglass"): the picture draws them see-through, like the game's clear glass
+            int ntb = all.Length / 9;
+            bool clear = CarModel.ClearGlass(car);
+            bool G(int t) => clear && t < rawB.Glass.Length && rawB.Glass[t];
+            float[] Tris(bool glass) { var o = new List<float>(); for (int t = 0; t < ntb; t++) if (G(t) == glass) for (int k = 0; k < 9; k++) o.Add(all[9 * t + k]); return o.ToArray(); }
+            byte[] Cols(bool glass) { var o = new List<byte>(); for (int t = 0; t < ntb && 3 * t + 2 < rgb.Length; t++) if (G(t) == glass) for (int k = 0; k < 3; k++) o.Add(rgb[3 * t + k]); return o.ToArray(); }
+            Add("glb", Tris(false)); p.GlbRgb = Cols(false);
+            var gt = Tris(true);
+            if (gt.Length > 0) { Add("glbglass", gt); p.GlassRgb = Cols(true); }
         }
         else foreach (var (k, l) in body.Tris)
                 if (!(k.Contains('|') && k.Split('|')[0] is "tyre" or "rim") && !(whl != null && k == "rim") && k.Split('|')[0] is not ("tyre"))
@@ -449,15 +458,17 @@ public static class CarUi
         var kinds = parts.Kinds.Keys.OrderBy(s => s, StringComparer.Ordinal).ToList();
         var tris = kinds.SelectMany(n => parts.Kinds[n]).ToArray();
         int nt = tris.Length / 9;
-        var cols = new byte[nt * 3]; var gloss = new float[nt];
+        var cols = new byte[nt * 3]; var gloss = new float[nt]; var seeThrough = new bool[nt];
         int ti = 0;
         foreach (var n in kinds)
         {
             int c = parts.Kinds[n].Length / 9;
             for (int i = 0; i < c; i++, ti++)
             {
-                for (int q = 0; q < 3; q++) cols[3 * ti + q] = n == "glb" ? parts.GlbRgb![3 * i + q] : n == "paint" ? paint[q] : Colours[n][q];
-                gloss[ti] = (float)Gloss.GetValueOrDefault(n, 0.1);
+                for (int q = 0; q < 3; q++)
+                    cols[3 * ti + q] = n == "glb" ? parts.GlbRgb![3 * i + q] : n == "glbglass" ? (parts.GlassRgb is { } gr && 3 * i + q < gr.Length ? gr[3 * i + q] : (byte)20) : n == "paint" ? paint[q] : Colours[n][q];
+                gloss[ti] = (float)Gloss.GetValueOrDefault(n == "glbglass" ? "glass" : n, 0.1);
+                seeThrough[ti] = n == "glbglass";
             }
         }
         parts.Smooth ??= SmoothNormals(tris);
@@ -496,8 +507,11 @@ public static class CarUi
         var env = Env();
         var buf = new int[S * S]; var zb = new float[S * S];
         Array.Fill(zb, float.NegativeInfinity);
+        // two passes: the solid triangles, then the see-through glass blended over what is behind it (it hides nothing)
+        for (int pass = 0; pass < 2; pass++)
         for (int t = 0; t < nt; t++)
         {
+            if (seeThrough[t] != (pass == 1)) continue;
             int a = 9 * t;
             float x0 = pts[a], y0 = pts[a + 1], z0 = pts[a + 2], x1 = pts[a + 3], y1 = pts[a + 4], z1 = pts[a + 5], x2 = pts[a + 6], y2 = pts[a + 7], z2 = pts[a + 8];
             double ux = x1 - x0, uy = y1 - y0, uz = z1 - z0, vx = x2 - x0, vy = y2 - y0, vz = z2 - z0;
@@ -530,6 +544,16 @@ public static class CarUi
                     if (w0 < 0 || w1 < 0 || w2 < 0) continue;
                     float zz = (float)(w0 * z0 + w1 * z1 + w2 * z2);
                     int at = py * S + px;
+                    if (pass == 1)
+                    {
+                        if (zz <= zb[at]) continue;
+                        // like the build's clear glass: a little solid head-on, more at an angle (and its reflection)
+                        double al = Math.Clamp(CarBuild.ClearMinAlpha + (CarBuild.ClearMaxAlpha - CarBuild.ClearMinAlpha) * Math.Pow(1 - nzc, 2) + 0.35 * gleam, 0, 0.9);
+                        int bc = buf[at] == 0 ? (255 << 24) | (6 << 16) | (10 << 8) | 20 : buf[at];
+                        int r2 = (int)(((bc >> 16) & 255) * (1 - al) + rr * al), g2 = (int)(((bc >> 8) & 255) * (1 - al) + gg * al), b2 = (int)((bc & 255) * (1 - al) + bb * al);
+                        buf[at] = (255 << 24) | (r2 << 16) | (g2 << 8) | b2;
+                        continue;
+                    }
                     if (zz > zb[at]) { zb[at] = zz; buf[at] = colr; }
                 }
         }
@@ -1034,6 +1058,13 @@ public sealed class BlurMapFile
             if (Files.TryGetValue(lt.Str("sky_image")!, out var sky)) lt["sky_image"] = "skies/" + Packs.Place(Path.Combine(Paths.Tracks, "skies"), Path.GetFileName(lt.Str("sky_image")!), sky);
             else lt.Remove("sky_image");
         }
+        if (Map.Obj("surface") is { } sf)
+            foreach (var key in new[] { "road_pic", "variety_pic" })
+            {
+                if (!sf.Truthy(key)) continue;
+                if (Files.TryGetValue(sf.Str(key)!, out var rpd)) sf[key] = Packs.Place(Surface.RoadPicFolder, Path.GetFileName(sf.Str(key)!), rpd);
+                else sf.Remove(key);
+            }
         return added;
     }
 }
@@ -1077,6 +1108,19 @@ public static class Share
             if (File.Exists(sky)) { string e = "sky/" + Packs.Plain(Path.GetFileName(sky)); z.CreateEntryFromFile(sky, e); lt["sky_image"] = e; }
             else lt.Remove("sky_image");
         }
+        // the map's own road picture (Surface tab)
+        // the map's own road picture and Varied asphalt patch picture (Surface tab)
+        var packed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (data.Obj("surface") is { } sf)
+            foreach (var key in new[] { "road_pic", "variety_pic" })
+            {
+                if (!sf.Truthy(key)) continue;
+                string rp = Surface.RoadPicPath(sf.Str(key)!);
+                if (!File.Exists(rp)) { sf.Remove(key); continue; }
+                string e = "roadpic/" + Packs.Plain(Path.GetFileName(rp));
+                if (packed.Add(e)) z.CreateEntryFromFile(rp, e);
+                sf[key] = e;
+            }
         void Text(string name, string s) { using var w = new StreamWriter(z.CreateEntry(name).Open(), new UTF8Encoding(false)); w.Write(s); }
         Text("map.json", Json.Dumps(data, 1));
         Text("info.json", Json.Dumps(new JObj { ["format"] = (long)Format, ["name"] = m.Str("name") ?? "map", ["location"] = locName, ["made"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm"), ["app"] = "Blur map builder (road designer)", ["settings"] = settings }, 1));
@@ -1105,7 +1149,8 @@ public static class Share
                     o.Pics[e.FullName] = ms.ToArray();
                 }
             foreach (var e in z.Entries)
-                if ((e.FullName.StartsWith("imports/") || e.FullName.StartsWith("sky/")) && e.FullName.Count(c => c == '/') == 1 && !e.FullName.Contains("..") && e.Length < 200L * 1024 * 1024)
+                if ((e.FullName.StartsWith("imports/") || e.FullName.StartsWith("sky/") || (e.FullName.StartsWith("roadpic/") && Pictures.Any(p => e.FullName.EndsWith(p, StringComparison.OrdinalIgnoreCase)) && e.Length < 32 * 1024 * 1024))
+                    && e.FullName.Count(c => c == '/') == 1 && !e.FullName.Contains("..") && !e.FullName.Contains('\\') && e.Length < 200L * 1024 * 1024)
                 {
                     using var s = e.Open(); using var ms = new MemoryStream(); s.CopyTo(ms);
                     o.Files[e.FullName] = ms.ToArray();

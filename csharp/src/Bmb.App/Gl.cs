@@ -18,6 +18,9 @@ public static unsafe class GL
     [DllImport(O)] public static extern void glMatrixMode(uint m);
     [DllImport(O)] public static extern void glLoadIdentity();
     [DllImport(O)] public static extern void glLoadMatrixf(float* m);
+    [DllImport(O)] public static extern void glMultMatrixf(float* m);
+    [DllImport(O)] public static extern void glPushMatrix();
+    [DllImport(O)] public static extern void glPopMatrix();
     [DllImport(O)] public static extern void glOrtho(double l, double r, double b, double t, double n, double f);
     [DllImport(O)] public static extern void glLineWidth(float w);
     [DllImport(O)] public static extern void glPointSize(float s);

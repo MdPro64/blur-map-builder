@@ -6,6 +6,7 @@ namespace Bmb.Core;
 public sealed class TileSpot
 {
     public double X, Y, Z, Turn, Pitch, Rx, Rz; public uint Uid; public double[] Scale = { 1, 1, 1 };
+    public JObj? Anim;      // the object's animation (AnimExport), null = still
     public TileSpot Copy() { var t = (TileSpot)MemberwiseClone(); t.Scale = (double[])Scale.Clone(); return t; }
 }
 public sealed class LampSpot { public double X, Y, Z, Turn, Rx, Rz; public uint Uid; public LampSpot Copy() => (LampSpot)MemberwiseClone(); }
@@ -459,11 +460,11 @@ public static class Layout
             string key = $"obj:{i}", kind = e.Str("kind")!;
             if (kind == "breakable") lamps.Add((new LampSpot { X = x, Y = y, Z = z, Turn = a, Uid = Convert.ToUInt32(e.Str("uid"), 16) }, key));
             else if (kind == "import")
-                for (int k = 0; k < e.Int("pieces"); k++) tiles.Add((new TileSpot { X = x, Y = y, Z = z, Uid = ModelImport.Uids((int)e.Int("slot"), k).Def, Turn = a }, key));
+                for (int k = 0; k < e.Int("pieces"); k++) tiles.Add((new TileSpot { X = x, Y = y, Z = z, Uid = ModelImport.Uids((int)e.Int("slot"), k).Def, Turn = a, Anim = o.Obj("anim") }, key));
             else
             {
                 uint uid = kind == "scenery" ? SceneryDefUid(e.Str("uid")!) : Convert.ToUInt32(e.Str("uid"), 16);
-                tiles.Add((new TileSpot { X = x, Y = y, Z = z, Uid = uid, Turn = a }, key));
+                tiles.Add((new TileSpot { X = x, Y = y, Z = z, Uid = uid, Turn = a, Anim = o.Obj("anim") }, key));
             }
         }
         return (tiles, lamps);

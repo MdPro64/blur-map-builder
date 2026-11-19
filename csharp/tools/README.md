@@ -48,6 +48,8 @@ powershell -ExecutionPolicy Bypass -File tools/make_scratch.ps1
 - `bmbcli skins GAME OUTDIR [CAR PIC SKIN.png]`: the skinnable cars; with a car, its picture + UV map and a test skin written and read back. `bmbcli skincheck PACK ORIGINAL CAR...`: which car models in a pack carry a skin.
 - `bmbcli bake GAME`: Bake 3D pictures, with `BMB_PREVIEW` set.
 - `python tools/py_ui_bench.py`: the Python window's speed.
+- `bash scratch/run_anim.sh`: look-only pictures + checks of the 3D tab's Animation sub-tab (`BMB_ONLY=anim`, scratch copy, everything undone); `run_anim_ru.sh` the same in Russian.
+- `bmbcli kslf-types FILE [REGEX]`, `kslf-blocks FILE OBJ`, `kslf-tree FILE OBJ OUT`: a KSLF file's schema, one object's blocks, one object in full; `kslf-copytest`: copy an actor list between cities (types merged) and read it back.
 
 `scratch\game\Blur Map Builder\base` is a LINK to the game's base files while the test area exists. Remove it with
 `cmd /c rmdir` before deleting `scratch`: a recursive delete could follow it into the game folder.

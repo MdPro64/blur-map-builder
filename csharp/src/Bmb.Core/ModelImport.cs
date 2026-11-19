@@ -108,7 +108,7 @@ public sealed class Pic
 }
 
 public sealed class GlbPart { public double[] Pos = null!, Nrm = null!, Uv = null!; public int[] Tri = null!; public int Mat; public int N => Pos.Length / 3; }
-public sealed class GlbMat { public string Name = ""; public Pic? Image; public double[] Colour = { 1, 1, 1 }; public double Glow; public string? Note; }
+public sealed class GlbMat { public string Name = ""; public Pic? Image; public double[] Colour = { 1, 1, 1 }; public double Glow; public string? Note; public bool Glass; }
 public sealed class Glb { public List<GlbPart> Parts = new(); public List<GlbMat> Materials = new(); public List<string> Skipped = new(); }
 public sealed class ImportProblem : Exception { public ImportProblem(string s) : base(s) { } }
 public sealed class Piece3 { public int Mat; public List<double[]> Verts = new(); public List<int> Strip = new(); }
@@ -222,7 +222,12 @@ public static class ModelImport
             if (pbr.Obj("baseColorTexture") is JObj bt) (img, note) = Image(js, bin, (int)bt.Int("index"));
             var em = m.Arr("emissiveFactor")?.Select(Json.D).ToArray() ?? new double[] { 0, 0, 0 };
             double glow = m.ContainsKey("emissiveTexture") || em.Max() > 0 ? em.Max() : 0.0;
-            g.Materials.Add(new GlbMat { Name = m.Truthy("name") ? m.Str("name")! : $"material {g.Materials.Count}", Image = img, Colour = f[..3], Glow = Math.Min(1.0, glow), Note = note });
+            string mname = m.Truthy("name") ? m.Str("name")! : $"material {g.Materials.Count}";
+            // glass: see-through (alpha blend under 95 %, or Blender's transmission), or named glass (not a "...mask": a window's frame)
+            double tr = m.Obj("extensions")?.Obj("KHR_materials_transmission")?.Num("transmissionFactor") ?? 0;
+            string ln = mname.ToLowerInvariant();
+            bool glass = tr > 0.05 || (m.Str("alphaMode") == "BLEND" && f.Length > 3 && f[3] < 0.95) || (ln.Contains("glass") && !ln.Contains("mask"));
+            g.Materials.Add(new GlbMat { Name = mname, Image = img, Colour = f[..3], Glow = Math.Min(1.0, glow), Note = note, Glass = glass });
             return matOf[key] = g.Materials.Count - 1;
         }
         var nodes = js.Arr("nodes") ?? new(); var meshes = js.Arr("meshes") ?? new();
