@@ -3,8 +3,11 @@
 > **Needs Blur PC version 1.2.** Blur 1.0 is not supported.
 
 Make your own tracks for **Blur** (Bizarre Creations, 2010, PC): draw the road, add branches, lane splits, bridges,
-power-ups, surfaces (dirt, water...), scenery, your own 3D models (.glb), lighting and skies — and your own cars
-(stats, paint, wheels, or your own .glb body) — then race them in the game with **Blur REBORN**.
+power-ups, surfaces (dirt, water, varied asphalt, your own road picture...), hills and ramps, scenery, your own 3D
+models (.glb) that can move (paths, keyframes, trigger boxes), lighting and skies — and your own cars (stats, paint,
+wheels, sounds, your own .glb body), car skins and game tweaks — then race them in the game with **Blur REBORN**.
+
+Since version 2.0 the map builder is written in **C# (.NET)**: one fast program, no Python needed. English and Russian.
 
 ![Blur Map Builder](release/icon.ico)
 
@@ -12,7 +15,7 @@ power-ups, surfaces (dirt, water...), scenery, your own 3D models (.glb), lighti
 
 | File (in your Blur folder) | What it is |
 |---|---|
-| **Blur Map Builder.exe** | the map editor (2D / 3D / collision / AI / lighting / surface / custom car tabs), Build + install |
+| **Blur Map Builder.exe** | the map editor (2D map, 3D, landscape, surface, collision, AI path, lighting, custom car, car skins, game tweaks, export / import), Build + install |
 | **Blur Map Tester.exe** | starts the game straight into a LAN race on the map you built last |
 | **Blur REBORN.exe** | made on your PC from your own `Blur.exe`: plays the game with your maps |
 
@@ -23,8 +26,8 @@ Your original `Blur.exe` and the game's own files are **never changed** — norm
 1. Download **Blur Map Builder.exe** and **Blur Map Tester.exe** from the
    [latest release](../../releases/latest).
 2. Put both into your **Blur game folder** (where `Blur.exe` is).
-3. Start **Blur Map Builder.exe**. The first start sets everything up from your own game files (about 5 minutes,
-   once; an internet connection is needed once for the model reader).
+3. Start **Blur Map Builder.exe**. The first start sets everything up from your own game files (a few seconds,
+   once). Nothing else to install: the program carries everything it needs.
 4. Draw a map → **Build + install** → **Play** (or start **Blur Map Tester.exe**).
 
 * Needs: **Blur for PC version 1.2** (retail / Steam) — it does **not** work with Blur 1.0; Windows 10/11. Amax (the Blur online mod) is needed for the quick-test LAN
@@ -47,7 +50,7 @@ Your `Blur.exe` is not the plain **version 1.2** exe. Two kinds seen so far:
 | A **modified / cracked** exe (e.g. about 29 MB, says 1.2.0.3) | The file is rebuilt, so the places the map builder changes are not where they should be | Use the plain 1.2 `Blur.exe` |
 
 Still stuck? Send `Blur Map Builder\logs\setup.log` to **mdproii** on Discord — it says which Blur.exe you have
-and why the setup stopped (map builder 1.0.3 or newer).
+and why the setup stopped.
 
 ## Guide
 
@@ -57,30 +60,30 @@ and why the setup stopped (map builder 1.0.3 or newer).
 
 ## For developers
 
-The whole map builder is plain Python — read it, change it, build your own.
+The map builder is C# on .NET 10 (Windows Forms + OpenGL). The source is in [`csharp/`](csharp):
 
 ```
-pip install numpy pillow PyOpenGL pyopengltk
-python road_designer.py          # (from a checkout inside your Blur folder)
-python release/build_exe.py      # the two .exe files (needs pyinstaller)
+cd csharp
+dotnet build src/Bmb.App -c Release          # the map builder
+dotnet publish src/Bmb.App -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
 ```
 
-* `road_designer.py` + `designer_*.py` + `view3d.py` — the editor; `car/` — the Custom car tab (cars in the
-  game's database, an imported .glb body in the body car's model, the car list icon)
-* `flat_earth/` — the build: roads (`road.py`, `road_mesh.py`, `network.py`), race path (`gen_aid.py`), level
-  (`build.py`), surfaces, lighting, start cameras (`intro_cam.py`: the `.cycle` camera format)
-* `kslf/`, `pak/`, `aid/`, `physics/`, `model/`, `tex/`, `ui/` — readers / writers of the game's file formats
-* `setup_game.py` — the first start (everything made from the player's own game); `paths.py` — where things are
-* `amax_plugin/quickstart/` — the Amax plugin that opens a LAN race on your map
-* `research/tools/` — reverse-engineering helpers used while decoding the game
+* `src/Bmb.App` — the window: tabs, 2D map, 3D view, Custom car, robot self-test
+* `src/Bmb.Core` — the build: roads, surfaces, lighting, race path, level, cars, skins, readers / writers of the
+  game's file formats (pak, kslf, model, textures)
+* `src/Bmb.Cli` — `bmbcli`, look-only tools used while decoding the game
+* `csharp/STATUS.md` — notes on how things work; `csharp/tools/README.md` — how to build and test
+
+The old Python version (1.x) is still in the repository root (`road_designer.py`, `flat_earth/`, ...) for
+reference; it is no longer updated.
 
 ## Credits
 
 * **MDPRO** — Blur Map Builder
 * **Bizarre Creations / Activision** — Blur (this is a free fan project; you need your own copy of the game)
 * **The Amax team** — Amax
-* **TimberStalker** — [BlurImportExport](https://github.com/TimberStalker/BlurImportExport) (the model reader is
-  downloaded from his repository on the first start; it is not included here)
-* Python, numpy, Pillow, PyOpenGL, pyopengltk
+* **TimberStalker** — [BlurImportExport](https://github.com/TimberStalker/BlurImportExport) (how the game's model
+  files are laid out)
+* .NET, C#
 
 License: MIT (the map builder's own code — see `LICENSE`).

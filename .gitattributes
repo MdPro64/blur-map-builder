@@ -1,0 +1,2 @@
+# the old Python version (1.x) is kept for reference only; the map builder is C# (csharp/)
+*.py linguist-vendored
