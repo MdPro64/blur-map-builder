@@ -918,6 +918,7 @@ public static class Build
         var log = opt.Log;
         Directory.CreateDirectory(Paths.FeWork);
         if (!opt.Dry && Setup.RefreshFilter() is string fl) log(fl + " (sharp textures far away, Game tweaks)");
+        if (!opt.Dry && Setup.RefreshIntro() is string im) log(im + " (Game tweaks)");
         var raw = Installed.ForBuild(World.Load(), opt);
         opt.Built = Share.Copy(raw);
         var wld = World.AssignIds(raw);

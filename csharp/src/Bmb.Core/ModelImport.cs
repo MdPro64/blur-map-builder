@@ -108,7 +108,32 @@ public sealed class Pic
 }
 
 public sealed class GlbPart { public double[] Pos = null!, Nrm = null!, Uv = null!; public int[] Tri = null!; public int Mat; public int N => Pos.Length / 3; }
-public sealed class GlbMat { public string Name = ""; public Pic? Image; public double[] Colour = { 1, 1, 1 }; public double Glow; public string? Note; public bool Glass; }
+public sealed class GlbMat
+{
+    public string Name = ""; public Pic? Image; public double[] Colour = { 1, 1, 1 }; public double Glow; public string? Note; public bool Glass;
+    /// the picture with its see-through layer (only kept when the picture really has see-through parts), and the colour's own alpha
+    public Rgba? Alpha; public double A = 1;
+    /// glTF roughness / metallic when the file says (-1 = not said)
+    public double Rough = -1, Metal = -1;
+    /// not shiny: named like interior / plastic / rubber ..., or a rough non-metal. In game such parts get little reflection (the vertex
+    /// ambient-occlusion byte the game's own interiors keep low)
+    public bool Matte
+    {
+        get
+        {
+            string n = Name.ToLowerInvariant();
+            if (n.Contains("chrome") || n.Contains("mirror") || n.Contains("metal -") || n.Contains("alloy")) return false;
+            foreach (var k in new[] { "interior", "dashboard", "seat", "dull", "plastic", "rubber", "carpet", "fabric", "leather", "cloth", "matt", "mask", "alcantara", "trim" })
+                if (n.Contains(k)) return true;
+            return Rough >= 0.6 && Metal < 0.5;
+        }
+    }
+    /// the body's paint: a colour-only material named like paint / car skin. The game paints it with the player's colour.
+    public bool Paint;
+    /// a picture with see-through parts (badge, sticker, grille): drawn over the paint
+    public bool Decal => Alpha != null && !Glass && !Paint;
+    public static bool PaintName(string n) { n = n.ToLowerInvariant(); return !n.Contains("mask") && !n.Contains("glass") && (n.Contains("carskin") || n.Contains("paint") || n.Contains("bodycolo") || n.Contains("bodywork")); }
+}
 public sealed class Glb { public List<GlbPart> Parts = new(); public List<GlbMat> Materials = new(); public List<string> Skipped = new(); }
 public sealed class ImportProblem : Exception { public ImportProblem(string s) : base(s) { } }
 public sealed class Piece3 { public int Mat; public List<double[]> Verts = new(); public List<int> Strip = new(); }
@@ -202,6 +227,60 @@ public static class ModelImport
         catch (Exception) { return (null, $"its picture could not be read ({im.Str("mimeType") ?? "?"}) - plain colour used"); }
     }
 
+    /// look only: what each material of a .glb holds, and which parts the importer reads (one line per material)
+    [SupportedOSPlatform("windows")]
+    public static List<string> MaterialReport(string path)
+    {
+        var (js, bin) = Chunks(path); var o = new List<string>();
+        var mats = js.Arr("materials") ?? new(); var meshes = js.Arr("meshes") ?? new();
+        var users = new Dictionary<int, int>(); var vcol = new HashSet<int>(); var uv1 = new HashSet<int>();
+        foreach (JObj me in meshes)
+            foreach (var pr in me.Objs("primitives"))
+            {
+                int mi = pr.ContainsKey("material") ? (int)pr.Int("material") : -1;
+                int tris = pr.ContainsKey("indices") ? (int)(js.Arr("accessors")![(int)pr.Int("indices")] as JObj)!.Int("count") / 3 : 0;
+                users[mi] = users.GetValueOrDefault(mi) + tris;
+                var at = pr.Obj("attributes")!;
+                if (at.ContainsKey("COLOR_0")) vcol.Add(mi);
+                if (at.ContainsKey("TEXCOORD_1")) uv1.Add(mi);
+            }
+        o.Add($"{mats.Count} materials, {meshes.Count} meshes; extensions used: {string.Join(", ", (js.Arr("extensionsUsed") ?? new()).OfType<string>())}");
+        for (int i = 0; i < mats.Count; i++)
+        {
+            var m = (JObj)mats[i]!; var pbr = m.Obj("pbrMetallicRoughness"); var ex = m.Obj("extensions");
+            var w = new List<string>();
+            var f = pbr?.Arr("baseColorFactor");
+            w.Add(f != null ? $"colour {string.Join("/", f.Select(v => Json.D(v).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)))}" : "NO colour (white)");
+            if (pbr?.Obj("baseColorTexture") is JObj bt)
+            {
+                string alpha = "";
+                try
+                {
+                    var tex = (JObj)js.Arr("textures")![(int)bt.Int("index")]!; var im = (JObj)js.Arr("images")![(int)tex.Int("source")]!;
+                    var bv = (JObj)js.Arr("bufferViews")![(int)im.Int("bufferView")]!;
+                    using var ms = new MemoryStream(bin, (int)bv.Int("byteOffset"), (int)bv.Int("byteLength"));
+                    using var bm = new System.Drawing.Bitmap(ms);
+                    bool hasA = System.Drawing.Image.IsAlphaPixelFormat(bm.PixelFormat); int lo = 255;
+                    if (hasA) for (int y = 0; y < bm.Height; y += Math.Max(1, bm.Height / 64)) for (int x = 0; x < bm.Width; x += Math.Max(1, bm.Width / 64)) lo = Math.Min(lo, bm.GetPixel(x, y).A);
+                    alpha = $" {bm.Width}x{bm.Height} {(hasA ? (lo < 250 ? "HAS see-through parts (alpha lost on import)" : "alpha channel all solid") : "no alpha")}";
+                }
+                catch (Exception) { alpha = " (picture not readable)"; }
+                w.Add("picture" + alpha + (bt.Int("texCoord") > 0 ? $", uv set {bt.Int("texCoord")} (NOT read)" : "") + (bt.Obj("extensions")?.ContainsKey("KHR_texture_transform") == true ? ", texture transform (NOT read)" : ""));
+            }
+            else w.Add("no picture");
+            if (pbr != null && (pbr.ContainsKey("metallicFactor") || pbr.ContainsKey("roughnessFactor") || pbr.ContainsKey("metallicRoughnessTexture")))
+                w.Add($"metal {(pbr.ContainsKey("metallicFactor") ? pbr.Num("metallicFactor") : 1):0.##} rough {(pbr.ContainsKey("roughnessFactor") ? pbr.Num("roughnessFactor") : 1):0.##} (NOT read)");
+            if (m.ContainsKey("alphaMode")) w.Add($"alpha mode {m.Str("alphaMode")}" + (m.Str("alphaMode") == "MASK" ? " (cut-out NOT read)" : ""));
+            if (m.ContainsKey("normalTexture")) w.Add("bump map (NOT read)");
+            if (m.ContainsKey("emissiveTexture") || m.ContainsKey("emissiveFactor")) w.Add("emissive (read as glow)");
+            if (ex != null) w.Add("ext " + string.Join("+", ex.Keys.Select(k => k.Replace("KHR_materials_", ""))) + (ex.ContainsKey("KHR_materials_pbrSpecularGlossiness") ? " (colour/picture inside it NOT read)" : ""));
+            if (vcol.Contains(i)) w.Add("vertex colours (NOT read)");
+            if (uv1.Contains(i)) w.Add("2nd uv set");
+            o.Add($"{i,3} {m.Str("name") ?? "?",-44} {users.GetValueOrDefault(i),6} tris | {string.Join(" | ", w)}");
+        }
+        return o;
+    }
+
     [SupportedOSPlatform("windows")]
     public static Glb ReadGlb(string path)
     {
@@ -227,7 +306,25 @@ public static class ModelImport
             double tr = m.Obj("extensions")?.Obj("KHR_materials_transmission")?.Num("transmissionFactor") ?? 0;
             string ln = mname.ToLowerInvariant();
             bool glass = tr > 0.05 || (m.Str("alphaMode") == "BLEND" && f.Length > 3 && f[3] < 0.95) || (ln.Contains("glass") && !ln.Contains("mask"));
-            g.Materials.Add(new GlbMat { Name = mname, Image = img, Colour = f[..3], Glow = Math.Min(1.0, glow), Note = note, Glass = glass });
+            Rgba? alpha = null;
+            if (img != null && !glass && pbr.Obj("baseColorTexture") is JObj bt2)
+                try
+                {
+                    var tx = (JObj)js.Arr("textures")![(int)bt2.Int("index")]!; var im2 = (JObj)js.Arr("images")![(int)tx.Int("source")]!;
+                    var bv2 = (JObj)js.Arr("bufferViews")![(int)im2.Int("bufferView")]!;
+                    using var ms2 = new MemoryStream(bin, (int)bv2.Int("byteOffset"), (int)bv2.Int("byteLength"));
+                    using var bm2 = new System.Drawing.Bitmap(ms2);
+                    if (System.Drawing.Image.IsAlphaPixelFormat(bm2.PixelFormat))
+                    {
+                        var rg = Rgba.FromBitmap(bm2); int lo = 255;
+                        for (int i = 3; i < rg.Px.Length; i += 4 * 7) lo = Math.Min(lo, rg.Px[i]);
+                        if (lo < 250) alpha = rg;
+                    }
+                }
+                catch (Exception) { }
+            g.Materials.Add(new GlbMat { Name = mname, Image = img, Colour = f[..3], Glow = Math.Min(1.0, glow), Note = note, Glass = glass, Alpha = alpha, A = f.Length > 3 ? f[3] : 1.0,
+                                         Paint = !glass && img == null && GlbMat.PaintName(mname),
+                                         Rough = pbr.ContainsKey("roughnessFactor") ? pbr.Num("roughnessFactor") : -1, Metal = pbr.ContainsKey("metallicFactor") ? pbr.Num("metallicFactor") : -1 });
             return matOf[key] = g.Materials.Count - 1;
         }
         var nodes = js.Arr("nodes") ?? new(); var meshes = js.Arr("meshes") ?? new();

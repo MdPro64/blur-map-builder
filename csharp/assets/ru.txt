@@ -1642,3 +1642,15 @@ Sharp textures far away: off (from the next game start) ||| Чёткие тек�
 GAME TWEAKS: more and harder AI racers, your own power-up icons, sharp textures far away. Build + install to use them ||| НАСТРОЙКИ ИГРЫ: больше и сильнее ИИ-гонщиков, свои значки бонусов, чёткие текстуры вдали. Соберите, чтобы использовать
 See-through glass ||| Прозрачные стёкла
 On: the body's glass (see-through or named glass in the .glb) is clear, you see inside the car. Off: the game's own dark windows - for a body without an inside ||| Вкл: стёкла кузова (прозрачные или названные glass в .glb) прозрачные, видно салон. Выкл: тёмные стёкла игры - для кузова без салона
+Paintable body ||| Красимый кузов
+On: the parts of your body named like paint or car skin (a plain colour, no picture) take the paint colours you pick below, and pictures with see-through parts (badges, stickers) are drawn over the paint. Off: every colour from the .glb stays as it is ||| Вкл: части кузова с именем вроде paint или car skin (простой цвет, без картинки) берут цвета краски, выбранные ниже, а картинки с прозрачными частями (значки, наклейки) рисуются поверх краски. Выкл: все цвета из .glb остаются как есть
+an imported body: parts named like paint / car skin take these colours, the rest keeps its colours (from its .glb) ||| импортированный кузов: части с именем вроде paint / car skin берут эти цвета, остальное сохраняет свои цвета (из .glb)
+⏩  Testing ||| ⏩  Тестирование
+BLUR REBORN  +  NORMAL BLUR  (the same game folder) ||| BLUR REBORN  +  ОБЫЧНЫЙ BLUR  (одна папка игры)
+Skip the two start-up movies (faster testing) ||| Пропускать два ролика при запуске (быстрее тесты)
+Renames the game's two start-up movies (UI\movies\atvi.bik and BizarreSplash.bik) to *.bmb_off; the game skips a movie it cannot open. Off puts them back. Normal Blur is affected too, so turn it off before playing normally if you want the movies. Close Blur before changing it. ||| Переименовывает два ролика при запуске (UI\movies\atvi.bik и BizarreSplash.bik) в *.bmb_off; игра пропускает ролик, который не может открыть. Выкл возвращает их. Обычный Blur тоже затронут, поэтому выключите перед обычной игрой, если нужны ролики. Закройте Blur перед изменением.
+Start-up movies: skipped (from the next game start) ||| Ролики при запуске: пропускаются (со следующего запуска игры)
+Start-up movies: back ||| Ролики при запуске: возвращены
+start-up movies: skipped ||| ролики при запуске: пропущены
+start-up movies: back ||| ролики при запуске: возвращены
+paint colours for imported bodies: still under work. An imported body keeps its own colours (from its .glb) ||| цвета краски для импортированных кузовов: ещё в разработке. Импортированный кузов сохраняет свои цвета (из его .glb)

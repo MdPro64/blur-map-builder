@@ -12,7 +12,7 @@ public sealed class TweaksPanel : Panel
     readonly MainForm _f;
     readonly Dictionary<string, PictureBox> _pics = new();
     readonly Dictionary<string, Label> _picNote = new();
-    CheckBox _moreAi = null!, _harder = null!, _iconsNormal = null!, _aiMods = null!, _sharp = null!;
+    CheckBox _moreAi = null!, _harder = null!, _iconsNormal = null!, _aiMods = null!, _sharp = null!, _skipIntro = null!;
 
     public TweaksPanel(MainForm f)
     {
@@ -48,6 +48,18 @@ public sealed class TweaksPanel : Panel
         });
         col.Controls.Add(_sharp);
         col.Controls.Add(Hint("Installs a small add-on into the game (amax\\dlls\\aniso_fix.dll); off removes it. Blur never turns this on, so roads blur into a smear far ahead. Only changes how your PC draws the game: nothing online. Close Blur before changing it."));
+
+        // testing: skip the two start-up movies
+        col.Controls.Add(Head("⏩  Testing"));
+        col.Controls.Add(Where("BLUR REBORN  +  NORMAL BLUR  (the same game folder)", Theme.Good));
+        _skipIntro = Theme.Check("Skip the two start-up movies (faster testing)", false, v =>
+        {
+            if (_loading) return;
+            var t = GameTweaks.Load(); t["skip_intro"] = v; GameTweaks.Save(t);
+            _f.Say(Setup.RefreshIntro() ?? (v ? "Start-up movies: skipped (from the next game start)" : "Start-up movies: back"), Theme.Good);
+        });
+        col.Controls.Add(_skipIntro);
+        col.Controls.Add(Hint("Renames the game's two start-up movies (UI\\movies\\atvi.bik and BizarreSplash.bik) to *.bmb_off; the game skips a movie it cannot open. Off puts them back. Normal Blur is affected too, so turn it off before playing normally if you want the movies. Close Blur before changing it."));
 
         // power-up icons (on hold: made but not shown)
         Control box = PowerupIcons.OnHold ? new Panel() : col;
@@ -105,6 +117,7 @@ public sealed class TweaksPanel : Panel
         var t = GameTweaks.Load();
         _moreAi.Checked = t.Truthy("more_ai"); _harder.Checked = t.Truthy("harder_ai"); _iconsNormal.Checked = t.Truthy("icons_normal"); _aiMods.Checked = t.Truthy("ai_mods");
         _sharp.Checked = GameTweaks.SharpFar(t);
+        _skipIntro.Checked = GameTweaks.SkipIntro(t);
         _loading = false;
         foreach (var (key, _) in PowerupIcons.Kinds) ShowIcon(key);
     }

@@ -242,7 +242,7 @@ public static class CarUi
     }
 
     // ---- the car's picture ------------------------------------------------------------------------------------------
-    public sealed class Parts { public Dictionary<string, float[]> Kinds = new(); public byte[]? GlbRgb, GlassRgb; public float[]? Smooth; }
+    public sealed class Parts { public Dictionary<string, float[]> Kinds = new(); public byte[]? GlbRgb, GlassRgb; public bool[]? GlbPaint; public float[]? Smooth; }
     static readonly Dictionary<string, byte[]> Colours = new() { ["dark"] = new byte[] { 38, 40, 46 }, ["glass"] = new byte[] { 70, 95, 120 }, ["light"] = new byte[] { 225, 225, 210 }, ["tyre"] = new byte[] { 24, 24, 26 }, ["rim"] = new byte[] { 175, 180, 190 } };
     static readonly Dictionary<string, double> Gloss = new() { ["paint"] = 0.4, ["glb"] = 0.35, ["glass"] = 0.6, ["rim"] = 0.4, ["light"] = 0.3, ["tyre"] = 0.03 };
     static readonly Dictionary<string, GameParts> _game = new();
@@ -271,6 +271,8 @@ public static class CarUi
             float[] Tris(bool glass) { var o = new List<float>(); for (int t = 0; t < ntb; t++) if (G(t) == glass) for (int k = 0; k < 9; k++) o.Add(all[9 * t + k]); return o.ToArray(); }
             byte[] Cols(bool glass) { var o = new List<byte>(); for (int t = 0; t < ntb && 3 * t + 2 < rgb.Length; t++) if (G(t) == glass) for (int k = 0; k < 3; k++) o.Add(rgb[3 * t + k]); return o.ToArray(); }
             Add("glb", Tris(false)); p.GlbRgb = Cols(false);
+            // the body's paint triangles are drawn in the car's paint colour (the game paints them)
+            if (CarModel.PaintBody(car)) { var gp = new List<bool>(); for (int t = 0; t < ntb; t++) if (!G(t)) gp.Add(t < rawB.Kind.Length && rawB.Kind[t] == 1); p.GlbPaint = gp.ToArray(); }
             var gt = Tris(true);
             if (gt.Length > 0) { Add("glbglass", gt); p.GlassRgb = Cols(true); }
         }
@@ -466,7 +468,7 @@ public static class CarUi
             for (int i = 0; i < c; i++, ti++)
             {
                 for (int q = 0; q < 3; q++)
-                    cols[3 * ti + q] = n == "glb" ? parts.GlbRgb![3 * i + q] : n == "glbglass" ? (parts.GlassRgb is { } gr && 3 * i + q < gr.Length ? gr[3 * i + q] : (byte)20) : n == "paint" ? paint[q] : Colours[n][q];
+                    cols[3 * ti + q] = n == "glb" ? (parts.GlbPaint is { } gpa && i < gpa.Length && gpa[i] ? paint[q] : parts.GlbRgb![3 * i + q]) : n == "glbglass" ? (parts.GlassRgb is { } gr && 3 * i + q < gr.Length ? gr[3 * i + q] : (byte)20) : n == "paint" ? paint[q] : Colours[n][q];
                 gloss[ti] = (float)Gloss.GetValueOrDefault(n == "glbglass" ? "glass" : n, 0.1);
                 seeThrough[ti] = n == "glbglass";
             }

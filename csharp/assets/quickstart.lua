@@ -47,7 +47,7 @@ local M = {
 M.info = {
 	name = "QuickStart",
 	description = "Starts a custom LAN race on the map from the track designer",
-	version = 0.15,
+	version = 0.16,
 }
 
 local T = { enabled = false }
@@ -495,10 +495,25 @@ local function tick()
 		pcall(ai_list_tick)
 	end
 	if not M.fast_done and T.fast then
+		-- the game's own intro handlers (GoScreen, StartGame, MessageUpdate...) read the GLOBAL GUI, which is nil when we call them
+		-- from here ("attempt to index global 'GUI'", seen in game 2026-11-21): give it the intro screen's table for the call
+		local c0 = ctx()
+		local g0 = (c0 and c0.GUI) or rawget(_G, "GUI")
+		local had = rawget(_G, "GUI")
+		if had == nil and type(g0) == "table" then
+			_G.GUI = g0
+		end
 		local ok, err = pcall(fast_tick)
+		if had == nil then
+			_G.GUI = nil
+		end
 		if not ok then
-			M.fast_done = true
-			log("fast start FAILED: " .. tostring(err))
+			M.fast_fail = (M.fast_fail or 0) + 1
+			log("fast start error " .. M.fast_fail .. ": " .. tostring(err))
+			if M.fast_fail >= 8 then
+				M.fast_done = true
+				log("fast start gave up")
+			end
 		end
 	end
 	if not T.enabled and not T.record then

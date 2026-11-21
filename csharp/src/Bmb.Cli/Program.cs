@@ -1181,6 +1181,77 @@ switch (cmd)
         Console.WriteLine($"{o.Count} chunks, road width {main.Width}; asphalt v {pv[nb0 - 1].V.ToString(System.Globalization.CultureInfo.InvariantCulture)} {pv[nb0].V.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
         break;
     }
+    case "glbmats":         // glbmats FILE.glb: what each material of a .glb holds, and what the importer does not read (look only)
+    {
+        foreach (var l in ModelImport.MaterialReport(args[1])) Console.WriteLine(l);
+        break;
+    }
+    case "meshtex":         // meshtex GAME CAR|FILE.model: per mesh the 8 numbers after its record (picture slots?) + the model's picture list (look only)
+    {
+        Paths.Init(args[1]);
+        using var root = new Pak(Paths.RootOriginal);
+        var data = args[2].EndsWith(".model", StringComparison.OrdinalIgnoreCase) ? File.ReadAllBytes(args[2]) : CarModel.ModelBytes(root, CarModel.ModelPath(args[2]));
+        var M = CpModel.Read(data);
+        for (int i = 0; i < M.TexList.Count; i++) Console.WriteLine($"pic {i}: {M.TexList[i].Name} {M.TexList[i].W}x{M.TexList[i].H} dxt {M.TexList[i].Dxt:X}");
+        var (meshes, _) = CarGlb.RoomsOf(M);
+        foreach (var r in meshes)
+        {
+            int at = r.M.MaterialAt; var nums = new List<string>();
+            for (int o = 20; o < 76; o += 4) nums.Add(B.U32(data, at + o).ToString("X"));
+            Console.WriteLine($"{r.El,-26} {M.FxFiles[r.M.Material],-26} v{r.M.Data1[0].VCount,5}  {string.Join(" ", nums)}");
+        }
+        // the 4 lighting bytes (ambient occlusion + spherical-harmonic terms) of every vertex: mean + range per mesh
+        foreach (var r in meshes.Where(q => q.S >= 0 && M.VStreams[q.S].Def.Any(d => d.Type == 11 && d.Channel == 9)))
+        {
+            var vs = M.VStreams[r.S]; int stride = vs.Bytes, vb = r.M.VOffset[0] / stride + r.M.Data1[0].VOff, cnt = r.M.Data1[0].VCount;
+            var sum = new double[4]; var lo = new int[] { 255, 255, 255, 255 }; var hi = new int[4];
+            for (int k = 0; k < cnt; k++) { int a2 = vs.Start + stride * (vb + k) + stride - 4; for (int q = 0; q < 4; q++) { int v = data[a2 + q]; sum[q] += v; lo[q] = Math.Min(lo[q], v); hi[q] = Math.Max(hi[q], v); } }
+            Console.WriteLine($"LIGHTBYTES {r.El,-26} {M.FxFiles[r.M.Material],-24} v{cnt,5} mean {sum[0] / cnt:0} {sum[1] / cnt:0} {sum[2] / cnt:0} {sum[3] / cnt:0}  first byte {lo[0]}..{hi[0]}");
+        }
+        // each shader entry's list of meshes (the renderer draws a material's meshes from this list)
+        for (int i = 0; i < M.ShaderMeshes.Count; i++)
+        {
+            var (at, cnt) = M.ShaderMeshes[i];
+            if (at < 0 || cnt == 0) continue;
+            var l = Enumerable.Range(0, cnt).Select(k => (int)B.U16(data, at + 2 * k)).ToList();
+            Console.WriteLine($"MESHLIST {i,2} {(i < M.FxFiles.Count ? M.FxFiles[i] : "?"),-26} n {cnt,3}: {string.Join(" ", l.Take(24))}");
+        }
+        // each material's raw bytes (to find its settings: reflectivity, colour)
+        for (int i = 0; i < M.ShaderBlocks.Count && i < 60; i++)
+        {
+            var (a0, b0) = M.ShaderBlocks[i];
+            if (b0 - a0 > 700) continue;
+            Console.WriteLine($"MAT {i,2} {(i < M.FxFiles.Count ? M.FxFiles[i] : "?"),-26} {b0 - a0} bytes: {Convert.ToHexString(data, a0, b0 - a0)}");
+        }
+        // the glass meshes: the box their points cover in uv (0..1)
+        foreach (var r in meshes.Where(q => q.S >= 0 && M.FxFiles[q.M.Material].Contains("glass", StringComparison.OrdinalIgnoreCase)))
+        {
+            var vs = M.VStreams[r.S]; int stride = vs.Bytes, vb = r.M.VOffset[0] / stride + r.M.Data1[0].VOff, at0 = 0, uvAt = -1;
+            foreach (var (t, ch, _) in vs.Def) { if (t == 9 && ch == 5 && uvAt < 0) uvAt = at0; at0 += t == 6 ? 12 : t == 9 ? 8 : 4; }
+            double u0 = 9, v0 = 9, u1 = -9, v1 = -9, a0 = 9, b0 = 9, a1 = -9, b1 = -9;
+            for (int k = 0; k < r.M.Data1[0].VCount; k++)
+            {
+                int a2 = vs.Start + stride * (vb + k);
+                double u = (double)BitConverter.ToHalf(data, a2 + uvAt), v = (double)BitConverter.ToHalf(data, a2 + uvAt + 2), z = (double)BitConverter.ToHalf(data, a2 + uvAt + 4), w = (double)BitConverter.ToHalf(data, a2 + uvAt + 6);
+                u0 = Math.Min(u0, u); u1 = Math.Max(u1, u); v0 = Math.Min(v0, v); v1 = Math.Max(v1, v); a0 = Math.Min(a0, z); a1 = Math.Max(a1, z); b0 = Math.Min(b0, w); b1 = Math.Max(b1, w);
+            }
+            Console.WriteLine($"GLASS {r.El,-28} {M.FxFiles[r.M.Material],-22} v{r.M.Data1[0].VCount,4} uv xy u {u0:0.00}..{u1:0.00} v {v0:0.00}..{v1:0.00} | zw u {a0:0.00}..{a1:0.00} v {b0:0.00}..{b1:0.00}");
+        }
+        // the small alpha / neon meshes: where their points look in their picture
+        foreach (var r in meshes.Where(q => q.S >= 0 && (M.FxFiles[q.M.Material].Contains("alpha", StringComparison.OrdinalIgnoreCase) || M.FxFiles[q.M.Material].Contains("neon", StringComparison.OrdinalIgnoreCase))))
+        {
+            var vs = M.VStreams[r.S]; int stride = vs.Bytes, vb = r.M.VOffset[0] / stride + r.M.Data1[0].VOff, at0 = 0, uvAt = -1;
+            foreach (var (t, ch, _) in vs.Def) { if (t == 9 && ch == 5 && uvAt < 0) uvAt = at0; at0 += t == 6 ? 12 : t == 9 ? 8 : 4; }
+            var sb = new System.Text.StringBuilder();
+            for (int k = 0; k < Math.Min(8, r.M.Data1[0].VCount); k++)
+            {
+                int a2 = vs.Start + stride * (vb + k);
+                sb.Append($" ({(double)BitConverter.ToHalf(data, a2):0.00},{(double)BitConverter.ToHalf(data, a2 + 2):0.00},{(double)BitConverter.ToHalf(data, a2 + 4):0.00} uv {(double)BitConverter.ToHalf(data, a2 + uvAt):0.000},{(double)BitConverter.ToHalf(data, a2 + uvAt + 2):0.000})");
+            }
+            Console.WriteLine($"ALPHA/NEON {r.El} {M.FxFiles[r.M.Material]}:{sb}");
+        }
+        break;
+    }
     case "carpic":          // carpic GAME MAPS CARNAME OUT.png: a custom car as the Custom car tab's preview draws it (look only)
     {
         Paths.Init(args[1], args[2]);

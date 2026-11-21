@@ -124,6 +124,7 @@ public static class CarModel
 {
     static readonly string[] Corners = { "frontleft", "frontright", "backleft", "backright" }, Skip = { "dam", "debris", "broken", "collision", "shadow", "smash" };
     public const int Atlas = 1024, Swatch = 32, Edge = 4, ClearSpot = 64;
+    public const double InteriorBoost = 1;      // TEST, 1 = off
     public const double ClearUv = 1 - ClearSpot / 2.0 / Atlas;      // middle of the glass corner
     public static string ModelPath(string name) => $"models\\vehicles\\{name.ToLowerInvariant()}.model";
     public static byte[] ModelBytes(Pak root, string model) => root.Read("\\" + model.ToLowerInvariant().TrimStart('\\')) ?? throw new FileNotFoundException(model);
@@ -143,6 +144,10 @@ public static class CarModel
     /// an imported body's glass is see-through (its own clear glass) unless the car says no (Custom car tab: a body
     /// without an interior keeps the game's dark windows)
     public static bool ClearGlass(JObj car) => !car.ContainsKey("clear_glass") || car.Truthy("clear_glass");
+    /// the body's paint parts take the player's paint colour (the game's own paint), decals are drawn over it; off = every colour baked into the picture
+    public static bool PaintBody(JObj car) => car.Truthy("paint_body");
+    /// decals in the game's alpha part (not working in game yet): off; decals are laid over the body colour in the body picture instead
+    public static bool DecalAlpha(JObj car) => car.Truthy("decal_alpha");      // OFF unless a car asks for it (2026-11-21: the user wants imported cars to keep their own colours)
 
     public static string? Corner(string el) { el = el.ToLowerInvariant().Replace("_", ""); return Corners.FirstOrDefault(el.Contains); }
     static string TypesKey(IEnumerable<int> t) => string.Join(",", t);
@@ -210,7 +215,16 @@ public static class CarModel
 
     static double Srgb(double v) { v = Math.Max(0, Math.Min(1, v)); return v <= 0.0031308 ? 12.92 * v : 1.055 * Math.Pow(v, 1 / 2.4) - 0.055; }
 
-    public sealed class Body { public float[] Tri = null!, Uv = null!; public Pic? Image; public bool[] Glass = Array.Empty<bool>(); }     // 9 floats / 6 floats / 1 per triangle
+    public sealed class Body
+    {
+        public float[] Tri = null!, Uv = null!; public Pic? Image; public bool[] Glass = Array.Empty<bool>();
+        /// per triangle: 0 trim, 1 the body's paint (colour-only paint material), 2 decal (a picture with see-through parts)
+        public byte[] Kind = Array.Empty<byte>();
+        /// per triangle: 1 = not shiny (interior, plastic ...): its vertices get a low ambient-occlusion byte, so little reflection
+        public byte[] Matte = Array.Empty<byte>();
+        /// the decals' own picture (R G B A) and the uv of every triangle in it (only the decal triangles' are used)
+        public Rgba? DecalImage; public float[] DecalUv = Array.Empty<float>();
+    }     // 9 floats / 6 floats / 1 per triangle
 
     public static Body ReadGlbBody(string path)
     {
@@ -218,7 +232,17 @@ public static class CarModel
         var (parts, _, _) = ModelImport.GameSpace(g);
         var trisL = new List<double[]>(); var uvsL = new List<double[]>();
         var looks = new List<(GlbMat? M, Pic? Img, double[] C)>();
-        var glassL = new List<bool>();
+        var glassL = new List<bool>(); var kindL = new List<byte>(); var matteL = new List<byte>(); var mats = new List<GlbMat?>();
+        var decalPic = DecalOnBody(g, parts);
+        // TEST (2026-11-21): the cabin looks pure black in game - interior pictures x InteriorBoost, to see if it is only too dark
+        var boosted = new Dictionary<GlbMat, Pic>();
+        if (InteriorBoost > 1)
+            foreach (var m in g.Materials.Where(q => q.Image != null && q.Name.Contains("interior", StringComparison.OrdinalIgnoreCase)))
+            {
+                var px = new byte[m.Image!.Px.Length];
+                for (int i = 0; i < px.Length; i++) px[i] = (byte)Math.Min(255, m.Image.Px[i] * InteriorBoost);
+                boosted[m] = new Pic(m.Image.W, m.Image.H, px);
+            }
         foreach (var p in parts)
         {
             int nt = p.Tri.Length / 3;
@@ -230,9 +254,10 @@ public static class CarModel
                 uv[2 * i] = p.Uv[2 * v]; uv[2 * i + 1] = p.Uv[2 * v + 1];
             }
             var mat = p.Mat >= 0 && p.Mat < g.Materials.Count ? g.Materials[p.Mat] : null;
-            looks.Add(mat != null && mat.Image != null ? (mat, mat.Image, mat.Colour[..3]) : (mat, null, mat != null ? mat.Colour[..3] : new[] { 0.7, 0.7, 0.7 }));
+            looks.Add(mat != null && mat.Image != null ? (mat, decalPic.TryGetValue(p, out var dp) ? dp : boosted.TryGetValue(mat, out var bp) ? bp : mat.Image, mat.Colour[..3]) : (mat, null, mat != null ? mat.Colour[..3] : new[] { 0.7, 0.7, 0.7 }));
             trisL.Add(t); uvsL.Add(uv);
-            for (int i = 0; i < nt; i++) glassL.Add(mat?.Glass == true);
+            for (int i = 0; i < nt; i++) { matteL.Add((byte)(mat?.Matte == true ? 1 : 0)); glassL.Add(mat?.Glass == true); kindL.Add((byte)(mat?.Paint == true ? 1 : mat?.Decal == true ? 2 : 0)); }
+            mats.Add(mat);
         }
         var (uvs, image) = OneTexture(uvsL, looks);
         int n = trisL.Sum(t => t.Length);
@@ -243,7 +268,107 @@ public static class CarModel
             foreach (double v in trisL[k]) tri[a++] = (float)v;
             foreach (double v in uvs[k]) outUv[b++] = (float)v;
         }
-        return new Body { Tri = tri, Uv = outUv, Image = image, Glass = glassL.ToArray() };
+        var (decUvs, decImg) = DecalTiles(uvsL, mats);
+        var decUv = new float[outUv.Length]; int d = 0;
+        foreach (var u in decUvs) foreach (double v in u) decUv[d++] = (float)v;
+        return new Body { Tri = tri, Uv = outUv, Image = image, Glass = glassL.ToArray(), Kind = kindL.ToArray(), Matte = matteL.ToArray(), DecalImage = decImg, DecalUv = decUv };
+    }
+
+    /// each decal picture (badge, sticker: a picture with see-through parts) laid over the colour of the body parts nearest to it, so
+    /// its see-through parts show the body colour instead of a solid box (the game's pictures for body parts have no see-through layer)
+    static Dictionary<GlbPart, Pic> DecalOnBody(Glb g, List<GlbPart> parts)
+    {
+        var o = new Dictionary<GlbPart, Pic>();
+        var avg = new Dictionary<Pic, double[]>();
+        double[] Mean(Pic p)
+        {
+            if (avg.TryGetValue(p, out var h)) return h;
+            double r = 0, gg = 0, b = 0; int n = 0;
+            for (int i = 0; i + 2 < p.Px.Length; i += 3 * 5) { r += p.Px[i]; gg += p.Px[i + 1]; b += p.Px[i + 2]; n++; }
+            return avg[p] = new[] { r / Math.Max(1, n), gg / Math.Max(1, n), b / Math.Max(1, n) };
+        }
+        double[] ColourOf(GlbMat m)
+        {
+            if (m.Image != null) { var h = Mean(m.Image); return new[] { h[0] * Math.Min(1, m.Colour[0]), h[1] * Math.Min(1, m.Colour[1]), h[2] * Math.Min(1, m.Colour[2]) }; }
+            return new[] { 255 * Srgb(m.Colour[0]), 255 * Srgb(m.Colour[1]), 255 * Srgb(m.Colour[2]) };
+        }
+        var cents = new List<(double X, double Y, double Z, GlbMat M)>();
+        foreach (var p in parts)
+        {
+            var m = p.Mat >= 0 && p.Mat < g.Materials.Count ? g.Materials[p.Mat] : null;
+            if (m == null || m.Decal || m.Glass) continue;
+            for (int t = 0; t + 2 < p.Tri.Length; t += 3)
+            {
+                double x = 0, y = 0, z = 0;
+                for (int k = 0; k < 3; k++) { int v = p.Tri[t + k]; x += p.Pos[3 * v]; y += p.Pos[3 * v + 1]; z += p.Pos[3 * v + 2]; }
+                cents.Add((x / 3, y / 3, z / 3, m));
+            }
+        }
+        foreach (var p in parts)
+        {
+            var m = p.Mat >= 0 && p.Mat < g.Materials.Count ? g.Materials[p.Mat] : null;
+            if (m == null || !m.Decal || cents.Count == 0) continue;
+            double cx = 0, cy = 0, cz = 0; int n = 0;
+            foreach (int v in p.Tri) { cx += p.Pos[3 * v]; cy += p.Pos[3 * v + 1]; cz += p.Pos[3 * v + 2]; n++; }
+            if (n == 0) continue;
+            cx /= n; cy /= n; cz /= n;
+            var near = cents.OrderBy(c => (c.X - cx) * (c.X - cx) + (c.Y - cy) * (c.Y - cy) + (c.Z - cz) * (c.Z - cz)).Take(12).ToList();
+            var bg = new double[3];
+            foreach (var c in near) { var col = ColourOf(c.M); for (int q = 0; q < 3; q++) bg[q] += col[q] / near.Count; }
+            var src = m.Alpha!; var rgb = new byte[src.W * src.H * 3];
+            for (int i2 = 0; i2 < src.W * src.H; i2++)
+            {
+                double a = src.Px[4 * i2 + 3] / 255.0 * Math.Max(0, Math.Min(1, m.A));
+                for (int q = 0; q < 3; q++) rgb[3 * i2 + q] = (byte)Math.Max(0, Math.Min(255, src.Px[4 * i2 + q] * a + bg[q] * (1 - a)));
+            }
+            o[p] = new Pic(src.W, src.H, rgb);
+        }
+        return o;
+    }
+
+    /// the decal pictures (badges, stickers: pictures with see-through parts) side by side in one picture with their
+    /// see-through layer, below ClearSpot rows kept clear; each decal triangle's uv in it
+    static (List<double[]>, Rgba?) DecalTiles(List<double[]> uvs, List<GlbMat?> mats)
+    {
+        static string K(GlbMat m) => string.Join(",", m.Colour.Select(v => v.ToString("R"))) + "," + m.A.ToString("R");
+        var tiles = new List<GlbMat>();
+        foreach (var m in mats) if (m is { Decal: true } && !tiles.Any(t => t.Alpha == m.Alpha && K(t) == K(m))) tiles.Add(m);
+        if (tiles.Count == 0) return (uvs.Select(u => new double[u.Length]).ToList(), null);
+        int k = (int)Math.Ceiling(Math.Sqrt(tiles.Count)), w = Atlas / k, h = (Atlas - ClearSpot) / k;
+        var atlas = new Rgba(Atlas, Atlas);
+        for (int i = 0; i < Atlas * Atlas; i++) { atlas.Px[4 * i] = 128; atlas.Px[4 * i + 1] = 128; atlas.Px[4 * i + 2] = 128; }
+        for (int n = 0; n < tiles.Count; n++)
+        {
+            var m = tiles[n]; var r = m.Alpha!.Resize(w, h); int ox = n % k * w, oy = n / k * h;
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    int s = (y * w + x) * 4, t = ((y + oy) * Atlas + x + ox) * 4;
+                    for (int q = 0; q < 3; q++) atlas.Px[t + q] = (byte)(float)(r.Px[s + q] * (float)Math.Max(0, Math.Min(1, m.Colour[q])));
+                    atlas.Px[t + 3] = (byte)(int)(r.Px[s + 3] * Math.Max(0, Math.Min(1, m.A)));
+                }
+        }
+        var o = new List<double[]>();
+        for (int p = 0; p < uvs.Count; p++)
+        {
+            var uv = uvs[p]; var r = new double[uv.Length];
+            if (mats[p] is { Decal: true } mm)
+            {
+                int n = tiles.FindIndex(t => t.Alpha == mm.Alpha && K(t) == K(mm));
+                for (int t = 0; t < r.Length; t += 6)
+                    for (int ax = 0; ax < 2; ax++)
+                    {
+                        double mn = Math.Floor(Math.Min(uv[t + ax], Math.Min(uv[t + 2 + ax], uv[t + 4 + ax])));
+                        for (int q = 0; q < 3; q++)
+                        {
+                            double v = Math.Max(0, Math.Min(1, uv[t + 2 * q + ax] - mn));
+                            r[t + 2 * q + ax] = (ax == 0 ? v * (w - 2 * Edge) + (n % k * w + Edge) : v * (h - 2 * Edge) + (n / k * h + Edge)) / Atlas;
+                        }
+                    }
+            }
+            o.Add(r);
+        }
+        return (o, atlas);
     }
 
     static (List<double[]>, Pic?) OneTexture(List<double[]> uvs, List<(GlbMat? M, Pic? Img, double[] C)> looks)
@@ -470,6 +595,13 @@ public static class CarGlb
     /// one point per (position, texture spot): np.unique over the rounded rows
     internal static (double[] Pts, double[] Uvs, List<(int, int, int)> Faces) WeldUv(double[] tri, double[] uv)
     {
+        var (p, u, f, _) = WeldUvAtt(tri, uv, null);
+        return (p, u, f);
+    }
+
+    /// WeldUv that also carries one value per input point (att, one per triangle corner) to the welded points
+    internal static (double[] Pts, double[] Uvs, List<(int, int, int)> Faces, double[] Att) WeldUvAtt(double[] tri, double[] uv, double[]? att)
+    {
         int n = tri.Length / 3;
         var keys = new long[n][];
         for (int i = 0; i < n; i++)
@@ -497,7 +629,9 @@ public static class CarGlb
         }
         var faces = new List<(int, int, int)>();
         for (int i = 0; i + 2 < n; i += 3) { int a = inv[i], b = inv[i + 1], c = inv[i + 2]; if (a != b && b != c && a != c) faces.Add((a, b, c)); }
-        return (pts, uvs, faces);
+        var attOut = new double[firsts.Count];
+        for (int i = 0; i < firsts.Count; i++) attOut[i] = att != null ? att[firsts[i]] : 1.0;
+        return (pts, uvs, faces, attOut);
     }
 
     internal sealed record MeshRow(MeshInfo M, string El, int S) { public VStreamInfo Vs(ModelInfo m) => m.VStreams[S]; }
@@ -560,30 +694,135 @@ public static class CarGlb
     {
         var data = (byte[])CarModel.ModelBytes(root, CarModel.ModelPath(Container)).Clone();
         var M = CpModel.Read(data);
-        GlassElement = null; GlassFrom = null;
+        GlassElement = null; GlassFrom = null; AlphaElement = null;
         var (meshes, rooms) = Rooms(M);
         int vroom = rooms.Sum(r => r.M.Data1[0].VCount), iroom = rooms.Sum(r => IndexRoom(r.M));
         var raw = CarModel.ReadGlbBody(glbPath);
         var fitted = CarModel.FitGlb(raw, CarModel.ReadGameCar(root, CarModel.FitCar(car)), CarModel.FitOf(car));
-        // the glass triangles (see-through or named glass in the .glb) apart from the rest
+        // three groups of triangles: glass (see-through or named glass in the .glb), the body's paint + decals, and the rest (trim)
         int nt = fitted.Length / 9;
         bool IsGlass(int t) => t < raw.Glass.Length && raw.Glass[t];
-        (double[] Tri, double[] Uv) Pick(bool glass)
+        (double[] Tri, double[] Uv, double[] Shine) Pick(Func<int, bool> sel, bool paint = false)
         {
-            var ts = Enumerable.Range(0, nt).Where(t => IsGlass(t) == glass).ToList();
-            var tr = new double[ts.Count * 9]; var u = new double[ts.Count * 6];
-            for (int i = 0; i < ts.Count; i++) { for (int k = 0; k < 9; k++) tr[9 * i + k] = fitted[9 * ts[i] + k]; for (int k = 0; k < 6; k++) u[6 * i + k] = raw.Uv[6 * ts[i] + k]; }
-            return (tr, u);
+            var ts = Enumerable.Range(0, nt).Where(sel).ToList();
+            var tr = new double[ts.Count * 9]; var u = new double[ts.Count * 6]; var sh = new double[ts.Count * 3];
+            for (int i = 0; i < ts.Count; i++)
+            {
+                int t = ts[i];
+                for (int k = 0; k < 3; k++) sh[3 * i + k] = t < raw.Matte.Length && raw.Matte[t] == 1 ? 0.0 : 1.0;
+                for (int k = 0; k < 9; k++) tr[9 * i + k] = fitted[9 * t + k];
+                // paint triangles look at the clear spot of the livery picture (the paint shows), decals at their own tile
+                for (int k = 0; k < 6; k++) u[6 * i + k] = !paint ? raw.Uv[6 * t + k] : raw.Kind[t] == 2 ? raw.DecalUv[6 * t + k] : CarModel.ClearUv;
+            }
+            return (tr, u, sh);
         }
-        var (bodyTri, bodyUv) = Pick(false); var (glassTri, glassUv) = Pick(true);
-        var glassRoom = glassTri.Length > 0 ? GlassRoom(data, M, meshes, rooms, glassTri.Length / 9, log) : null;
+        int nGlass = Enumerable.Range(0, nt).Count(IsGlass);
+        // the glass goes into the game's own headlight-cover glass meshes (user test 2026-11-21: a trim part switched to glass is drawn
+        // black whatever its values, these draw as real see-through glass) when they have room for it; else the old way
+        var coverMeshes = new List<MeshRow>();
+        if (nGlass > 0 && CarBuild.GlassCover && CarModel.ClearGlass(car))
+        {
+            var cm = meshes.Where(r => r.S >= 0 && r.El.StartsWith("e_headlightcover", StringComparison.OrdinalIgnoreCase) && M.FxFiles[r.M.Material].StartsWith("veh_glass", StringComparison.OrdinalIgnoreCase)).ToList();
+            var (gt0, gu0, _) = Pick(IsGlass);
+            int need = WeldUv(gt0, new double[gu0.Length]).Pts.Length / 3, have = cm.Sum(r => r.M.Data1[0].VCount);
+            if (cm.Count > 0 && need <= have * 0.9) coverMeshes = cm;
+            else log($"   (glass: {need} points do not fit the game's {have}-point light-cover glass - the old glass part is used)");
+        }
+        bool useCovers = coverMeshes.Count > 0;
+        var glassRoom = nGlass > 0 && !useCovers ? GlassRoom(data, M, meshes, rooms, nGlass, log) : null;
+        // TEST: with GlassTestDrop the glass triangles on the left side (x < 0) are left out, the right side keeps its glass
+        bool DropSel(int t) => CarBuild.GlassTestDrop && glassRoom != null && IsGlass(t) && (fitted[9 * t] + fitted[9 * t + 3] + fitted[9 * t + 6]) / 3 < 0;
+        bool AnyGlass(int t) => (glassRoom != null || useCovers) && IsGlass(t);
+        bool CoverSel(int t) => useCovers && IsGlass(t);
+        bool GlassSel(int t) => AnyGlass(t) && !DropSel(t) && !CoverSel(t);
+        // TEST 2026-11-21: no window glass at all (glass triangles are simply left out) - is the black cabin the glass?
         var bodyRooms = glassRoom == null ? rooms : rooms.Where(r => r.M != glassRoom.Value.M).ToList();
-        if (glassRoom == null && glassTri.Length > 0) { (bodyTri, bodyUv) = (fitted.Select(v => (double)v).ToArray(), raw.Uv.Select(v => (double)v).ToArray()); }
-        var (pts, uvs, faces) = WeldUv(bodyTri, bodyUv);
-        int placed = Place(data, M, meshes, bodyRooms, pts, uvs, faces);
+        // the body's paint: those triangles go into parts that use the game's paint material, so the player's paint colour shows;
+        // decals (pictures with see-through parts) sit on the same parts, drawn over the paint
+        bool PaintSel(int t) => !GlassSel(t) && t < raw.Kind.Length && (CarBuild.Diag ? raw.Kind[t] == 1 : raw.Kind[t] != 0);
+        bool paintPlaced = false; double[] ppts = Array.Empty<double>();
+        int nPaint = CarModel.PaintBody(car) ? Enumerable.Range(0, nt).Count(PaintSel) : 0;
+        if (nPaint > 0)
+        {
+            var pm = meshes.FirstOrDefault(r => r.S >= 0 && r.El.Equals("e_exterior", StringComparison.OrdinalIgnoreCase) && M.FxFiles[r.M.Material].StartsWith("veh_paint_b_c", StringComparison.OrdinalIgnoreCase));
+            var lv = Skins.Levels(data, PaintPic);
+            if (pm == null || lv.Count == 0) log("   (paint: this model has no paint part or livery picture - the body keeps its colours baked in)");
+            else
+            {
+                var prooms = bodyRooms.Where(r => r.S == pm.S).ToList();
+                var (tri, uv, _) = Pick(PaintSel, true);
+                var (pp, pu, pf) = WeldUv(tri, uv);
+                var trial = (byte[])data.Clone(); var used = new List<(MeshInfo M, int S)>();
+                int n = Place(trial, M, meshes, prooms, pp, pu, pf, clear: true, usedRooms: used);
+                if (n >= pf.Count)
+                {
+                    data = trial; paintPlaced = true; ppts = pp;
+                    foreach (var r in used) B.Put(data, r.M.MaterialAt, (uint)pm.M.Material);
+                    bodyRooms = bodyRooms.Where(r => !used.Any(u => u.M == r.M)).ToList();
+                    int decals = Enumerable.Range(0, nt).Count(t => PaintSel(t) && raw.Kind[t] == 2);
+                    log($"   paint: {pf.Count} triangles ({decals} of the .glb's are decals) in {used.Count} parts with the game's paint - they take the player's paint colour");
+                    PutPaintPicture(data, raw, lv, log);
+                }
+                else log($"   paint: the body has room for only {n} of {pf.Count} paint triangles - they stay trim with their colours baked in (make the paint panels lighter, or turn 'Paintable body' off)");
+            }
+        }
+        // decals without the paint feature: their own small part with the game's alpha material (see-through picture), so a badge
+        // shows its shape instead of a solid box
+        bool DecalSel(int t) => !GlassSel(t) && t < raw.Kind.Length && raw.Kind[t] == 2;
+        bool decalPlaced = false; double[] dpts = Array.Empty<double>();
+        int nDecal = CarModel.DecalAlpha(car) && (!paintPlaced || CarBuild.Diag) ? Enumerable.Range(0, nt).Count(DecalSel) : 0;
+        if (nDecal > 0 && raw.DecalImage != null)
+        {
+            var am = meshes.FirstOrDefault(r => r.S >= 0 && M.FxFiles[r.M.Material].StartsWith("veh_alpha_c", StringComparison.OrdinalIgnoreCase));
+            var lv = Skins.Levels(data, AlphaPic);
+            if (am == null || lv.Count == 0) log("   (decals: this model has no alpha part or picture - they stay solid in the body picture)");
+            else
+            {
+                var (tri, uv, _) = Pick(DecalSel, true);
+                var (dp, du, df) = WeldUv(tri, uv);
+                var cands = bodyRooms.Where(r => r.S == am.S).OrderBy(r => r.M.Data1[0].VCount).ToList();
+                foreach (var one in cands.Select(c => new List<(MeshInfo M, int S)> { c }).Append(cands))
+                {
+                    var trial = (byte[])data.Clone(); var used = new List<(MeshInfo M, int S)>();
+                    int n = Place(trial, M, meshes, one, dp, du, df, clear: !paintPlaced, usedRooms: used);
+                    if (n < df.Count) continue;
+                    data = trial; decalPlaced = true; dpts = dp; AlphaElement = am.M.Object < M.AllElements.Count ? M.AllElements[am.M.Object].Name : null;
+                    foreach (var r in used) { B.Put(data, r.M.MaterialAt, (uint)am.M.Material); B.Put(data, r.M.MaterialAt + 16, (ushort)am.M.Object); CopyMeshHeader(data, r.M, am.M); }
+                    bodyRooms = bodyRooms.Where(r => !used.Any(u => u.M == r.M)).ToList();
+                    log($"   decals: {df.Count} triangles in {used.Count} part(s) with the game's alpha material (see-through picture)");
+                    PutAlphaPicture(data, raw, lv, log);
+                    break;
+                }
+                if (!decalPlaced) log("   (decals: no small part had room for them - they stay solid in the body picture)");
+            }
+        }
+        bool cleared = paintPlaced || decalPlaced;
+        bool TrimSel(int t) => !AnyGlass(t) && !(paintPlaced && PaintSel(t)) && !(decalPlaced && DecalSel(t));
+        var (bodyTri, bodyUv, bodyShine) = Pick(TrimSel);
+        var (pts, uvs, faces, shine) = WeldUvAtt(bodyTri, bodyUv, bodyShine);
+        int placed = faces.Count == 0 ? 0 : Place(data, M, meshes, bodyRooms, pts, uvs, faces, clear: !cleared, shine: shine);
         log($"   imported body: {faces.Count} triangles, {placed} placed in {bodyRooms.Count} trim parts (room {vroom} points, {iroom} indices)");
+        if (glassRoom != null && !decalPlaced)
+        {
+            var lvA = Skins.Levels(data, AlphaPic);
+            if (lvA.Count > 0) { PutAlphaPicture(data, raw, lvA, log); log("   (the windows read this picture too: its bottom right corner is see-through)"); }
+        }
+        if (paintPlaced) pts = pts.Concat(ppts).ToArray();
+        if (decalPlaced) pts = pts.Concat(dpts).ToArray();
+        CoverUsed.Clear();
+        if (coverMeshes.Count > 0 && Enumerable.Range(0, nt).Any(CoverSel))
+        {
+            var (ctri, cuv, _) = Pick(CoverSel);
+            var (cp, cu, cf) = WeldUv(ctri, new double[cuv.Length]);     // the covers look at one texel (uv 0,0), like the game's own
+            var used = new List<(MeshInfo M, int S)>();
+            int cn = Place(data, M, meshes, coverMeshes.OrderByDescending(r => r.M.Data1[0].VCount).Select(r => (r.M, r.S)).ToList(), cp, cu, cf, clear: false, usedRooms: used);
+            foreach (var u in used) CoverUsed.Add(u.M);
+            log($"   glass: {cf.Count} triangles in the game's own headlight-cover glass meshes (real see-through pass): {cn} placed in {used.Count} meshes{(cn < cf.Count ? $" - {cf.Count - cn} did not fit (holes in the glass)" : "")}");
+            pts = pts.Concat(cp).ToArray();
+        }
         if (glassRoom != null)
         {
+            var (glassTri, glassUv, _) = Pick(GlassSel);
             var (gp, gu, gf) = WeldUv(glassTri, glassUv);
             int gplaced = Place(data, M, meshes, new() { glassRoom.Value }, gp, gu, gf, clear: false, copyFrom: GlassFrom);
             log($"   glass points take the real windscreen's damage coordinates ({GlassFrom?.Count ?? 0} windscreen points) + our picture's glass corner");
@@ -602,6 +841,7 @@ public static class CarGlb
         HideLights(data, M, meshes, log);
         GrowBoxes(data, M, pts, extra, log);
         PutTexture(data, raw.Image, log, clear: glassRoom != null && CarModel.ClearGlass(car));
+        if (CarBuild.Diag) DiagPictures(data, log);
         return data;
     }
 
@@ -781,7 +1021,7 @@ public static class CarGlb
         int moved = 0;
         foreach (var (m, el, s) in meshes)
         {
-            if (s < 0 || CarModel.Kind(el) != "light") continue;
+            if (s < 0 || CarModel.Kind(el) != "light" || CoverUsed.Contains(m)) continue;
             var vs = M.VStreams[s];
             int stride = vs.Bytes, kind = vs.Def[0].Type, vbase = m.VOffset[0] / stride;
             foreach (var d1 in m.Data1)
@@ -802,7 +1042,7 @@ public static class CarGlb
         var nw = Box6(BuriedBox);
         foreach (var e in M.AllElements)
         {
-            if (CarModel.Kind(e.Name) != "light") continue;
+            if (CarModel.Kind(e.Name) != "light" || CoverUsed.Any(c => c.Object < M.AllElements.Count && M.AllElements[c.Object] == e)) continue;
             var old = Box6(e.Box);
             if (old.AsSpan().SequenceEqual(nw)) continue;
             done += Replace(d, old, nw, head);
@@ -824,7 +1064,7 @@ public static class CarGlb
         foreach (var p in extra) for (int i = 0; i < 3; i++) { lo[i] = Math.Min(lo[i], p[i]); hi[i] = Math.Max(hi[i], p[i]); }
         for (int i = 0; i < 3; i++) { lo[i] -= 0.02; hi[i] += 0.02; }
         // the glass's element too (its box held only the old windscreen: the new glass would be cut off / not drawn)
-        var boxes = M.AllElements.Where(e => Still.Contains(e.Name.ToLowerInvariant()) || (GlassElement != null && e.Name == GlassElement)).Select(e => e.Box).Concat(M.ModelBoxes);
+        var boxes = M.AllElements.Where(e => Still.Contains(e.Name.ToLowerInvariant()) || (GlassElement != null && e.Name == GlassElement) || (AlphaElement != null && e.Name == AlphaElement) || CoverUsed.Any(c => c.Object < M.AllElements.Count && M.AllElements[c.Object] == e)).Select(e => e.Box).Concat(M.ModelBoxes);
         int done = 0;
         foreach (var old in boxes)
         {
@@ -902,8 +1142,77 @@ public static class CarGlb
     /// it is see-through by the view angle alone (the game's glass shader: alpha = max..min by N.V, + the picture's alpha
     /// only when it has one; our body picture has none, so glass in a part WITH a picture came out solid black).
     /// One trim part with the windscreen's vertex layout gets the windscreen's material: the smallest that holds the glass.
-    [ThreadStatic] static string? GlassElement;
+    /// the Bowler's livery picture (RGBA, 1024): the game's paint shader mixes the player's paint with its colour by its see-through layer
+    /// DIAGNOSTIC: each picture of the car in its own solid colour
+    static void DiagPictures(byte[] data, Action<string> log)
+    {
+        var colours = new (string Pic, byte R, byte G, byte B)[] { ("bowler_alpha", 0, 0, 255) };
+        foreach (var (pic, r, g, b) in colours)
+        {
+            var lv = Skins.Levels(data, pic); int done = 0;
+            foreach (var l in lv)
+            {
+                var img = new Rgba(l.W, l.H);
+                for (int i = 0; i < l.W * l.H; i++) { img.Px[4 * i] = r; img.Px[4 * i + 1] = g; img.Px[4 * i + 2] = b; img.Px[4 * i + 3] = 255; }
+                var enc = Skins.Encode(img, l.Fmt, l.Mips, l.Size);
+                if (enc.Length == l.Size) { enc.CopyTo(data, l.At); done++; }
+            }
+            log($"   DIAGNOSTIC: {pic} -> solid ({r},{g},{b}), {done} of {lv.Count} sizes");
+        }
+    }
+
+    const string PaintPic = "bowler_team_alpha";
+    /// the Bowler's alpha-blended picture (RGBA, 512): the game's "alpha" material reads it - its boot badge. Decals (badges, stickers) go here.
+    const string AlphaPic = "bowler_alpha";
+
+    /// writes the decal picture over the alpha picture, every stored size. The alpha material adds its picture to what is behind it
+    /// (source + background x (1 - alpha)), so the colours are laid out premultiplied (colour x alpha); see-through texels are black.
+    static void PutAlphaPicture(byte[] data, CarModel.Body raw, List<SkinLevel> lv, Action<string> log)
+    {
+        var src = raw.DecalImage ?? new Rgba(CarModel.Atlas, CarModel.Atlas); var img = new Rgba(src.W, src.H);
+        for (int i = 0; i < src.W * src.H; i++)
+        {
+            int a = src.Px[4 * i + 3];
+            for (int q = 0; q < 3; q++) img.Px[4 * i + q] = (byte)(src.Px[4 * i + q] * a / 255);
+            img.Px[4 * i + 3] = (byte)a;
+        }
+        int done = 0;
+        foreach (var l in lv)
+        {
+            var enc = Skins.Encode(img.Resize(l.W, l.H), l.Fmt, l.Mips, l.Size);
+            if (enc.Length != l.Size) { log($"   (decal picture {l.W} x {l.H}: unexpected size, left as it is)"); continue; }
+            enc.CopyTo(data, l.At); done++;
+        }
+        log($"   the decal picture ({AlphaPic}): {done} of {lv.Count} sizes written");
+    }
+
+    /// writes the decal picture over the livery picture, every stored size; everything outside the decals is see-through (the paint shows)
+    static void PutPaintPicture(byte[] data, CarModel.Body raw, List<SkinLevel> lv, Action<string> log)
+    {
+        var img = raw.DecalImage;
+        if (img == null)
+        {
+            img = new Rgba(CarModel.Atlas, CarModel.Atlas);
+            for (int i = 0; i < img.W * img.H; i++) { img.Px[4 * i] = 128; img.Px[4 * i + 1] = 128; img.Px[4 * i + 2] = 128; }
+        }
+        int done = 0;
+        foreach (var l in lv)
+        {
+            var enc = Skins.Encode(img.Resize(l.W, l.H), l.Fmt, l.Mips, l.Size);
+            if (enc.Length != l.Size) { log($"   (paint picture {l.W} x {l.H}: unexpected size, left as it is)"); continue; }
+            enc.CopyTo(data, l.At); done++;
+        }
+        log($"   the paint picture ({PaintPic}): {done} of {lv.Count} sizes written{(raw.DecalImage != null ? " with the decals" : ", all see-through")}");
+    }
+
+    [ThreadStatic] static string? GlassElement, AlphaElement;
+    [ThreadStatic] static HashSet<MeshInfo>? _coverUsed;
+    static HashSet<MeshInfo> CoverUsed => _coverUsed ??= new();
     [ThreadStatic] static List<(double X, double Y, double Z, byte[] Uv, byte[] Last)>? GlassFrom;
+
+    /// a mesh record's 56 bytes after its element: the render instance number (which pictures + exposed settings the mesh reads),
+    /// the draw-order flags... copied from a real mesh of the kind we want, so our part is that kind of mesh in every way
+    static void CopyMeshHeader(byte[] d, MeshInfo dst, MeshInfo src) => Array.Copy(d, src.MaterialAt + 20, d, dst.MaterialAt + 20, 56);
 
     static (MeshInfo M, int S)? GlassRoom(byte[] data, ModelInfo M, List<MeshRow> meshes, List<(MeshInfo M, int S)> rooms, int glassTris, Action<string> log)
     {
@@ -920,6 +1229,7 @@ public static class CarGlb
         // reflection) only on elements named e_window* / e_headlightcover*. In e_interior the glass got none: it drew
         // black, and the first load could crash. Mesh record: material, definition, face type, face stream, element (u16).
         B.Put(data, pick.M.MaterialAt + 16, (ushort)win.M.Object);
+        CopyMeshHeader(data, pick.M, win.M);
         GlassElement = win.M.Object < M.AllElements.Count ? M.AllElements[win.M.Object].Name : null;
         GlassFrom = WindowPoints(data, M, win);
         log($"   glass part: a trim part ({pick.M.Data1[0].VCount} points) now uses the windscreen's glass ({M.FxFiles[win.M.Material]}) and belongs to {GlassElement}");
@@ -947,7 +1257,7 @@ public static class CarGlb
     }
 
     static int Place(byte[] data, ModelInfo M, List<MeshRow> meshes, List<(MeshInfo M, int S)> rooms, double[] pts, double[] uvs, List<(int A, int B, int C)> faces, bool clear = true,
-                     List<(double X, double Y, double Z, byte[] Uv, byte[] Last)>? copyFrom = null)
+                     List<(double X, double Y, double Z, byte[] Uv, byte[] Last)>? copyFrom = null, List<(MeshInfo M, int S)>? usedRooms = null, double[]? shine = null)
     {
         int np = pts.Length / 3;
         var keys = new (long, long, long)[np];
@@ -1028,6 +1338,7 @@ public static class CarGlb
                 n = (int)(n * room / (double)strip.Count * 0.97);
             }
             if (n == 0) continue;
+            usedRooms?.Add((m, s));
             int vbase = m.VOffset[0] / stride;
             foreach (var (v, j) in local)
             {
@@ -1044,6 +1355,9 @@ public static class CarGlb
                 if (offs.TryGetValue((11, 9, -1), out int a9))
                 {
                     var (l0, l1, l2, l3) = LightBytes(nx, ny, nz);
+                    // matte parts (interior, plastic): the first byte is the ambient occlusion the game multiplies the reflection by; the
+                    // game's own interiors keep it near 10 (shiny parts 60-100)
+                    if (shine != null && v < shine.Length) l0 = (byte)Math.Max(6, Math.Min(255, Py.Round(10 + (l0 - 10) * shine[v])));
                     data[at + a9] = l0; data[at + a9 + 1] = l1; data[at + a9 + 2] = l2; data[at + a9 + 3] = l3;
                 }
                 if (offs.TryGetValue((9, 5, -1), out int a5))
@@ -1486,20 +1800,30 @@ public static partial class CarBuild
     /// every car's windows share the game's glass materials (near-black tint, 10-30 % solid head-on, 75-100 % at an angle):
     /// an imported body's see-through glass looked black. A custom car with an imported body gets its own material set:
     /// a copy of the game's default set (AmaxVehicleDefaults.materials) whose windows (part codes 23 Window, 24
-    /// WindowInterior) use a clear copy of the window glass. Uids: GlassUid0 + 8 * car (+0 glass, +1..2 parts, +4 the set).
+    /// WindowInterior) use a clear copy of the window glass. Uids: GlassUid0 + 16 * car (+0 glass, +1..5 parts, +8 the set).
     public const uint GlassUid0 = 0xCA500000, DefaultMaterialSet = 0xC2D82C72;
     // VEH_PartCode in vehicles.bin: 23 = Window, 24 = WindowInterior (35-37 are the light covers - the first try changed those)
-    static readonly int[] WindowParts = { 23, 24 };
-    public const double ClearMinAlpha = 0.03, ClearMaxAlpha = 0.35, ClearMinReflect = 0.05, ClearMaxReflect = 0.35;
+    static readonly int[] WindowParts = { 23, 24, 35, 36, 37 };
+    public const double ClearMinAlpha = 0.0, ClearMaxAlpha = 0.10, ClearMinReflect = 0.02, ClearMaxReflect = 0.15;      // user test 2026-11-21: our glass record DOES apply (blue test); 0.03-0.35 still looked black over the dim cabin
     /// TEMPORARY (2026-11-19): one test build with red, mostly solid clear glass - does the game use our glass record at all? Set back to false.
     public const bool GlassTestRed = false;
+    /// TEMPORARY (2026-11-21) DIAGNOSTIC: every picture of the car solid in its own colour (which picture does each part read?) and
+    /// our window glass bright white, alpha .9 (does our glass record apply?). Set back to false.
+    public const bool Diag = false;
+    /// TEMPORARY DIAGNOSTIC (2026-11-21): the game's OWN window glass (every car) red, alpha .7-.9, while our clone keeps the clear values:
+    /// our windows red = they use the game's glass (our override is ignored); dark / clear = they use our clone. Set back to false.
+    public const bool DefaultGlassRed = false;
     /// TEMPORARY (2026-11-19): one test build with the clear glass fully invisible (0 solid, 0 reflection) - is the grey from our values? Set back to false.
     public const bool GlassTestInvisible = false;
+    /// TEMPORARY (2026-11-21): leave the window glass out completely. Set back to false.
+    public const bool GlassTestDrop = false;
+    /// TEMPORARY A/B (2026-11-21): the right half of the glass (x >= 0) goes into the game's own headlight-cover glass meshes (a native glass pass), the left half stays in the trim part that was switched to glass. Set back to false (or make it the real way).
+    public const bool GlassCover = true;
 
     /// adds the car's clear-glass material set to vehicles.bin; returns its uid (0 = the game's set is not as expected: nothing added)
     static uint ClearGlassSet(ref byte[] vehD, int car, Action<string> log)
     {
-        uint g = GlassUid0 + 8u * (uint)car, setUid = g + 4;
+        uint g = GlassUid0 + 16u * (uint)car, setUid = g + 8;
         var veh = new Db(vehD);
         int so = veh.RowOfUid(DefaultMaterialSet) is int sr && sr >= 0 ? veh.K.Refs[sr].Obj : -1;
         if (so < 0 || so == 0xFFFF) { log("   (clear glass: the game's material set was not found - the glass stays the game's)"); return 0; }
@@ -1523,13 +1847,14 @@ public static partial class CarBuild
         {
             v0.Set(data, blocks[0], gt, "minAlpha", GlassTestRed ? 0.7 : ClearMinAlpha); v0.Set(data, blocks[0], gt, "maxAlpha", GlassTestRed ? 0.9 : ClearMaxAlpha);
             v0.Set(data, blocks[0], gt, "minReflectivity", ClearMinReflect); v0.Set(data, blocks[0], gt, "maxReflectivity", ClearMaxReflect);
+            if (DefaultGlassRed) { v0.Set(data, blocks[0], gt, "tint.r", 0.0); v0.Set(data, blocks[0], gt, "tint.g", 0.0); v0.Set(data, blocks[0], gt, "tint.b", 1.0); v0.Set(data, blocks[0], gt, "minAlpha", 0.5); v0.Set(data, blocks[0], gt, "maxAlpha", 0.5); }
             if (GlassTestInvisible) foreach (var f in new[] { "minAlpha", "maxAlpha", "minReflectivity", "maxReflectivity" }) v0.Set(data, blocks[0], gt, f, 0.0);
             if (GlassTestRed) { v0.Set(data, blocks[0], gt, "tint.r", 1.0); v0.Set(data, blocks[0], gt, "tint.g", 0.0); v0.Set(data, blocks[0], gt, "tint.b", 0.0); }
         });
         if (GlassTestRed) log("   TEST BUILD: the clear glass is RED (to see if the game uses it) - not for players");
         if (GlassTestInvisible) log("   TEST BUILD: the clear glass is fully INVISIBLE (to see where the grey comes from) - not for players");
         var vg = new Db(vehD); int go = vg.ObjOfUid(origGlassUid); int gtt = vg.K.Objects[go].Blocks[0].Type;
-        if (GlassTestRed && vg.Get(go, "tint.r") < 0.9)
+        if ((GlassTestRed || DefaultGlassRed) && vg.Get(go, "tint.r") < 0.9)
         {
             // TEMPORARY test 2: the game's own window glass (all cars) red too - do these records drive the look at all?
             vehD = KslfWrite.EditObject(vehD, go, ctx => { vg.Set(ctx.Data, ctx.Blocks[0], gtt, "tint.r", 1.0); vg.Set(ctx.Data, ctx.Blocks[0], gtt, "tint.g", 0.0); vg.Set(ctx.Data, ctx.Blocks[0], gtt, "tint.b", 0.0); vg.Set(ctx.Data, ctx.Blocks[0], gtt, "minAlpha", 0.7); vg.Set(ctx.Data, ctx.Blocks[0], gtt, "maxAlpha", 0.9); });

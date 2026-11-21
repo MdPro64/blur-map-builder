@@ -30,6 +30,9 @@ public static class GameTweaks
     /// sharp textures far away (anisotropic filter DLL in amax\dlls, Setup.RefreshFilter): on unless turned off
     public static bool SharpFar(JObj t) => !t.ContainsKey("sharp_far") || t.Truthy("sharp_far");
 
+    /// skip the two start-up movies (Activision, Bizarre) by renaming their files (Setup.RefreshIntro): off unless turned on
+    public static bool SkipIntro(JObj t) => t.Truthy("skip_intro");
+
     /// AI racers per player (19 = every free place can be AI); 0 = the game's own (6)
     public static int AiPerPlayer(JObj t) => t.Truthy("more_ai") ? Math.Clamp((int)t.Int("ai_per_player", MaxRacers - 1), 1, MaxRacers - 1) : 0;
 

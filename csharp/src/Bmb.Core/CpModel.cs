@@ -18,6 +18,10 @@ public sealed class ModelInfo
     public List<int> SecAt = new();
     /// each material (shader entry)'s named settings: (material index, shader, setting name, offset of its 8 bytes)
     public List<(int Mat, string Shader, string Name, int At)> ShaderParams = new();
+    /// where each shader entry (material) starts and ends in the file
+    public List<(int Start, int End)> ShaderBlocks = new();
+    /// per shader entry: where its list of mesh indices (ushort each) is in the file, and how many there are
+    public List<(int At, int Count)> ShaderMeshes = new();
     public List<VStreamInfo> VStreams = new();
     public List<FStreamInfo> FStreams = new();
     public List<MeshInfo> MeshInfos = new();
@@ -207,9 +211,10 @@ public static class CpModel
         int nSh = r.Int();
         for (int i = 0; i < nSh; i++)
         {
+            int blockStart = r.P;
             r.Ad();
             int nl = r.Int();
-            if (nl == 0) { r.Ad(); r.Ad(12); r.Ad(); r.Ad(12); continue; }
+            if (nl == 0) { r.Ad(); r.Ad(12); r.Ad(); r.Ad(12); m.ShaderBlocks.Add((blockStart, r.P)); m.ShaderMeshes.Add((-1, 0)); continue; }
             string shName = B.Latin1.GetString(data, r.P, nl);
             r.Ad(nl); r.Ad();
             int np = r.Int();
@@ -220,8 +225,10 @@ public static class CpModel
             }
             r.Ad(8); r.Ad();
             int no = r.Int();
+            m.ShaderMeshes.Add((r.P, no + 1));
             r.Ad(2 * (no + 1));
             r.Ad(6);
+            m.ShaderBlocks.Add((blockStart, r.P));
         }
         r.Ad(12);
         int nMesh = r.Int();

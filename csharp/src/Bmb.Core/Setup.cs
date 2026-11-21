@@ -286,6 +286,31 @@ public static class Setup
         File.WriteAllBytes(dst, d);
     }
 
+    static readonly string[] IntroMovies = { "atvi.bik", "BizarreSplash.bik" };
+
+    /// Game tweaks > "Skip the two start-up movies": the game plays UI\moviestvi.bik and BizarreSplash.bik at every start and
+    /// the quick start plugin cannot skip them (they play before the game's menus exist). A movie file it cannot open is skipped by the
+    /// game at once, so on = the two files renamed to *.bmb_off, off = renamed back. Affects normal Blur too (same folder).
+    public static string? RefreshIntro()
+    {
+        string dir = Path.Combine(Paths.Game, "UI", "movies");
+        if (!Directory.Exists(dir)) return null;
+        bool on = GameTweaks.SkipIntro(GameTweaks.Load());
+        int n = 0;
+        try
+        {
+            foreach (var name in IntroMovies)
+            {
+                string f = Path.Combine(dir, name), off = f + ".bmb_off";
+                if (on && File.Exists(f) && !File.Exists(off)) { File.Move(f, off); n++; }
+                else if (on && File.Exists(f) && File.Exists(off)) { File.Delete(off); File.Move(f, off); n++; }
+                else if (!on && File.Exists(off) && !File.Exists(f)) { File.Move(off, f); n++; }
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return "start-up movies: could not change (is the game running?)"; }
+        return n == 0 ? null : on ? "start-up movies: skipped" : "start-up movies: back";
+    }
+
     /// the texture filter fix (our aniso_fix.dll, source in assets\aniso_fix.c): Blur never turns on anisotropic filtering,
     /// so road lines and grain far away blur into a smear. The Amax loader starts every DLL in amax\dlls, in Blur and
     /// Blur REBORN. On = this version's DLL there (written only when it differs; a running game locks it: kept as it
